@@ -2,6 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
+APP_VERSION="2026.06.14.1"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://github.com/perryyeh/yehbp/raw/refs/heads/main/install.sh"
 INSTALL_BIN="/usr/local/bin/${APP_NAME}"
@@ -25,6 +26,25 @@ download_yehbp_script() {
     }
 }
 
+get_yehbp_version() {
+    sed -n 's/^APP_VERSION="\([^"]*\)".*/\1/p' "$1" | head -n1
+}
+
+install_yehbp_from_file() {
+    local src="$1"
+    local backup=""
+
+    mkdir -p "$(dirname "$INSTALL_BIN")" || return 1
+
+    if [ -f "$INSTALL_BIN" ]; then
+        backup="${INSTALL_BIN}.bak-$(date +%Y%m%d-%H%M%S)"
+        cp -a "$INSTALL_BIN" "$backup" || return 1
+        echo "🧩 已备份当前版本：$backup"
+    fi
+
+    install -m 0755 "$src" "$INSTALL_BIN" || return 1
+}
+
 install_yehbp_cli() {
     if [ "${EUID:-$(id -u)}" -ne 0 ]; then
         echo "❌ 安装 ${APP_NAME} 需要 root 权限，请使用 sudo。"
@@ -37,12 +57,11 @@ install_yehbp_cli() {
 
     echo "⬇️ 正在安装 ${APP_TITLE} 到 ${INSTALL_BIN} ..."
     download_yehbp_script "$tmp" || return 1
-    mkdir -p "$(dirname "$INSTALL_BIN")" || return 1
-    install -m 0755 "$tmp" "$INSTALL_BIN" || return 1
+    install_yehbp_from_file "$tmp" || return 1
 
     echo "✅ 安装完成：${INSTALL_BIN}"
     echo "👉 以后直接运行：${APP_NAME}"
-    echo "👉 升级命令：${APP_NAME} --update"
+    echo "👉 每次运行会自动检查新版本；确认后才会升级。"
 }
 
 update_yehbp_cli() {
@@ -59,16 +78,48 @@ update_yehbp_cli() {
     echo "⬆️ 正在升级 ${APP_TITLE} ..."
     download_yehbp_script "$tmp" || return 1
 
-    if [ -f "$INSTALL_BIN" ]; then
-        cp -a "$INSTALL_BIN" "$backup" || return 1
-        echo "🧩 已备份当前版本：$backup"
-    else
-        echo "ℹ️ 未检测到 ${INSTALL_BIN}，将执行首次安装。"
+    [ ! -f "$INSTALL_BIN" ] && echo "ℹ️ 未检测到 ${INSTALL_BIN}，将执行首次安装。"
+    install_yehbp_from_file "$tmp" || return 1
+    echo "✅ 升级完成：${INSTALL_BIN}"
+}
+
+check_yehbp_update() {
+    local tmp remote_version ans
+
+    tmp="$(mktemp /tmp/${APP_NAME}.check.XXXXXX)" || return 0
+    trap 'rm -f "$tmp"' RETURN
+
+    if ! download_yehbp_script "$tmp"; then
+        echo "⚠️ 版本检查失败，继续使用当前版本：${APP_VERSION}"
+        return 0
     fi
 
-    mkdir -p "$(dirname "$INSTALL_BIN")" || return 1
-    install -m 0755 "$tmp" "$INSTALL_BIN" || return 1
-    echo "✅ 升级完成：${INSTALL_BIN}"
+    remote_version="$(get_yehbp_version "$tmp")"
+    if [ -z "$remote_version" ]; then
+        echo "⚠️ 无法识别远程版本，继续使用当前版本：${APP_VERSION}"
+        return 0
+    fi
+
+    if [ "$remote_version" = "$APP_VERSION" ]; then
+        return 0
+    fi
+
+    echo "⬆️ 检测到 ${APP_TITLE} 新版本：${APP_VERSION} -> ${remote_version}"
+    read -r -p "是否现在升级？[y/N]: " ans
+    if [[ "$ans" =~ ^[Yy]$ ]]; then
+        if [ "${EUID:-$(id -u)}" -ne 0 ]; then
+            echo "❌ 升级需要 root 权限，请使用 sudo ${APP_NAME} 后重试。"
+            return 0
+        fi
+        install_yehbp_from_file "$tmp" || {
+            echo "❌ 升级失败，继续使用当前版本。"
+            return 0
+        }
+        echo "✅ 已升级到 ${remote_version}。请重新运行 ${APP_NAME}。"
+        exit 0
+    fi
+
+    echo "ℹ️ 已跳过升级，继续使用当前版本：${APP_VERSION}"
 }
 
 case "${1:-}" in
@@ -81,6 +132,8 @@ case "${1:-}" in
         exit $?
         ;;
 esac
+
+check_yehbp_update
 
 # ========== 环境准备 ==========
 

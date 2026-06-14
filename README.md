@@ -60,13 +60,13 @@ sudo bash <(curl -fsSL https://github.com/perryyeh/yehbp/raw/refs/heads/main/ins
 sudo yehbp
 ```
 
-升级已安装的 `yehbp`：
+每次运行 `yehbp` 时会检查仓库版本。如果发现新版本，会提示是否升级：
 
-```bash
-sudo yehbp --update
+```text
+是否现在升级？[y/N]:
 ```
 
-升级会先下载最新脚本并做语法检查；如果本机已有 `/usr/local/bin/yehbp`，会先备份为 `/usr/local/bin/yehbp.bak-时间戳`，再覆盖更新。
+输入 `y` 才会升级；默认回车或输入 `n` 都不会升级。升级前会先下载最新脚本并做语法检查；如果本机已有 `/usr/local/bin/yehbp`，会先备份为 `/usr/local/bin/yehbp.bak-时间戳`，再覆盖更新。
 
 ### 2. 或克隆项目运行
 
