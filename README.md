@@ -49,7 +49,7 @@
 ### 1. 安装命令
 
 ```bash
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/perryyeh/yehbp/main/install.sh) install
+sudo bash <(curl -fsSL https://github.com/perryyeh/yehbp/raw/refs/heads/main/install.sh) install
 ```
 
 安装后直接运行：
