@@ -2,8 +2,8 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-REPO_URL="https://github.com/perryyeh/yeh-bypass"
-RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yeh-bypass/main/install.sh"
+REPO_URL="https://github.com/perryyeh/yehbp"
+RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/main/install.sh"
 INSTALL_BIN="/usr/local/bin/${APP_NAME}"
 
 install_yehbp_cli() {
