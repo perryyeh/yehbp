@@ -6,32 +6,78 @@ REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://github.com/perryyeh/yehbp/raw/refs/heads/main/install.sh"
 INSTALL_BIN="/usr/local/bin/${APP_NAME}"
 
+download_yehbp_script() {
+    local dst="$1"
+    local url="${RAW_INSTALL_URL}?t=$(date +%s)"
+
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$url" -o "$dst" || return 1
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO "$dst" "$url" || return 1
+    else
+        echo "❌ 未找到 curl 或 wget，无法下载安装脚本。"
+        return 1
+    fi
+
+    bash -n "$dst" || {
+        echo "❌ 下载的新脚本语法检查失败，已取消。"
+        return 1
+    }
+}
+
 install_yehbp_cli() {
     if [ "${EUID:-$(id -u)}" -ne 0 ]; then
         echo "❌ 安装 ${APP_NAME} 需要 root 权限，请使用 sudo。"
         return 1
     fi
 
-    echo "⬇️ 正在安装 ${APP_TITLE} 到 ${INSTALL_BIN} ..."
-    mkdir -p "$(dirname "$INSTALL_BIN")" || return 1
+    local tmp
+    tmp="$(mktemp /tmp/${APP_NAME}.install.XXXXXX)" || return 1
+    trap 'rm -f "$tmp"' RETURN
 
-    if command -v curl >/dev/null 2>&1; then
-        curl -fsSL "$RAW_INSTALL_URL" -o "$INSTALL_BIN" || return 1
-    elif command -v wget >/dev/null 2>&1; then
-        wget -qO "$INSTALL_BIN" "$RAW_INSTALL_URL" || return 1
-    else
-        echo "❌ 未找到 curl 或 wget，无法下载安装脚本。"
+    echo "⬇️ 正在安装 ${APP_TITLE} 到 ${INSTALL_BIN} ..."
+    download_yehbp_script "$tmp" || return 1
+    mkdir -p "$(dirname "$INSTALL_BIN")" || return 1
+    install -m 0755 "$tmp" "$INSTALL_BIN" || return 1
+
+    echo "✅ 安装完成：${INSTALL_BIN}"
+    echo "👉 以后直接运行：${APP_NAME}"
+    echo "👉 升级命令：${APP_NAME} --update"
+}
+
+update_yehbp_cli() {
+    if [ "${EUID:-$(id -u)}" -ne 0 ]; then
+        echo "❌ 升级 ${APP_NAME} 需要 root 权限，请使用 sudo。"
         return 1
     fi
 
-    chmod +x "$INSTALL_BIN" || return 1
-    echo "✅ 安装完成：${INSTALL_BIN}"
-    echo "👉 以后直接运行：${APP_NAME}"
+    local tmp backup
+    tmp="$(mktemp /tmp/${APP_NAME}.update.XXXXXX)" || return 1
+    backup="${INSTALL_BIN}.bak-$(date +%Y%m%d-%H%M%S)"
+    trap 'rm -f "$tmp"' RETURN
+
+    echo "⬆️ 正在升级 ${APP_TITLE} ..."
+    download_yehbp_script "$tmp" || return 1
+
+    if [ -f "$INSTALL_BIN" ]; then
+        cp -a "$INSTALL_BIN" "$backup" || return 1
+        echo "🧩 已备份当前版本：$backup"
+    else
+        echo "ℹ️ 未检测到 ${INSTALL_BIN}，将执行首次安装。"
+    fi
+
+    mkdir -p "$(dirname "$INSTALL_BIN")" || return 1
+    install -m 0755 "$tmp" "$INSTALL_BIN" || return 1
+    echo "✅ 升级完成：${INSTALL_BIN}"
 }
 
 case "${1:-}" in
-    install|--install|update|--update)
+    install|--install)
         install_yehbp_cli
+        exit $?
+        ;;
+    update|--update)
+        update_yehbp_cli
         exit $?
         ;;
 esac

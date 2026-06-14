@@ -60,6 +60,14 @@ sudo bash <(curl -fsSL https://github.com/perryyeh/yehbp/raw/refs/heads/main/ins
 sudo yehbp
 ```
 
+升级已安装的 `yehbp`：
+
+```bash
+sudo yehbp --update
+```
+
+升级会先下载最新脚本并做语法检查；如果本机已有 `/usr/local/bin/yehbp`，会先备份为 `/usr/local/bin/yehbp.bak-时间戳`，再覆盖更新。
+
 ### 2. 或克隆项目运行
 
 ```bash
