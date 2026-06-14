@@ -2,9 +2,10 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.14.1"
+APP_VERSION="2026.06.14.2"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://github.com/perryyeh/yehbp/raw/refs/heads/main/install.sh"
+RAW_VERSION_URL="https://github.com/perryyeh/yehbp/raw/refs/heads/main/VERSION"
 INSTALL_BIN="/usr/local/bin/${APP_NAME}"
 
 download_yehbp_script() {
@@ -26,8 +27,16 @@ download_yehbp_script() {
     }
 }
 
-get_yehbp_version() {
-    sed -n 's/^APP_VERSION="\([^"]*\)".*/\1/p' "$1" | head -n1
+fetch_remote_yehbp_version() {
+    local url="${RAW_VERSION_URL}?t=$(date +%s)"
+
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$url" 2>/dev/null | tr -d '[:space:]'
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO- "$url" 2>/dev/null | tr -d '[:space:]'
+    else
+        return 1
+    fi
 }
 
 install_yehbp_from_file() {
@@ -86,15 +95,7 @@ update_yehbp_cli() {
 check_yehbp_update() {
     local tmp remote_version ans
 
-    tmp="$(mktemp /tmp/${APP_NAME}.check.XXXXXX)" || return 0
-    trap 'rm -f "$tmp"' RETURN
-
-    if ! download_yehbp_script "$tmp"; then
-        echo "⚠️ 版本检查失败，继续使用当前版本：${APP_VERSION}"
-        return 0
-    fi
-
-    remote_version="$(get_yehbp_version "$tmp")"
+    remote_version="$(fetch_remote_yehbp_version)"
     if [ -z "$remote_version" ]; then
         echo "⚠️ 无法识别远程版本，继续使用当前版本：${APP_VERSION}"
         return 0
@@ -111,6 +112,17 @@ check_yehbp_update() {
             echo "❌ 升级需要 root 权限，请使用 sudo ${APP_NAME} 后重试。"
             return 0
         fi
+
+        tmp="$(mktemp /tmp/${APP_NAME}.update.XXXXXX)" || {
+            echo "❌ 无法创建临时文件，继续使用当前版本。"
+            return 0
+        }
+        trap 'rm -f "$tmp"' RETURN
+
+        download_yehbp_script "$tmp" || {
+            echo "❌ 下载新版脚本失败，继续使用当前版本。"
+            return 0
+        }
         install_yehbp_from_file "$tmp" || {
             echo "❌ 升级失败，继续使用当前版本。"
             return 0
