@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.14.2"
+APP_VERSION="2026.06.14.3"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://github.com/perryyeh/yehbp/raw/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://github.com/perryyeh/yehbp/raw/refs/heads/main/VERSION"
@@ -138,6 +138,18 @@ case "${1:-}" in
     install|--install)
         install_yehbp_cli
         exit $?
+        ;;
+    "")
+        # curl ... | sudo bash：脚本从 stdin 进入时默认执行安装。
+        # 已安装后的 yehbp 无参数运行仍进入菜单。
+        if [ ! -t 0 ]; then
+            case "$(basename "$0")" in
+                bash|sh|-bash|-sh)
+                    install_yehbp_cli
+                    exit $?
+                    ;;
+            esac
+        fi
         ;;
     update|--update)
         update_yehbp_cli
