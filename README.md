@@ -1,10 +1,12 @@
 # Yeh Bypass Gateway
 
-此项目提供快捷脚本，用于在类 Armbian / NAS Linux 系统中创建 Docker macvlan 网络，并配置宿主机与容器之间的 macvlan bridge 互通。
+自用一键旁路由脚本，提供从 DNS 缓存、域名分流、远程解析、代理接入，到在外回家入口的一整套网络方案。
 
-核心容器是mosdns和adguardhome， mosdns提供域名分流（分流后的外部域名采用FakeIP方案），adguardhome提供域名缓存。
+核心容器包括 AdGuardHome、MosDNS、Mihomo、ddns-go：AdGuardHome 负责 DNS 缓存；MosDNS 负责域名分流，内部域名返回真实 IP，外部域名返回 FakeIP；代理由 Mihomo 或 Surge 承载。
 
-本代码已在群晖7.3+（可能需要补全欠缺的命令），飞牛1.0+，armbian（linux6.1+） 上测试通过。
+在外回家方案以 ddns-go + Mihomo 作为入口，统一处理 IPv4 / IPv6 访问与入站流量。
+
+支持 IPv6，已在群晖 7.3+（可能需要补全欠缺命令）、飞牛 1.0+、Armbian（Linux 6.1+）上测试通过。
 
 
 ## ✨ 功能特性
