@@ -1,5 +1,41 @@
 #!/bin/bash
 
+APP_NAME="yehbp"
+APP_TITLE="Yeh Bypass Gateway"
+REPO_URL="https://github.com/perryyeh/yeh-bypass"
+RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yeh-bypass/main/install.sh"
+INSTALL_BIN="/usr/local/bin/${APP_NAME}"
+
+install_yehbp_cli() {
+    if [ "${EUID:-$(id -u)}" -ne 0 ]; then
+        echo "❌ 安装 ${APP_NAME} 需要 root 权限，请使用 sudo。"
+        return 1
+    fi
+
+    echo "⬇️ 正在安装 ${APP_TITLE} 到 ${INSTALL_BIN} ..."
+    mkdir -p "$(dirname "$INSTALL_BIN")" || return 1
+
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$RAW_INSTALL_URL" -o "$INSTALL_BIN" || return 1
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO "$INSTALL_BIN" "$RAW_INSTALL_URL" || return 1
+    else
+        echo "❌ 未找到 curl 或 wget，无法下载安装脚本。"
+        return 1
+    fi
+
+    chmod +x "$INSTALL_BIN" || return 1
+    echo "✅ 安装完成：${INSTALL_BIN}"
+    echo "👉 以后直接运行：${APP_NAME}"
+}
+
+case "${1:-}" in
+    install|--install|update|--update)
+        install_yehbp_cli
+        exit $?
+        ;;
+esac
+
 # ========== 环境准备 ==========
 
 install_dependencies() {
@@ -61,14 +97,14 @@ install_dependencies() {
     return 1
 }
 
-echo "⚠️ 请以 root 权限运行本脚本"
+echo "⚠️ 请以 root 权限运行 ${APP_TITLE}"
 
 # ========== 主菜单 ==========
 
 function show_menu() {
     clear
     echo "============================"
-    echo "欢迎使用armbian一键旁路由脚本"
+    echo "${APP_TITLE}"
     echo "本脚本提供以下功能："
     echo "----------------------------"
     echo "0）显示菜单"

@@ -1,6 +1,6 @@
-# Armbian 旁路由一键脚本 
+# Yeh Bypass Gateway
 
-此项目提供快捷脚本，用于在类Armbian系统中创建Docker macvlan网络，并配置宿主机与容器之间的macvlan bridge互通。
+此项目提供快捷脚本，用于在类 Armbian / NAS Linux 系统中创建 Docker macvlan 网络，并配置宿主机与容器之间的 macvlan bridge 互通。
 
 核心容器是mosdns和adguardhome， mosdns提供域名分流（分流后的外部域名采用FakeIP方案），adguardhome提供域名缓存。
 
@@ -46,19 +46,25 @@
 
 ## 🚀 使用方法
 
-### 1. 直接运行脚本
+### 1. 安装命令
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/perryyeh/armbian/main/install.sh)
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/perryyeh/yeh-bypass/main/install.sh) install
+```
+
+安装后直接运行：
+
+```bash
+sudo yehbp
 ```
 
 ### 2. 或克隆项目运行
 
 ```bash
-git clone https://github.com/perryyeh/armbian.git
-cd armbian
+git clone https://github.com/perryyeh/yeh-bypass.git
+cd yeh-bypass
 chmod +x install.sh
-./install.sh
+sudo ./install.sh
 ```
 
 ### 3. 安装步骤
@@ -122,7 +128,7 @@ Mac 侧：
 
 ## 🔧 开发备忘
 - Docker 容器名与安装目录同名（如 `/data/dockerapps/mosdns` → 容器名 `mosdns`）
-- 推送前先在测试环境验证：`git push perryyeh/armbian main`
+- 推送前先在测试环境验证：`git push perryyeh/yeh-bypass main`
 - 关联服务仓库：librespeed / adguardhome / mosdns / mihomo / ddnsgo / lucky
 
 ## 📜 License
