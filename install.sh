@@ -1,7 +1,7 @@
 #!/bin/bash
 
 APP_NAME="yehbp"
-APP_TITLE="Yeh Bypass Gateway"
+APP_TITLE="Yeh Bypass (Gateway)"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://github.com/perryyeh/yehbp/raw/refs/heads/main/install.sh"
 INSTALL_BIN="/usr/local/bin/${APP_NAME}"

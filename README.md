@@ -1,4 +1,4 @@
-# Yeh Bypass Gateway
+# Yeh Bypass (Gateway)
 
 自用一键旁路由脚本，提供从 DNS 缓存、域名分流、远程解析、代理接入，到在外回家入口的一整套网络方案。
 
