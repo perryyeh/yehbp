@@ -1773,7 +1773,37 @@ install_mosdns() {
         return 1
     fi
 
-    # 10) 写 .env（compose 读取）
+    # 10) 可选功能：默认关闭，安装时按需开启
+    local enable_rule_sync enable_candidate_auto
+
+    if [ -f "cron/cron.env" ]; then
+        read -r -p "是否每日自动更新 ip库 / 直连名单 / 代理名单？[y/N]: " enable_rule_sync
+        if [[ "$enable_rule_sync" =~ ^[Yy]$ ]]; then
+            sed -i 's/^MOSDNS_SYNC_RULES_ENABLED=.*/MOSDNS_SYNC_RULES_ENABLED=1/' cron/cron.env
+            echo "✅ 已开启每日自动更新规则名单"
+        else
+            sed -i 's/^MOSDNS_SYNC_RULES_ENABLED=.*/MOSDNS_SYNC_RULES_ENABLED=0/' cron/cron.env
+            echo "✅ 已关闭每日自动更新规则名单"
+        fi
+
+        read -r -p "是否开启日志 + 每小时统计不在名单内域名分流 + 每天自动合并并上报 my 名单？[y/N]: " enable_candidate_auto
+        if [[ "$enable_candidate_auto" =~ ^[Yy]$ ]]; then
+            sed -i 's/^MOSDNS_SYNC_CANDIDATES_ENABLED=.*/MOSDNS_SYNC_CANDIDATES_ENABLED=1/' cron/cron.env
+            sed -i 's/^MOSDNS_PROMOTE_ENABLED=.*/MOSDNS_PROMOTE_ENABLED=1/' cron/cron.env
+            sed -i 's/^[[:space:]]*level:[[:space:]]*.*/  level: info/' config.yaml
+            echo "✅ 已开启 not-in-list 日志统计与自动合并"
+        else
+            sed -i 's/^MOSDNS_SYNC_CANDIDATES_ENABLED=.*/MOSDNS_SYNC_CANDIDATES_ENABLED=0/' cron/cron.env
+            sed -i 's/^MOSDNS_PROMOTE_ENABLED=.*/MOSDNS_PROMOTE_ENABLED=0/' cron/cron.env
+            sed -i 's/^[[:space:]]*level:[[:space:]]*.*/  level: warn/' config.yaml
+            echo "✅ 已关闭 not-in-list 日志统计与自动合并"
+        fi
+    else
+        echo "❌ 未找到 ${WORK_DIR}/cron/cron.env"
+        return 1
+    fi
+
+    # 11) 写 .env（compose 读取）
     cat > .env <<EOF
 MACVLAN_NET=${SELECTED_MACVLAN}
 ipv4=${mosdns}
