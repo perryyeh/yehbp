@@ -68,14 +68,13 @@ sudo yehbp
 
 输入 `y` 才会升级；默认回车或输入 `n` 都不会升级。版本检查只读取仓库里的 `VERSION` 文件；确认升级后才会下载最新脚本并做语法检查。如果本机已有 `/usr/local/bin/yehbp`，会先备份为 `/usr/local/bin/yehbp.bak-时间戳`，再覆盖更新。
 
-### 2. 或克隆项目运行
+### 2. 删除 yehbp 命令
 
 ```bash
-git clone https://github.com/perryyeh/yehbp.git
-cd yehbp
-chmod +x install.sh
-sudo ./install.sh
+sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbp.bak-*
 ```
+
+这只会删除 `yehbp` 命令和升级备份，不会删除已安装的 Docker 容器、配置目录、macvlan、systemd 服务等。
 
 ### 3. 安装步骤
 
