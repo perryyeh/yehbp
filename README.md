@@ -51,8 +51,7 @@
 ### 1. 安装命令
 
 ```bash
-curl -fsSL https://github.com/perryyeh/yehbp/raw/refs/heads/main/install.sh -o /tmp/yehbp-install.sh
-sudo bash /tmp/yehbp-install.sh install
+curl -fsSL https://github.com/perryyeh/yehbp/raw/refs/heads/main/install.sh | sudo bash -s -- install
 ```
 
 安装后直接运行：
