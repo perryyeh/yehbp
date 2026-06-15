@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.14.3"
+APP_VERSION="2026.06.15.1"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://github.com/perryyeh/yehbp/raw/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://github.com/perryyeh/yehbp/raw/refs/heads/main/VERSION"
@@ -390,12 +390,23 @@ write_env_file() {
 SELECTED_DOCKERAPPS_DIR=""
 
 discover_dockerapps_dirs() {
-  # 仅扫描常见挂载点，避免全盘 find 过慢或产生大量权限噪音
+  # 仅扫描常见挂载点和当前用户家目录，避免全盘 find 过慢或产生大量权限噪音
   local search_roots=()
-  local root
+  local root existing duplicate
 
-  for root in /data /vol* /volume* /mnt /srv /opt; do
-    [ -d "$root" ] && search_roots+=("$root")
+  for root in /data /vol* /volume* /mnt /srv /opt "${HOME:-}" "/home/${SUDO_USER:-}"; do
+    [ -n "$root" ] && [ -d "$root" ] || continue
+
+    duplicate=0
+    for existing in ${search_roots[@]+"${search_roots[@]}"}; do
+      if [ "$existing" = "$root" ]; then
+        duplicate=1
+        break
+      fi
+    done
+    [ "$duplicate" -eq 1 ] && continue
+
+    search_roots+=("$root")
   done
 
   [ ${#search_roots[@]} -eq 0 ] && return 0
