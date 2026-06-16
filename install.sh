@@ -1173,7 +1173,7 @@ create_macvlan_network() {
 
   if [ -n "$suggest_gateway6" ]; then
     echo "检测到 IPv6 网关: $suggest_gateway6"
-    read -r -p "请输入 fd 开头的 IPv6 网关 (回车使用推荐，n 表示不开启): " gateway6
+    read -r -p "请输入 fd 开头的 IPv6 网关 (回车使用推荐 $suggest_gateway6，n 表示不开启): " gateway6
     case "$gateway6" in
       "") gateway6="$suggest_gateway6" ;;
       "n"|"N") gateway6="" ;;
