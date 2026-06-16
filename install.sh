@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.16.7"
+APP_VERSION="2026.06.16.8"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -31,9 +31,9 @@ fetch_remote_yehbp_version() {
     local url="${RAW_VERSION_URL}?t=$(date +%s)"
 
     if command -v curl >/dev/null 2>&1; then
-        curl -fsSL "$url" 2>/dev/null | tr -d '[:space:]'
+        curl --connect-timeout 3 --max-time 3 -fsSL "$url" 2>/dev/null | tr -d '[:space:]'
     elif command -v wget >/dev/null 2>&1; then
-        wget -qO- "$url" 2>/dev/null | tr -d '[:space:]'
+        wget --timeout=3 -qO- "$url" 2>/dev/null | tr -d '[:space:]'
     else
         return 1
     fi
