@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.17.01"
+APP_VERSION="2026.06.17.02"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -634,6 +634,19 @@ detect_mihomo_ip6() {
     fi
   done
 
+  echo ""
+}
+
+# ---- 自动探测 mihomo MAC 地址 ----
+detect_mihomo_mac() {
+  local ids mac
+  ids=$(docker ps --format '{{.ID}} {{.Names}}' | grep -Ei '(^|[ _-])(mihomo|clash-meta|clash)($|[ _-])' | awk '{print $1}')
+  for id in $ids; do
+    mac=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.MacAddress}} {{end}}' "$id" | awk '{print $1}')
+    if [ -n "$mac" ]; then
+      echo "$mac"; return
+    fi
+  done
   echo ""
 }
 
@@ -1516,19 +1529,23 @@ create_macvlan_bridge() {
     # —— 在写脚本之前：检测是否安装了 mihomo；若有则询问，否则询问是否指向其他 IP ——
     mihomo_ip=""
     mihomo_ip6=""
+    mihomo_mac=""
     FAKE_IP_GW=""
     FAKE_IP6_GW=""
+    MIHOMO_MAC=""
 
     # 1. 尝试探测 Mihomo IP
     if docker ps -a --format '{{.Names}}' | grep -qi 'mihomo'; then
       mihomo_ip="$(detect_mihomo_ip "$route4_cidr" "$network_info")"
       mihomo_ip6="$(detect_mihomo_ip6 "$network_info")"
+      mihomo_mac="$(detect_mihomo_mac)"
       if [ -n "$mihomo_ip" ] || [ -n "$mihomo_ip6" ]; then
-        echo "🔎 检测到 mihomo 相关容器，探测到 IP: ${mihomo_ip:-<无>} / IPv6: ${mihomo_ip6:-<无>}"
+        echo "🔎 检测到 mihomo 相关容器，探测到 IP: ${mihomo_ip:-<无>} / IPv6: ${mihomo_ip6:-<无>} / MAC: ${mihomo_mac:-<无>}"
         read -r -p "是否将 198.18.0.0/15 + fd00:6152:0:9::/64 路由指向 mihomo？(y/n，默认 n): " yn_mihomo
         if [[ "$yn_mihomo" =~ ^[Yy]$ ]]; then
           FAKE_IP_GW="$mihomo_ip"
           FAKE_IP6_GW="$mihomo_ip6"
+          MIHOMO_MAC="$mihomo_mac"
         fi
       fi
     fi
@@ -1564,6 +1581,7 @@ BRIDGE6_CIDR="$bridge6_cidr"
 FAKE_IP_GW="$FAKE_IP_GW"
 FAKE_IP6_GW="$FAKE_IP6_GW"
 MIHOMO_IP="$mihomo_ip"
+MIHOMO_MAC="$MIHOMO_MAC"
 
 # 1. 物理层清理与创建
 ip link del "$bridge_if" 2>/dev/null || true
@@ -1606,7 +1624,9 @@ if [ -n "\$FAKE_IP_GW" ]; then
 fi
 
 # 5.2 fd00:6152:0:9::/64（Fake-IP IPv6 / mihomo surge 兼容）
-if [ -n "\$FAKE_IP6_GW" ]; then
+# 放在子网路由之后，先加静态 NDP 再挂 via 路由，避免 macvlan bridge 重建后内核拒绝
+if [ -n "\$FAKE_IP6_GW" ] && [ -n "\$MIHOMO_MAC" ]; then
+  ip -6 neigh replace "\$FAKE_IP6_GW" lladdr "\$MIHOMO_MAC" dev "$bridge_if" nud permanent 2>/dev/null || true
   ip -6 route replace fd00:6152:0:9::/64 via "\$FAKE_IP6_GW" dev "$bridge_if" onlink 2>/dev/null || true
 fi
 
