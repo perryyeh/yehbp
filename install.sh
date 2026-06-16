@@ -1133,7 +1133,7 @@ create_macvlan_network() {
   auto_cidr="${gateway%.*}.0/${prefixlen}"
 
   echo "👉 已根据网关 $gateway 推算推荐子网：$auto_cidr"
-  read -r -p "请输入 macvlan IPv4 子网CIDR，或手动输入 (回车使用推荐 $auto_cidr): " cidr
+  read -r -p "请输入 macvlan IPv4 子网CIDR (回车使用推荐 $auto_cidr): " cidr
   [ -z "$cidr" ] && cidr="$auto_cidr"
 
   echo "⚠️ 提示：IPRange 应为 macvlan 专用网段（建议 /24 或更小），不要与 DHCP/静态地址重叠。"
@@ -1184,7 +1184,7 @@ create_macvlan_network() {
   else
     auto_cidr6="${suggest_cidr6:-$(ipv4_to_ipv6_prefix "$gateway")::/64}"
     echo "👉 已根据 IPv6 网关 $gateway6 推算推荐子网：$auto_cidr6"
-    read -r -p "请输入 IPv6 子网CIDR，或手动输入 (回车使用推荐 $auto_cidr6): " cidr6
+    read -r -p "请输入 IPv6 子网CIDR (回车使用推荐 $auto_cidr6): " cidr6
     [ -z "$cidr6" ] && cidr6="$auto_cidr6"
 
     echo "⚠️ 提示：IPv6 IPRange 建议 /64（不要与现网 RA/DHCPv6 冲突）。"
