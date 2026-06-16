@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.16.13"
+APP_VERSION="2026.06.16.14"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -1369,7 +1369,15 @@ create_macvlan_bridge() {
         base6_prefix="${base6_addr%%::*}" # fd10:0:20    或 fd10:0:20:1
 
         bridge6_cidr="${base6_prefix}::eeee/64"
-        route6_pref="${base6_prefix}::/64"
+
+        # IPv6 路由：从 IPv4 IPRange 推导 /112（只覆盖容器段），避免劫持网关
+        if [ -n "$iprange4_cidr" ]; then
+            # 提取 IPv4 第三段 → IPv6 第七组：10.86.11.0/24 → 11 → fd10:86:10::11:0/112
+            v4_third=$(echo "$iprange4_cidr" | cut -d'/' -f1 | cut -d'.' -f3)
+            route6_pref="${base6_prefix}::${v4_third}:0/112"
+        else
+            route6_pref="${base6_prefix}::/64"
+        fi
         echo "  计划 bridge IPv6: $bridge6_cidr"
     fi
 
