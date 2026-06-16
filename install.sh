@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.16.4"
+APP_VERSION="2026.06.16.5"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -228,6 +228,7 @@ function show_menu() {
     clear
     echo "============================"
     echo "${APP_TITLE}"
+    echo "版本：${APP_VERSION}"
     echo "本脚本提供以下功能："
     echo "----------------------------"
     echo "0）显示菜单"
