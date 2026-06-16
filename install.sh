@@ -2,10 +2,10 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.16.3"
+APP_VERSION="2026.06.16.4"
 REPO_URL="https://github.com/perryyeh/yehbp"
-RAW_INSTALL_URL="https://github.com/perryyeh/yehbp/raw/refs/heads/main/install.sh"
-RAW_VERSION_URL="https://github.com/perryyeh/yehbp/raw/refs/heads/main/VERSION"
+RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
+RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
 INSTALL_BIN="/usr/local/bin/${APP_NAME}"
 
 download_yehbp_script() {
