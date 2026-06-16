@@ -1132,7 +1132,7 @@ create_macvlan_network() {
   prefixlen="${suggest_prefixlen:-24}"
   auto_cidr="${gateway%.*}.0/${prefixlen}"
 
-  echo "👉 已根据网关 $gateway 推算推荐子网：$auto_cidr"
+  echo "👉 已根据 IPv4 网关 $gateway 推算推荐子网：$auto_cidr"
   read -r -p "请输入 macvlan IPv4 子网CIDR (回车使用推荐 $auto_cidr): " cidr
   [ -z "$cidr" ] && cidr="$auto_cidr"
 
