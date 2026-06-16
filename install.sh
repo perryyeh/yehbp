@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.16.6"
+APP_VERSION="2026.06.16.7"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -1781,8 +1781,10 @@ install_adguardhome() {
     echo "  MAC        : ${adguardmac}"
     echo "  上游 mosdns : ${mosdns}"
     echo "  容器名称   : ${CONTAINER_NAME}"
+    echo "  管理地址   : http://${adguard}/"
     if [ "$USE_IPV6" -eq 1 ]; then
         echo "  IPv6       : ${adguard6}"
+        echo "  IPv6 管理  : http://[${adguard6}]/"
     else
         echo "  IPv6       : 未启用（所选 macvlan 未开启 IPv6 或无 IPv6 子网）"
     fi
@@ -2539,6 +2541,17 @@ install_portainer() {
     mkdir -p "${dockerapps}/portainer" || return 1
     docker run -d -p 9443:9443 --name=portainer --restart=always \
     -v /var/run/docker.sock:/var/run/docker.sock -v "${dockerapps}/portainer:/data" portainer/portainer-ce:lts
+
+    local host_ip
+    host_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')"
+    [ -z "$host_ip" ] && host_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    if [ -n "$host_ip" ]; then
+        echo "✅ Portainer 已安装"
+        echo "  访问地址：https://${host_ip}:9443"
+    else
+        echo "✅ Portainer 已安装"
+        echo "  访问地址：https://<宿主机IP>:9443"
+    fi
 }
 
 # ========== 删除 docker macvlan 网络 ==========
