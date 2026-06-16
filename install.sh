@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.17.02"
+APP_VERSION="2026.06.17.03"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -1605,15 +1605,15 @@ if [ -n "\$FAKE_IP_GW" ]; then
   ip route replace 198.18.0.0/15 via "\$FAKE_IP_GW" dev "$bridge_if" onlink 2>/dev/null || true
 fi
 
-# 5.2 fd00:6152:0:9::/64（Fake-IP IPv6 / mihomo surge 兼容）
-# 放在子网路由之后，避免 macvlan bridge 重建后内核拒绝 via 路由
-if [ -n "\$FAKE_IP6_GW" ]; then
-  ip -6 route replace fd00:6152:0:9::/64 via "\$FAKE_IP6_GW" dev "$bridge_if" onlink 2>/dev/null || true
-fi
-
 # 6. IPv6 路由：用低 metric 压过 RA 路由，避免走物理口 hairpin 不通
 if [ -n "\$ROUTE6_PREF" ]; then
   ip -6 route replace "\$ROUTE6_PREF" dev "$bridge_if" metric 10
+fi
+
+# 6.1 fd00:6152:0:9::/64（Fake-IP IPv6 / mihomo surge 兼容）
+# 放在子网路由之后，避免 macvlan bridge 重建后内核拒绝 via 路由
+if [ -n "\$FAKE_IP6_GW" ]; then
+  ip -6 route replace fd00:6152:0:9::/64 via "\$FAKE_IP6_GW" dev "$bridge_if" onlink 2>/dev/null || true
 fi
 
 # 7. 内核参数调优
