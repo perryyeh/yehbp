@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.16.2"
+APP_VERSION="2026.06.16.3"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://github.com/perryyeh/yehbp/raw/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://github.com/perryyeh/yehbp/raw/refs/heads/main/VERSION"
@@ -1173,13 +1173,13 @@ create_macvlan_network() {
 
   if [ -n "$suggest_gateway6" ]; then
     echo "检测到 IPv6 网关: $suggest_gateway6"
-    read -r -p "请输入 fd 开头的 IPv6 网关 (回车使用推荐 $suggest_gateway6，n 表示不开启): " gateway6
+    read -r -p "请输入 IPv6 网关 (回车使用推荐 $suggest_gateway6，输入n 表示不开启): " gateway6
     case "$gateway6" in
       "") gateway6="$suggest_gateway6" ;;
       "n"|"N") gateway6="" ;;
     esac
   else
-    read -r -p "请输入 fd 开头的 IPv6 网关 (n 表示不开启): " gateway6
+    read -r -p "请输入 IPv6 网关 (例如 fd10:168:1::1，输入n表示不启用IPv6): " gateway6
     case "$gateway6" in
       "n"|"N") gateway6="" ;;
     esac
