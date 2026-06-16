@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.17.03"
+APP_VERSION="2026.06.17.04"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -1524,8 +1524,17 @@ create_macvlan_bridge() {
       mihomo_ip="$(detect_mihomo_ip "$route4_cidr" "$network_info")"
       mihomo_ip6="$(detect_mihomo_ip6 "$network_info")"
       if [ -n "$mihomo_ip" ] || [ -n "$mihomo_ip6" ]; then
+        route_prompt=""
+        [ -n "$mihomo_ip" ] && route_prompt="198.18.0.0/15"
+        if [ -n "$mihomo_ip6" ]; then
+          if [ -n "$route_prompt" ]; then
+            route_prompt="$route_prompt + fd00:6152:0:9::/64"
+          else
+            route_prompt="fd00:6152:0:9::/64"
+          fi
+        fi
         echo "🔎 检测到 mihomo 相关容器，探测到 IP: ${mihomo_ip:-<无>} / IPv6: ${mihomo_ip6:-<无>}"
-        read -r -p "是否将 198.18.0.0/15 + fd00:6152:0:9::/64 路由指向 mihomo？(y/n，默认 n): " yn_mihomo
+        read -r -p "是否将 ${route_prompt} 路由指向 mihomo？(y/n，默认 n): " yn_mihomo
         if [[ "$yn_mihomo" =~ ^[Yy]$ ]]; then
           FAKE_IP_GW="$mihomo_ip"
           FAKE_IP6_GW="$mihomo_ip6"
