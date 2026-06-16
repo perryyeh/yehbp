@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.16.12"
+APP_VERSION="2026.06.16.13"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -1534,9 +1534,9 @@ if [ -n "\$FAKE_IP_GW" ]; then
   ip route replace 198.18.0.0/15 via "\$FAKE_IP_GW" dev "$bridge_if" onlink 2>/dev/null || true
 fi
 
-# 6. IPv6 路由：不建议用 metric
+# 6. IPv6 路由：用低 metric 压过 RA 路由，避免走物理口 hairpin 不通
 if [ -n "\$ROUTE6_PREF" ]; then
-  ip -6 route replace "\$ROUTE6_PREF" dev "$bridge_if"
+  ip -6 route replace "\$ROUTE6_PREF" dev "$bridge_if" metric 10
 fi
 
 # 7. 内核参数调优
