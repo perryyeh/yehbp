@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.16.14"
+APP_VERSION="2026.06.16.15"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -606,6 +606,34 @@ detect_mihomo_ip() {
   [ -n "$gw4" ] && { echo "$gw4"; return; }
 
   # 5) 无可用
+  echo ""
+}
+
+# ---- 自动探测 mihomo IPv6 地址（返回一个 IPv6 或空串）----
+detect_mihomo_ip6() {
+  local _netinfo="$1"
+
+  # 1) 环境变量优先
+  if [ -n "$MIHOMO6" ]; then echo "$MIHOMO6"; return; fi
+  if [ -n "$mihomo6" ]; then echo "$mihomo6"; return; fi
+
+  # 2) systemd 环境文件
+  if [ -f /etc/default/macvlan_env ]; then
+    . /etc/default/macvlan_env
+    if [ -n "$MIHOMO6" ]; then echo "$MIHOMO6"; return; fi
+    if [ -n "$mihomo6" ]; then echo "$mihomo6"; return; fi
+  fi
+
+  # 3) Docker 容器：取 mihomo 容器的 GlobalIPv6Address
+  local ids ip6 best=""
+  ids=$(docker ps --format '{{.ID}} {{.Names}}' | grep -Ei '(^|[ _-])(mihomo|clash-meta|clash)($|[ _-])' | awk '{print $1}')
+  for id in $ids; do
+    ip6=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.GlobalIPv6Address}} {{end}}' "$id" | awk '{print $1}')
+    if [ -n "$ip6" ]; then
+      echo "$ip6"; return
+    fi
+  done
+
   echo ""
 }
 
@@ -1462,16 +1490,20 @@ create_macvlan_bridge() {
 
     # —— 在写脚本之前：检测是否安装了 mihomo；若有则询问，否则询问是否指向其他 IP ——
     mihomo_ip=""
+    mihomo_ip6=""
     FAKE_IP_GW=""
+    FAKE_IP6_GW=""
 
     # 1. 尝试探测 Mihomo IP
     if docker ps -a --format '{{.Names}}' | grep -qi 'mihomo'; then
       mihomo_ip="$(detect_mihomo_ip "$route4_cidr" "$network_info")"
-      if [ -n "$mihomo_ip" ]; then
-        echo "🔎 检测到 mihomo 相关容器，探测到 IP: $mihomo_ip"
-        read -r -p "是否将 198.18.0.0/15 路由指向 mihomo ($mihomo_ip)？(y/n，默认 n): " yn_mihomo
+      mihomo_ip6="$(detect_mihomo_ip6 "$network_info")"
+      if [ -n "$mihomo_ip" ] || [ -n "$mihomo_ip6" ]; then
+        echo "🔎 检测到 mihomo 相关容器，探测到 IP: ${mihomo_ip:-<无>} / IPv6: ${mihomo_ip6:-<无>}"
+        read -r -p "是否将 198.18.0.0/15 + fd00:6152:0:9::/64 路由指向 mihomo？(y/n，默认 n): " yn_mihomo
         if [[ "$yn_mihomo" =~ ^[Yy]$ ]]; then
           FAKE_IP_GW="$mihomo_ip"
+          FAKE_IP6_GW="$mihomo_ip6"
         fi
       fi
     fi
@@ -1480,6 +1512,11 @@ create_macvlan_bridge() {
       echo "✅ 将写入路由规则: 198.18.0.0/15 via $FAKE_IP_GW"
     else
       echo "ℹ️ 不写入 198.18.0.0/15 的静态路由。"
+    fi
+    if [ -n "$FAKE_IP6_GW" ]; then
+      echo "✅ 将写入路由规则: fd00:6152:0:9::/64 via $FAKE_IP6_GW"
+    else
+      echo "ℹ️ 不写入 fd00:6152:0:9::/64 的静态路由。"
     fi
 
     read -p "确认创建/更新以上 bridge？(y/n): " yn
@@ -1500,6 +1537,7 @@ IPRANGE4_CIDR="$iprange4_cidr"
 ROUTE6_PREF="$route6_pref"
 BRIDGE6_CIDR="$bridge6_cidr"
 FAKE_IP_GW="$FAKE_IP_GW"
+FAKE_IP6_GW="$FAKE_IP6_GW"
 MIHOMO_IP="$mihomo_ip"
 
 # 1. 物理层清理与创建
@@ -1540,6 +1578,11 @@ fi
 #
 if [ -n "\$FAKE_IP_GW" ]; then
   ip route replace 198.18.0.0/15 via "\$FAKE_IP_GW" dev "$bridge_if" onlink 2>/dev/null || true
+fi
+
+# 5.2 fd00:6152:0:9::/64（Fake-IP IPv6 / mihomo surge 兼容）
+if [ -n "\$FAKE_IP6_GW" ]; then
+  ip -6 route replace fd00:6152:0:9::/64 via "\$FAKE_IP6_GW" dev "$bridge_if" onlink 2>/dev/null || true
 fi
 
 # 6. IPv6 路由：用低 metric 压过 RA 路由，避免走物理口 hairpin 不通
