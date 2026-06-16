@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.16.11"
+APP_VERSION="2026.06.16.12"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -145,6 +145,8 @@ check_yehbp_update() {
 case "${1:-}" in
     install|--install)
         install_yehbp_cli
+        # Consume remaining stdin so curl doesn't get SIGPIPE
+        cat >/dev/null 2>&1
         exit $?
         ;;
     "")
@@ -154,6 +156,8 @@ case "${1:-}" in
             case "$(basename "$0")" in
                 bash|sh|-bash|-sh)
                     install_yehbp_cli
+                    # Consume remaining stdin so curl doesn't get SIGPIPE
+                    cat >/dev/null 2>&1
                     exit $?
                     ;;
             esac
