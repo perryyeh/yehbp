@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.16.10"
+APP_VERSION="2026.06.16.11"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -12,14 +12,16 @@ download_yehbp_script() {
     local dst="$1"
     local url="${RAW_INSTALL_URL}?t=$(date +%s)"
 
+    echo "ℹ️ 下载超时限制 30s，超时则本次不更新。"
+
     if command -v curl >/dev/null 2>&1; then
         curl --connect-timeout 10 --max-time 30 -fsSL "$url" -o "$dst" || {
-            echo "❌ 30s 下载失败，本次不更新。"
+            echo "❌ 下载失败，本次不更新。"
             return 1
         }
     elif command -v wget >/dev/null 2>&1; then
         wget --timeout=30 -qO "$dst" "$url" || {
-            echo "❌ 30s 下载失败，本次不更新。"
+            echo "❌ 下载失败，本次不更新。"
             return 1
         }
     else
