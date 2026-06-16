@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.15.1"
+APP_VERSION="2026.06.16.1"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://github.com/perryyeh/yehbp/raw/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://github.com/perryyeh/yehbp/raw/refs/heads/main/VERSION"
@@ -1132,12 +1132,12 @@ create_macvlan_network() {
   prefixlen="${suggest_prefixlen:-24}"
   auto_cidr="${gateway%.*}.0/${prefixlen}"
 
-  echo "👉 已根据网关 $gateway 推算 IPv4 子网：$auto_cidr"
-  echo "⚠️ 提示：IPRange 应为 macvlan 专用网段（建议 /24 或更小），不要与 DHCP/静态地址重叠。"
-  read -r -p "请输入 macvlan IPv4 子网CIDR (回车使用推荐 $auto_cidr): " cidr
+  echo "👉 已根据网关 $gateway 推算推荐子网：$auto_cidr"
+  read -r -p "请输入 macvlan IPv4 子网CIDR，或手动输入 (回车使用推荐 $auto_cidr): " cidr
   [ -z "$cidr" ] && cidr="$auto_cidr"
 
-  read -r -p "请输入 macvlan IPv4 range, 回车使用 $cidr: " iprange
+  echo "⚠️ 提示：IPRange 应为 macvlan 专用网段（建议 /24 或更小），不要与 DHCP/静态地址重叠。"
+  read -r -p "请输入 macvlan IPv4 range (回车使用 $cidr): " iprange
   [ -z "$iprange" ] && iprange="$cidr"
 
   iprangev4="$(echo "$iprange" | cut -d'/' -f1)"
@@ -1183,12 +1183,12 @@ create_macvlan_network() {
     cidr6=""; iprange6=""; subnet6=""; iprangev6_prefix=""
   else
     auto_cidr6="${suggest_cidr6:-$(ipv4_to_ipv6_prefix "$gateway")::/64}"
-    echo "👉 已根据 IPv6 网关 $gateway6 推算 IPv6 子网：$auto_cidr6"
-    echo "⚠️ 提示：IPv6 IPRange 建议 /64（不要与现网 RA/DHCPv6 冲突）。"
-    read -r -p "请输入 IPv6 子网CIDR (回车使用推荐 $auto_cidr6): " cidr6
+    echo "👉 已根据 IPv6 网关 $gateway6 推算推荐子网：$auto_cidr6"
+    read -r -p "请输入 IPv6 子网CIDR，或手动输入 (回车使用推荐 $auto_cidr6): " cidr6
     [ -z "$cidr6" ] && cidr6="$auto_cidr6"
 
-    read -r -p "请输入 macvlan IPv6 range, 回车使用 $cidr6: " iprange6
+    echo "⚠️ 提示：IPv6 IPRange 建议 /64（不要与现网 RA/DHCPv6 冲突）。"
+    read -r -p "请输入 macvlan IPv6 range (回车使用 $cidr6): " iprange6
     [ -z "$iprange6" ] && iprange6="$cidr6"
 
     subnet6="$(echo "$iprange6" | cut -d'/' -f2)"
