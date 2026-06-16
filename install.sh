@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.16.5"
+APP_VERSION="2026.06.16.6"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -1218,11 +1218,11 @@ create_macvlan_network() {
   [ -n "$vlan_id" ] && echo "VLAN ID     : $vlan_id"
   echo "Parent 接口 : $networkcard"
   echo "IPv4 gateway: $gateway"
-  echo "IPv4 subnet : $cidr"
+  echo "IPv4 CIDR   : $cidr"
   echo "IPv4 range  : $iprange"
   if [ -n "$gateway6" ]; then
     echo "IPv6 gateway: $gateway6"
-    echo "IPv6 subnet : $cidr6"
+    echo "IPv6 CIDR   : $cidr6"
     echo "IPv6 range  : $iprange6"
   else
     echo "IPv6        : 不启用"
@@ -1302,7 +1302,7 @@ create_macvlan_bridge() {
         echo "❌ 无法从 $macvlan_name 中解析 IPv4 Subnet，请确认该网络配置了 IPv4。"
         return 1
     fi
-    echo "🌐 IPv4 子网(Subnet): $subnet4_cidr"
+    echo "🌐 IPv4 子网CIDR: $subnet4_cidr"
 
     iprange4_cidr=$(echo "$network_info" | jq -r --arg s "$subnet4_cidr" '
       .[0].IPAM.Config[]
@@ -1338,7 +1338,7 @@ create_macvlan_bridge() {
     route6_pref=""
 
     if [ -n "$subnet6_cidr" ] && [ "$subnet6_cidr" != "null" ]; then
-        echo "🌐 IPv6 子网(Subnet): $subnet6_cidr"
+        echo "🌐 IPv6 子网CIDR: $subnet6_cidr"
 
         iprange6_cidr=$(echo "$network_info" | jq -r --arg s "$subnet6_cidr" '
           .[0].IPAM.Config[]
