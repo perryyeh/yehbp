@@ -664,6 +664,31 @@ remove_compose_ipv6_fields() {
     N
     /com\.docker\.network\.endpoint\.sysctls: net\.ipv6\.conf\.IFNAME\.accept_ra_rt_info_max_plen=128/d
   }' "$compose_file"
+
+  # 删除 IPv6 转发 sysctl；内核禁用 IPv6 时该项会让容器创建失败。保留 IPv4 转发。
+  sed -i '/net\.ipv6\.conf\.all\.forwarding=1/d' "$compose_file"
+}
+
+remove_config_ipv6_fields() {
+  local config_file="${1:-config.yaml}"
+  [ -f "$config_file" ] || return 0
+
+  # 无 IPv6 场景：剥掉 mihomo config 的 IPv6 项，避免 TUN 分配 inet6 地址、
+  # 以及生成无法路由的 IPv6 fake-ip。
+  # 1) 删除 tun.inet6-address: 头及其后的缩进列表项
+  # 2) 删除 dns.fake-ip-range6 行
+  awk '
+    skip_inet6 {
+      if ($0 ~ /^[[:space:]]+-/) next
+      skip_inet6 = 0
+    }
+    /^[[:space:]]*inet6-address:[[:space:]]*$/ { skip_inet6 = 1; next }
+    /^[[:space:]]*fake-ip-range6:/ { next }
+    { print }
+  ' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
+
+  # 3) dns.ipv6: true -> false，避免解析返回无法路由的 AAAA
+  sed -i 's/^\([[:space:]]*\)ipv6:[[:space:]]*true/\1ipv6: false/' "$config_file"
 }
 
 prompt_ipv4_last_octet() {
@@ -2227,9 +2252,10 @@ install_mihomo() {
             return 1
         }
 
-        # 无 IPv6 场景：自动删除 compose 中的 ipv6_address 配置，避免启动报错
+        # 无 IPv6 场景：自动删除 compose/config 中的 IPv6 配置，避免启动报错
         if [ "$USE_IPV6" -eq 0 ]; then
             remove_compose_ipv6_fields docker-compose.yml
+            remove_config_ipv6_fields config.yaml
         fi
     else
         rm -f "$WORK_DIR/.env"
