@@ -116,20 +116,19 @@ Mac 侧：
 | 4  | ❌ | ✅ | ❌        | IPv6入站可做但不推荐，视作行5考虑                                                                            |
 | 5  | ❌ | ❌ | ❌        | 选relay/tunnel方案，比如cloudflare tunnel，frp，tailscale什么的                                           |
 
-### 5.其他镜像
-
-##### mihomo：解决代理和在外回家入站，入站统一收口到mihomo的ipv4+ipv6
-##### ddnsgo：和mihomo共用ipv4+ipv6，解决域名更新问题
-##### lucky：和mihomo共用ipv4+ipv6，解决ipv4打洞问题
 ## 📌 注意事项
 - 默认使用ipv4计算容器的mac地址，mac地址格式类似02:*:86
 - 默认使用ipv4计算ipv6 ula地址（⚠️这不符合RFC4193，想合规可手工输入合规的ipv6 ula），生成fd10::/64（对应10.0.0.0/8）、fd17::/64（对应172.16.0.0/12）、fd19::/64（对应192.168.0.0/16）作为 IPv6 网段，如不默认则一定要手工输入ipv6 ula
 - 安装macvlan bridge错误请回滚操作，以免流量死循环导致无法进入而重新刷机
 
 ## 📦 依赖：
-- 脚本会自动安装依赖的命令： ipcalc curl jq
-- https://github.com/perryyeh/mosdns
+- 脚本会自动安装依赖的命令： ipcalc curl jq tar
+- https://github.com/perryyeh/librespeed
 - https://github.com/perryyeh/adguardhome
+- https://github.com/perryyeh/mosdns
+- https://github.com/perryyeh/mihomo
+- https://github.com/perryyeh/ddnsgo
+- https://github.com/perryyeh/lucky
 
 ## 📚 参考文献：
 - https://github.com/IrineSistiana/mosdns
