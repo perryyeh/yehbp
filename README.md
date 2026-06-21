@@ -67,7 +67,7 @@ sudo yehbp
 是否现在升级？[y/N]:
 ```
 
-输入 `y` 才会升级；默认回车或输入 `n` 都不会升级。版本检查只读取仓库里的 `VERSION` 文件；只有远程版本严格高于当前版本才会提示升级，确认升级后才会下载最新脚本并做语法检查，然后覆盖 `/usr/local/bin/yehbp`，默认不创建 `.bak-*` 备份。
+输入 `y` 才会升级；默认回车或输入 `n` 都不会升级。版本检查只读取仓库里的 `VERSION` 文件；只有远程版本严格高于当前版本才会提示升级，确认升级后才会下载最新脚本并做语法检查，然后覆盖当前 `yehbp` 命令。
 
 ### 2. 删除 yehbp 命令
 
@@ -134,11 +134,6 @@ Mac 侧：
 ## 📚 参考文献：
 - https://github.com/IrineSistiana/mosdns
 - https://github.com/AdguardTeam/AdGuardHome
-
-## 🔧 开发备忘
-- Docker 容器名与安装目录同名（如 `/data/dockerapps/mosdns` → 容器名 `mosdns`）
-- 推送前先在测试环境验证：`git push perryyeh/yehbp main`
-- 关联服务仓库：librespeed / adguardhome / mosdns / mihomo / ddnsgo / lucky
 
 ## 📜 License
 MIT License © 2026
