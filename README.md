@@ -100,6 +100,7 @@ sudo rm -f /usr/local/bin/yehbp.bak-*
 菜单 `96` 可安装 Dockcheck 自动更新组件：
 
 - 选择 `dockerapps` 目录后，组件会安装到 `<dockerapps>/_auto_update`。
+- Dockcheck 脚本优先从上游 [mag37/dockcheck](https://github.com/mag37/dockcheck) 下载；如上游下载失败，则使用 yehbp 仓库内置副本。
 - 可设置新镜像发布后延迟 N 天再更新。
 - 可选择更新后自动清理 dangling images。
 - 可选择是否启用每日 systemd timer。
@@ -154,9 +155,9 @@ Mac 侧：
 |---|---|
 | 基础脚本依赖 | `ipcalc`, `curl`, `jq`, `tar` |
 | Docker 功能依赖 | `docker`, `docker compose` |
-| Dockcheck 自动更新依赖 | `flock`, `python3`, `systemctl`, `regctl` |
+| Dockcheck 自动更新依赖 | [mag37/dockcheck](https://github.com/mag37/dockcheck), `flock`, `python3`, `systemctl`, `regctl` |
 
-其中 `regctl` 会在安装 Dockcheck 自动更新时下载到 `_auto_update/bin`。
+其中 Dockcheck 默认从上游 `mag37/dockcheck` 获取；yehbp 仓库保留一份 `assets/docker-auto-update/dockcheck.sh` 作为 fallback。`regctl` 会在安装 Dockcheck 自动更新时下载到 `_auto_update/bin`。
 
 不同 NAS / Linux 发行版自带命令差异较大，安装前建议先确认基础依赖和 Docker Compose 是否可用。
 
@@ -166,6 +167,7 @@ Mac 侧：
 - https://github.com/perryyeh/mihomo
 - https://github.com/perryyeh/ddnsgo
 - https://github.com/perryyeh/lucky
+- https://github.com/mag37/dockcheck
 
 ## 📚 参考文献：
 - https://github.com/IrineSistiana/mosdns

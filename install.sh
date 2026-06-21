@@ -2,11 +2,12 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.21.05"
+APP_VERSION="2026.06.21.06"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
 RAW_ASSET_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main"
+DOCKCHECK_URL="https://raw.githubusercontent.com/mag37/dockcheck/main/dockcheck.sh"
 INSTALL_BIN="/usr/local/bin/${APP_NAME}"
 
 download_yehbp_script() {
@@ -3047,10 +3048,11 @@ install_dockcheck_auto_update() {
     mkdir -p "$root_dir" "$base_dir/bin" "$log_dir" || return 1
 
     echo "📁 安装目录：$base_dir"
-    echo "⬇️ 下载 Dockcheck..."
-    curl --connect-timeout 10 --max-time 60 -fsSL \
-        https://raw.githubusercontent.com/mag37/dockcheck/main/dockcheck.sh \
-        -o "$base_dir/dockcheck.sh" || return 1
+    echo "⬇️ 下载 Dockcheck（优先上游 mag37/dockcheck）..."
+    if ! curl --connect-timeout 10 --max-time 60 -fsSL "$DOCKCHECK_URL" -o "$base_dir/dockcheck.sh"; then
+        echo "⚠️ 上游 Dockcheck 下载失败，改用 yehbp 内置副本。"
+        download_yehbp_asset "assets/docker-auto-update/dockcheck.sh" "$base_dir/dockcheck.sh" || return 1
+    fi
     chmod 0755 "$base_dir/dockcheck.sh"
     bash -n "$base_dir/dockcheck.sh" || return 1
 
