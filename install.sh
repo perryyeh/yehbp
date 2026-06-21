@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.17.09"
+APP_VERSION="2026.06.17.10"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -336,10 +336,9 @@ function show_menu() {
     echo "72) 优化journald日志"
     echo "90）创建macvlan bridge"
     echo "91）清理macvlan bridge"
-    echo "95）清理 Dockcheck Compose 自动更新"
     echo "96）安装 Dockcheck Compose 自动更新"
-    echo "97）安装watchtower自动更新"
-    echo "98）强制使用watchtower更新一次镜像"
+    echo "97）清理 Dockcheck Compose 自动更新"
+    echo "98）立即执行 Dockcheck 检查/更新一次"
     echo "99）退出"
     echo "============================"
 }
@@ -3149,48 +3148,58 @@ install_dockcheck_auto_update() {
     fi
 }
 
-install_watchtower() {
-    echo "🔧 安装并启动常驻 watchtower..."
 
-    # 检查并删除旧容器（不管状态）
-    if docker ps -a --format '{{.Names}}' | grep -q '^watchtower$'; then
-        echo "🗑️ 发现旧的 watchtower 容器，强制删除..."
-        docker rm -f watchtower >/dev/null 2>&1 || true
+run_dockcheck_auto_update_once() {
+    echo "🚀 立即执行 Dockcheck Compose 检查/更新"
+
+    if [ "${EUID:-$(id -u)}" -ne 0 ]; then
+        echo "❌ 需要 root 权限，请使用 sudo 运行。"
+        return 1
     fi
 
-    # 拉最新镜像
-    echo "📦 拉取最新 watchtower 镜像..."
-    docker pull containrrr/watchtower:latest
+    local root_dir base_dir mode rc confirm
+    select_dockerapps_dir "Dockcheck Compose 手动执行"
+    rc=$?
+    case "$rc" in
+        0) ;;
+        2) echo "✅ 已退出 Dockcheck Compose 手动执行。"; return 0 ;;
+        *) return 1 ;;
+    esac
 
-    API=$(docker version --format '{{.Server.APIVersion}}')
+    root_dir="$SELECTED_DOCKERAPPS_DIR"
+    base_dir="${root_dir%/}/_auto_update"
 
-    docker run -d \
-      --name watchtower \
-      --network host \
-      --restart=always \
-      -e DOCKER_API_VERSION="$API" \
-      -e TZ="Asia/Shanghai" \
-      -v /var/run/docker.sock:/var/run/docker.sock \
-      containrrr/watchtower:latest \
-      --cleanup \
-      --include-restarting \
-      --revive-stopped
+    if [ ! -x "$base_dir/docker-auto-update.sh" ]; then
+        echo "❌ 未找到可执行脚本：$base_dir/docker-auto-update.sh"
+        echo "👉 请先执行 96 安装 Dockcheck Compose 自动更新。"
+        return 1
+    fi
 
-    echo "✅ watchtower 已常驻运行"
-}
-
-run_watchtower_once() {
-    echo "🔧 正在执行 watchtower --run-once 更新所有容器（排除 watchtower 自身）..."
-    API=$(docker version --format '{{.Server.APIVersion}}')   # 预期=1.52
-    docker run --rm \
-        -e DOCKER_API_VERSION="$API" \
-        -v /var/run/docker.sock:/var/run/docker.sock \
-        containrrr/watchtower:latest \
-        --run-once \
-        --cleanup \
-        --include-stopped \
-        --disable-containers watchtower
-    echo "✅ watchtower run-once 更新完成"
+    echo "安装目录：$base_dir"
+    echo "1）只检查，不更新"
+    echo "2）检查并更新一次"
+    read -r -p "请选择 [1/2，回车取消]: " mode
+    case "$mode" in
+        1)
+            "$base_dir/docker-auto-update.sh" --check-only
+            ;;
+        2)
+            read -r -p "确认立即更新有新镜像的 Compose 容器？[y/N]: " confirm
+            if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+                echo "ℹ️ 已取消更新。"
+                return 0
+            fi
+            "$base_dir/docker-auto-update.sh"
+            ;;
+        "")
+            echo "ℹ️ 已取消。"
+            return 0
+            ;;
+        *)
+            echo "❌ 无效选择：$mode"
+            return 1
+            ;;
+    esac
 }
 
 # =====================
@@ -3589,10 +3598,9 @@ while true; do
         72) optimize_journald_to_volatile ;;
         90) create_macvlan_bridge ;;
         91) clean_macvlan_bridge ;;
-        95) cleanup_dockcheck_auto_update ;;
         96) install_dockcheck_auto_update ;;
-        97) install_watchtower ;;
-        98) run_watchtower_once ;;
+        97) cleanup_dockcheck_auto_update ;;
+        98) run_dockcheck_auto_update_once ;;
         99) echo "退出脚本。"; exit 0 ;;
         *) echo "无效选项，请重新输入。" ;;
     esac
