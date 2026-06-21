@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.21.12"
+APP_VERSION="2026.06.21.13"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -3237,7 +3237,7 @@ run_dockcheck_auto_update_once() {
     read -r -p "请选择 [1/2，回车取消]: " mode
     case "$mode" in
         1)
-            "$base_dir/docker-auto-update.sh" --check-only
+            "$base_dir/docker-auto-update.sh" --check-only --fix-mac-interactive
             ;;
         2)
             read -r -p "确认立即更新有新镜像的 Docker 容器？[y/N]: " confirm
@@ -3245,7 +3245,7 @@ run_dockcheck_auto_update_once() {
                 echo "ℹ️ 已取消更新。"
                 return 0
             fi
-            "$base_dir/docker-auto-update.sh" --ignore-delay
+            "$base_dir/docker-auto-update.sh" --ignore-delay --fix-mac-interactive
             ;;
         "")
             echo "ℹ️ 已取消。"

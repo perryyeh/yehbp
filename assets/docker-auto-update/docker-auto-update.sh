@@ -52,16 +52,71 @@ run_with_heartbeat() {
   return "$rc"
 }
 
+recreate_compose_container() {
+  local cname="$1"
+  local project service workdir files file
+  local -a compose_files fargs=()
+
+  project="$(docker inspect "$cname" --format '{{index .Config.Labels "com.docker.compose.project"}}' 2>/dev/null || true)"
+  service="$(docker inspect "$cname" --format '{{index .Config.Labels "com.docker.compose.service"}}' 2>/dev/null || true)"
+  workdir="$(docker inspect "$cname" --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' 2>/dev/null || true)"
+  files="$(docker inspect "$cname" --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}' 2>/dev/null || true)"
+
+  if [ -z "$project" ] || [ -z "$service" ] || [ -z "$workdir" ] || [ -z "$files" ]; then
+    echo "❌ 无法重建 $cname：缺少 compose 标签。"
+    return 1
+  fi
+
+  IFS=',' read -r -a compose_files <<< "$files"
+  for file in "${compose_files[@]}"; do
+    fargs+=("-f" "$file")
+  done
+
+  echo "🔁 重建 $cname，恢复 compose 中固定的 MAC 地址..."
+  (cd "$workdir" && docker compose -p "$project" "${fargs[@]}" up -d --force-recreate "$service")
+}
+
+offer_fix_mac_mismatches() {
+  local mac_output="$1"
+  local ans cname
+  local -a containers=()
+
+  while IFS= read -r cname; do
+    [ -n "$cname" ] && containers+=("$cname")
+  done < <(printf '%s\n' "$mac_output" | awk '/^  [^ ]+ [^ ]+: expected=/{print $1}' | sort -u)
+  [ ${#containers[@]} -gt 0 ] || return 0
+
+  if [ ! -t 0 ]; then
+    echo "ℹ️ 检测到 MAC 不一致；当前不是交互终端，跳过自动重建。"
+    return 2
+  fi
+
+  echo "检测到以下容器 MAC 与 compose 不一致：${containers[*]}"
+  read -r -p "是否立即重建这些容器以恢复固定 MAC？[y/N]: " ans
+  if [[ ! "$ans" =~ ^[Yy]$ ]]; then
+    echo "ℹ️ 已跳过 MAC 修复。"
+    return 2
+  fi
+
+  for cname in "${containers[@]}"; do
+    recreate_compose_container "$cname" || return 1
+  done
+}
+
 mode="update"
 ignore_delay="false"
-case "${1:-}" in
-  --check-only|-n) mode="check" ;;
-  --ignore-delay) ignore_delay="true" ;;
-  --help|-h)
-    echo "Usage: $0 [--check-only|--ignore-delay]"
-    exit 0
-    ;;
-esac
+fix_mac_interactive="false"
+for arg in "$@"; do
+  case "$arg" in
+    --check-only|-n) mode="check" ;;
+    --ignore-delay) ignore_delay="true" ;;
+    --fix-mac-interactive) fix_mac_interactive="true" ;;
+    --help|-h)
+      echo "Usage: $0 [--check-only|--ignore-delay|--fix-mac-interactive]"
+      exit 0
+      ;;
+  esac
+done
 
 {
   echo "=== $(date -Is) yehbp docker auto update start mode=$mode ==="
@@ -96,7 +151,25 @@ esac
 
   if [ "$CHECK_MAC" = "true" ]; then
     echo "+ ./check-compose-macs.py"
-    ./check-compose-macs.py
+    set +e
+    mac_output="$(./check-compose-macs.py 2>&1)"
+    mac_rc=$?
+    set -e
+    printf '%s\n' "$mac_output"
+    if [ "$mac_rc" -eq 2 ] && [ "$fix_mac_interactive" = "true" ]; then
+      set +e
+      offer_fix_mac_mismatches "$mac_output"
+      fix_rc=$?
+      set -e
+      if [ "$fix_rc" -eq 0 ]; then
+        echo "+ ./check-compose-macs.py"
+        ./check-compose-macs.py
+      else
+        exit "$mac_rc"
+      fi
+    elif [ "$mac_rc" -ne 0 ]; then
+      exit "$mac_rc"
+    fi
   fi
 
   echo "=== $(date -Is) yehbp docker auto update done ==="
