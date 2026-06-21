@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.21.14"
+APP_VERSION="2026.06.22.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -1019,6 +1019,27 @@ repo_offer_delete_backup() {
   if [[ "$ans" =~ ^[Yy]$ ]]; then
     rm -rf "$bak"
     echo "🗑️ 已删除：$bak"
+
+    local target tmp_path tmp_mounts_found=0 tmp_deleted=0
+    target="${bak%.bak-*}"
+    for tmp_path in "${target}".tmp-*; do
+      [ -d "$tmp_path" ] || continue
+      if [ -n "$container" ]; then
+        local tmp_mounts
+        tmp_mounts="$(docker inspect -f '{{range .Mounts}}{{println .Source}}{{end}}' "$container" 2>/dev/null | grep -F "$tmp_path" || true)"
+        if [ -n "$tmp_mounts" ]; then
+          echo "⚠️ [$name] 检测到容器仍挂载临时目录，跳过删除：$tmp_path"
+          tmp_mounts_found=1
+          continue
+        fi
+      fi
+      rm -rf "$tmp_path"
+      echo "🗑️ 已删除临时目录：$tmp_path"
+      tmp_deleted=1
+    done
+
+    [ "$tmp_mounts_found" -eq 1 ] && echo "ℹ️ 挂载中的临时目录已保留。"
+    [ "$tmp_deleted" -eq 0 ] && [ "$tmp_mounts_found" -eq 0 ] && echo "ℹ️ 未发现同应用临时目录：${target}.tmp-*"
   else
     echo "ℹ️ 已保留：$bak"
   fi
