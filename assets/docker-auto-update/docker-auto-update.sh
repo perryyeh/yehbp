@@ -13,6 +13,7 @@ DOCKCHECK_EXTRA_ARGS="${DOCKCHECK_EXTRA_ARGS:--m -t 30}"
 AUTO_PRUNE="${AUTO_PRUNE:-false}"
 DELAY_DAYS="${DELAY_DAYS:-0}"
 CHECK_MAC="${CHECK_MAC:-true}"
+HEARTBEAT_INTERVAL="${HEARTBEAT_INTERVAL:-15}"
 
 mkdir -p "$LOG_DIR"
 LOCK_FILE="$BASE_DIR/.docker-auto-update.lock"
@@ -27,6 +28,29 @@ fi
 export PATH="$BASE_DIR/bin:$PATH"
 export ROOT_DIR
 export HOME="${HOME:-/root}"
+
+run_with_heartbeat() {
+  local start now elapsed pid rc sleep_pid
+  start="$(date +%s)"
+  rc=0
+
+  "$@" &
+  pid=$!
+
+  while kill -0 "$pid" 2>/dev/null; do
+    sleep "$HEARTBEAT_INTERVAL" &
+    sleep_pid=$!
+    wait "$sleep_pid" 2>/dev/null || true
+    if kill -0 "$pid" 2>/dev/null; then
+      now="$(date +%s)"
+      elapsed=$((now - start))
+      echo "⏳ Dockcheck 仍在运行，已等待 ${elapsed}s ..."
+    fi
+  done
+
+  wait "$pid" || rc=$?
+  return "$rc"
+}
 
 mode="update"
 case "${1:-}" in
@@ -66,7 +90,7 @@ esac
   fi
 
   echo "+ ./dockcheck.sh ${args[*]}"
-  ./dockcheck.sh "${args[@]}"
+  run_with_heartbeat ./dockcheck.sh "${args[@]}"
 
   if [ "$CHECK_MAC" = "true" ]; then
     echo "+ ./check-compose-macs.py"
