@@ -155,9 +155,9 @@ Mac 侧：
 |---|---|
 | 基础脚本依赖 | `ipcalc`, `curl`, `jq`, `tar` |
 | Docker 功能依赖 | `docker`, `docker compose` |
-| Dockcheck 自动更新依赖 | [mag37/dockcheck](https://github.com/mag37/dockcheck), `flock`, `python3`, `systemctl`, `regctl` |
+| Dockcheck 自动更新依赖 | `dockcheck`, `flock`, `python3`, `systemctl`, `regctl` |
 
-其中 Dockcheck 默认从 `https://raw.githubusercontent.com/mag37/dockcheck/main/dockcheck.sh` 获取；yehbp 仓库保留一份 `assets/docker-auto-update/dockcheck.sh` 作为 fallback。`regctl` 会在安装 Dockcheck 自动更新时下载到 `_auto_update/bin`。
+其中 Dockcheck 默认从 `mag37/dockcheck` 获取；yehbp 仓库保留一份 `assets/docker-auto-update/dockcheck.sh` 作为 fallback。`regctl` 会在安装 Dockcheck 自动更新时下载到 `_auto_update/bin`。
 
 不同 NAS / Linux 发行版自带命令差异较大，安装前建议先确认基础依赖和 Docker Compose 是否可用。
 
