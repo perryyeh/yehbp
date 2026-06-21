@@ -15,7 +15,6 @@
 - 创建宿主机 `macvlan-bridge` 接口用于互通
 - 写入并启用 Systemd 服务，确保开机自启
 - 预定义多个容器 IP：librespeed（.111） AdGuardhome（.114）、MosDNS（.119）、Mihomo（.120）
-- 此代码多数由openai和gemimi生成
 
 
 ## ⚙️ 脚本菜单说明
