@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.17.05"
+APP_VERSION="2026.06.17.06"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -302,6 +302,7 @@ function show_menu() {
     echo "72) 优化journald日志"
     echo "90）创建macvlan bridge"
     echo "91）清理macvlan bridge"
+    echo "95）清理 Dockcheck Compose 自动更新"
     echo "96）安装 Dockcheck Compose 自动更新"
     echo "97）安装watchtower自动更新"
     echo "98）强制使用watchtower更新一次镜像"
@@ -2908,6 +2909,63 @@ clean_macvlan_bridge() {
 }
 
 
+
+cleanup_dockcheck_auto_update() {
+    echo "🧹 清理 Dockcheck Compose 自动更新"
+
+    if [ "${EUID:-$(id -u)}" -ne 0 ]; then
+        echo "❌ 需要 root 权限，请使用 sudo 运行。"
+        return 1
+    fi
+
+    local root_dir base_dir delete_dir_ans rc
+    select_dockerapps_dir "Dockcheck Compose 自动更新清理"
+    rc=$?
+    case "$rc" in
+        0) ;;
+        2) echo "✅ 已退出 Dockcheck Compose 自动更新清理。"; return 0 ;;
+        *) return 1 ;;
+    esac
+
+    root_dir="$SELECTED_DOCKERAPPS_DIR"
+    base_dir="${root_dir%/}/_auto_update"
+
+    if command -v systemctl >/dev/null 2>&1; then
+        echo "🛑 停用 yehbp-docker-auto-update.timer ..."
+        systemctl disable --now yehbp-docker-auto-update.timer >/dev/null 2>&1 || true
+        rm -f /etc/systemd/system/yehbp-docker-auto-update.service
+        rm -f /etc/systemd/system/yehbp-docker-auto-update.timer
+        systemctl daemon-reload || true
+        systemctl reset-failed yehbp-docker-auto-update.service yehbp-docker-auto-update.timer >/dev/null 2>&1 || true
+        echo "✅ 已移除 systemd service/timer。"
+    else
+        echo "ℹ️ 未检测到 systemctl，跳过 systemd 清理。"
+    fi
+
+    if [ -d "$base_dir" ]; then
+        echo "发现目录：$base_dir"
+        read -r -p "是否同时删除该目录？会删除配置、脚本、日志。[y/N]: " delete_dir_ans
+        if [[ "$delete_dir_ans" =~ ^[Yy]$ ]]; then
+            case "$base_dir" in
+                */_auto_update)
+                    rm -rf -- "$base_dir"
+                    echo "✅ 已删除目录：$base_dir"
+                    ;;
+                *)
+                    echo "❌ 安全检查失败，拒绝删除非 _auto_update 目录：$base_dir"
+                    return 1
+                    ;;
+            esac
+        else
+            echo "ℹ️ 已保留目录：$base_dir"
+        fi
+    else
+        echo "ℹ️ 未找到目录：$base_dir"
+    fi
+
+    echo "✅ Dockcheck Compose 自动更新清理完成。"
+}
+
 install_dockcheck_auto_update() {
     echo "🔧 安装 Dockcheck Compose 自动更新（保留 compose 网络/MAC 配置）"
 
@@ -2940,13 +2998,20 @@ install_dockcheck_auto_update() {
         return 1
     fi
 
-    local root_dir base_dir log_dir enable_timer update_time delay_days prune_ans auto_prune timer_calendar
-    read -r -p "Docker apps 根目录 [/vol2/1000/dockerapps]: " root_dir
-    root_dir="${root_dir:-/vol2/1000/dockerapps}"
+    local root_dir base_dir log_dir enable_timer update_time delay_days prune_ans auto_prune timer_calendar rc
+    select_dockerapps_dir "Dockcheck Compose 自动更新"
+    rc=$?
+    case "$rc" in
+        0) ;;
+        2) echo "✅ 已退出 Dockcheck Compose 自动更新安装。"; return 0 ;;
+        *) return 1 ;;
+    esac
+
+    root_dir="$SELECTED_DOCKERAPPS_DIR"
     base_dir="${root_dir%/}/_auto_update"
     log_dir="$base_dir/logs"
 
-    mkdir -p "$base_dir/bin" "$log_dir" || return 1
+    mkdir -p "$root_dir" "$base_dir/bin" "$log_dir" || return 1
 
     echo "📁 安装目录：$base_dir"
     echo "⬇️ 下载 Dockcheck..."
@@ -3481,6 +3546,7 @@ while true; do
         72) optimize_journald_to_volatile ;;
         90) create_macvlan_bridge ;;
         91) clean_macvlan_bridge ;;
+        95) cleanup_dockcheck_auto_update ;;
         96) install_dockcheck_auto_update ;;
         97) install_watchtower ;;
         98) run_watchtower_once ;;
