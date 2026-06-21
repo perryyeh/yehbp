@@ -2,10 +2,11 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.17.04"
+APP_VERSION="2026.06.17.05"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
+RAW_ASSET_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main"
 INSTALL_BIN="/usr/local/bin/${APP_NAME}"
 
 download_yehbp_script() {
@@ -33,6 +34,43 @@ download_yehbp_script() {
         echo "❌ 下载的新脚本语法检查失败，已取消。"
         return 1
     }
+}
+
+download_yehbp_asset() {
+    local src="$1"
+    local dst="$2"
+    local url="${RAW_ASSET_BASE}/${src}?t=$(date +%s)"
+
+    mkdir -p "$(dirname "$dst")" || return 1
+    curl --connect-timeout 10 --max-time 60 -fsSL "$url" -o "$dst" || {
+        echo "❌ 下载失败：$src"
+        return 1
+    }
+}
+
+render_template_file() {
+    local src="$1"
+    local dst="$2"
+    local root_dir="$3"
+    local base_dir="$4"
+    local log_dir="$5"
+    local auto_prune="$6"
+    local delay_days="$7"
+    local timer_calendar="$8"
+
+    python3 - "$src" "$dst" "$root_dir" "$base_dir" "$log_dir" "$auto_prune" "$delay_days" "$timer_calendar" <<'PY'
+import sys
+from pathlib import Path
+src, dst, root_dir, base_dir, log_dir, auto_prune, delay_days, timer_calendar = sys.argv[1:]
+s = Path(src).read_text()
+s = s.replace('__ROOT_DIR__', root_dir)
+s = s.replace('__BASE_DIR__', base_dir)
+s = s.replace('__LOG_DIR__', log_dir)
+s = s.replace('__AUTO_PRUNE__', auto_prune)
+s = s.replace('__DELAY_DAYS__', delay_days)
+s = s.replace('__TIMER_CALENDAR__', timer_calendar)
+Path(dst).write_text(s)
+PY
 }
 
 fetch_remote_yehbp_version() {
@@ -264,6 +302,7 @@ function show_menu() {
     echo "72) 优化journald日志"
     echo "90）创建macvlan bridge"
     echo "91）清理macvlan bridge"
+    echo "96）安装 Dockcheck Compose 自动更新"
     echo "97）安装watchtower自动更新"
     echo "98）强制使用watchtower更新一次镜像"
     echo "99）退出"
@@ -2868,6 +2907,140 @@ clean_macvlan_bridge() {
     echo "✅ 清理完成。"
 }
 
+
+install_dockcheck_auto_update() {
+    echo "🔧 安装 Dockcheck Compose 自动更新（保留 compose 网络/MAC 配置）"
+
+    if [ "${EUID:-$(id -u)}" -ne 0 ]; then
+        echo "❌ 需要 root 权限，请使用 sudo 运行。"
+        return 1
+    fi
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "❌ 未检测到 Docker，请先安装 Docker。"
+        return 1
+    fi
+    if ! docker compose version >/dev/null 2>&1; then
+        echo "❌ 未检测到 docker compose plugin。"
+        return 1
+    fi
+    if ! command -v curl >/dev/null 2>&1; then
+        echo "❌ 未检测到 curl。"
+        return 1
+    fi
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "❌ 未检测到 jq，请先安装依赖。"
+        return 1
+    fi
+    if ! command -v flock >/dev/null 2>&1; then
+        echo "❌ 未检测到 flock。"
+        return 1
+    fi
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "❌ 未检测到 python3。"
+        return 1
+    fi
+
+    local root_dir base_dir log_dir enable_timer update_time delay_days prune_ans auto_prune timer_calendar
+    read -r -p "Docker apps 根目录 [/vol2/1000/dockerapps]: " root_dir
+    root_dir="${root_dir:-/vol2/1000/dockerapps}"
+    base_dir="${root_dir%/}/_auto_update"
+    log_dir="$base_dir/logs"
+
+    mkdir -p "$base_dir/bin" "$log_dir" || return 1
+
+    echo "📁 安装目录：$base_dir"
+    echo "⬇️ 下载 Dockcheck..."
+    curl --connect-timeout 10 --max-time 60 -fsSL \
+        https://raw.githubusercontent.com/mag37/dockcheck/main/dockcheck.sh \
+        -o "$base_dir/dockcheck.sh" || return 1
+    chmod 0755 "$base_dir/dockcheck.sh"
+    bash -n "$base_dir/dockcheck.sh" || return 1
+
+    if ! command -v regctl >/dev/null 2>&1 && [ ! -x "$base_dir/bin/regctl" ]; then
+        local arch reg_arch
+        arch="$(uname -m)"
+        case "$arch" in
+            x86_64|amd64) reg_arch=amd64 ;;
+            aarch64|arm64) reg_arch=arm64 ;;
+            *) echo "❌ 不支持的 CPU 架构：$arch"; return 1 ;;
+        esac
+        echo "⬇️ 下载 regctl ($reg_arch)..."
+        curl --connect-timeout 20 --max-time 180 -fL \
+            "https://github.com/regclient/regclient/releases/latest/download/regctl-linux-${reg_arch}" \
+            -o "$base_dir/bin/regctl" || return 1
+        chmod 0755 "$base_dir/bin/regctl"
+    fi
+
+    echo "⬇️ 下载 YehBP 自动更新组件..."
+    download_yehbp_asset "assets/docker-auto-update/docker-auto-update.sh" "$base_dir/docker-auto-update.sh" || return 1
+    download_yehbp_asset "assets/docker-auto-update/check-compose-macs.py" "$base_dir/check-compose-macs.py" || return 1
+    download_yehbp_asset "assets/docker-auto-update/auto-update.conf.tpl" "$base_dir/auto-update.conf.tpl" || return 1
+    download_yehbp_asset "assets/docker-auto-update/yehbp-docker-auto-update.service.tpl" "$base_dir/yehbp-docker-auto-update.service.tpl" || return 1
+    download_yehbp_asset "assets/docker-auto-update/yehbp-docker-auto-update.timer.tpl" "$base_dir/yehbp-docker-auto-update.timer.tpl" || return 1
+
+    read -r -p "新镜像发布后延迟 N 天再更新 [0]: " delay_days
+    delay_days="${delay_days:-0}"
+    if ! [[ "$delay_days" =~ ^[0-9]+$ ]]; then
+        echo "❌ 延迟天数必须是数字。"
+        return 1
+    fi
+
+    read -r -p "更新后自动 prune dangling images？[y/N]: " prune_ans
+    if [[ "$prune_ans" =~ ^[Yy]$ ]]; then
+        auto_prune=true
+    else
+        auto_prune=false
+    fi
+
+    read -r -p "是否启用每日自动更新 timer？[y/N]: " enable_timer
+    if [[ "$enable_timer" =~ ^[Yy]$ ]]; then
+        read -r -p "每天检查时间 HH:MM [04:30]: " update_time
+        update_time="${update_time:-04:30}"
+        if ! [[ "$update_time" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]]; then
+            echo "❌ 时间格式错误，应为 HH:MM。"
+            return 1
+        fi
+        timer_calendar="*-*-* ${update_time}:00"
+    else
+        timer_calendar="*-*-* 04:30:00"
+    fi
+
+    render_template_file "$base_dir/auto-update.conf.tpl" "$base_dir/auto-update.conf" \
+        "$root_dir" "$base_dir" "$log_dir" "$auto_prune" "$delay_days" "$timer_calendar" || return 1
+    render_template_file "$base_dir/yehbp-docker-auto-update.service.tpl" "$base_dir/yehbp-docker-auto-update.service" \
+        "$root_dir" "$base_dir" "$log_dir" "$auto_prune" "$delay_days" "$timer_calendar" || return 1
+    render_template_file "$base_dir/yehbp-docker-auto-update.timer.tpl" "$base_dir/yehbp-docker-auto-update.timer" \
+        "$root_dir" "$base_dir" "$log_dir" "$auto_prune" "$delay_days" "$timer_calendar" || return 1
+
+    chmod 0755 "$base_dir/check-compose-macs.py" "$base_dir/docker-auto-update.sh"
+    python3 -m py_compile "$base_dir/check-compose-macs.py" || return 1
+    bash -n "$base_dir/docker-auto-update.sh" || return 1
+
+    if command -v systemctl >/dev/null 2>&1; then
+        cp "$base_dir/yehbp-docker-auto-update.service" /etc/systemd/system/yehbp-docker-auto-update.service
+        cp "$base_dir/yehbp-docker-auto-update.timer" /etc/systemd/system/yehbp-docker-auto-update.timer
+        systemd-analyze verify /etc/systemd/system/yehbp-docker-auto-update.service /etc/systemd/system/yehbp-docker-auto-update.timer >/dev/null || return 1
+        systemctl daemon-reload
+        if [[ "$enable_timer" =~ ^[Yy]$ ]]; then
+            systemctl enable --now yehbp-docker-auto-update.timer
+            echo "✅ 已启用每日自动更新：$timer_calendar"
+        else
+            systemctl disable --now yehbp-docker-auto-update.timer >/dev/null 2>&1 || true
+            echo "ℹ️ 已安装 systemd unit，但未启用 timer。"
+        fi
+    else
+        echo "⚠️ 未检测到 systemctl，仅写入脚本；请自行定时调用：$base_dir/docker-auto-update.sh"
+    fi
+
+    echo "🧪 执行一次只检查不更新..."
+    "$base_dir/docker-auto-update.sh" --check-only || return 1
+
+    echo "✅ Dockcheck 自动更新组件安装完成。"
+    echo "   手动检查：$base_dir/docker-auto-update.sh --check-only"
+    echo "   手动更新：$base_dir/docker-auto-update.sh"
+    echo "   日志目录：$log_dir"
+}
+
 install_watchtower() {
     echo "🔧 安装并启动常驻 watchtower..."
 
@@ -3308,6 +3481,7 @@ while true; do
         72) optimize_journald_to_volatile ;;
         90) create_macvlan_bridge ;;
         91) clean_macvlan_bridge ;;
+        96) install_dockcheck_auto_update ;;
         97) install_watchtower ;;
         98) run_watchtower_once ;;
         99) echo "退出脚本。"; exit 0 ;;
