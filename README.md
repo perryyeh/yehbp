@@ -1,6 +1,6 @@
 # Yeh Bypass (Gateway)
 
-自用一键旁路由脚本，提供从 DNS 缓存、域名分流、远程解析、代理接入，到在外回家入口的一整套网络方案。
+自用一键旁路由交互式菜单脚本，提供从 DNS 缓存、域名分流、远程解析、代理接入，到在外回家入口的一整套网络方案。
 
 核心容器包括 AdGuardHome、MosDNS、Mihomo、ddns-go：AdGuardHome 负责 DNS 缓存；MosDNS 负责域名分流，内部域名返回真实 IP，外部域名返回 FakeIP；代理由 Mihomo 或 Surge 承载。
 
