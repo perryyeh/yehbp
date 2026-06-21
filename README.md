@@ -155,7 +155,7 @@ Mac 侧：
 |---|---|
 | 基础脚本依赖 | `ipcalc`, `curl`, `jq`, `tar` |
 | Docker 功能依赖 | `docker`, `docker compose` |
-| Dockcheck 自动更新依赖 | `dockcheck`, `flock`, `python3`, `systemctl`, `regctl` |
+| 自动更新依赖 | `dockcheck`, `flock`, `python3`, `systemctl`, `regctl` |
 
 其中 Dockcheck 默认从 `mag37/dockcheck` 获取；yehbp 仓库保留一份 `assets/docker-auto-update/dockcheck.sh` 作为 fallback。`regctl` 会在安装 Dockcheck 自动更新时下载到 `_auto_update/bin`。
 
