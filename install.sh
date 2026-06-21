@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.21.10"
+APP_VERSION="2026.06.21.11"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -3245,7 +3245,7 @@ run_dockcheck_auto_update_once() {
                 echo "ℹ️ 已取消更新。"
                 return 0
             fi
-            "$base_dir/docker-auto-update.sh"
+            "$base_dir/docker-auto-update.sh" --ignore-delay
             ;;
         "")
             echo "ℹ️ 已取消。"

@@ -53,10 +53,12 @@ run_with_heartbeat() {
 }
 
 mode="update"
+ignore_delay="false"
 case "${1:-}" in
   --check-only|-n) mode="check" ;;
+  --ignore-delay) ignore_delay="true" ;;
   --help|-h)
-    echo "Usage: $0 [--check-only]"
+    echo "Usage: $0 [--check-only|--ignore-delay]"
     exit 0
     ;;
 esac
@@ -77,7 +79,7 @@ esac
   # Split configured args intentionally; config is root-owned local file.
   extra=( $DOCKCHECK_EXTRA_ARGS )
   args+=("${extra[@]}")
-  if [ "$DELAY_DAYS" != "0" ]; then
+  if [ "$DELAY_DAYS" != "0" ] && [ "$ignore_delay" != "true" ]; then
     args+=("-d" "$DELAY_DAYS")
   fi
   if [ "$AUTO_PRUNE" = "true" ] && [ "$mode" = "update" ]; then
