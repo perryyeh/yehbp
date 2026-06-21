@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_DIR_DEFAULT="/vol2/1000/dockerapps/_auto_update"
-CONFIG_FILE="${CONFIG_FILE:-${BASE_DIR_DEFAULT}/auto-update.conf}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+BASE_DIR_DEFAULT="$SCRIPT_DIR"
+CONFIG_FILE="${CONFIG_FILE:-${SCRIPT_DIR}/auto-update.conf}"
 [ -f "$CONFIG_FILE" ] && source "$CONFIG_FILE"
 
-ROOT_DIR="${ROOT_DIR:-/vol2/1000/dockerapps}"
+ROOT_DIR="${ROOT_DIR:-$(dirname -- "$BASE_DIR_DEFAULT")}"
 BASE_DIR="${BASE_DIR:-$BASE_DIR_DEFAULT}"
 LOG_DIR="${LOG_DIR:-$BASE_DIR/logs}"
 DOCKCHECK_EXTRA_ARGS="${DOCKCHECK_EXTRA_ARGS:--m -t 30}"
@@ -42,6 +43,12 @@ esac
   echo "BASE_DIR=$BASE_DIR"
 
   cd "$BASE_DIR"
+  if [ ! -x ./dockcheck.sh ]; then
+    echo "❌ 未找到可执行的 Dockcheck 脚本：$BASE_DIR/dockcheck.sh"
+    echo "👉 请重新执行 96 安装 Dockcheck 自动更新。"
+    exit 1
+  fi
+
   args=()
   # Split configured args intentionally; config is root-owned local file.
   extra=( $DOCKCHECK_EXTRA_ARGS )
