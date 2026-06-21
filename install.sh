@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.17.06"
+APP_VERSION="2026.06.17.07"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -85,16 +85,46 @@ fetch_remote_yehbp_version() {
     fi
 }
 
+version_gt() {
+    # Return 0 if $1 is strictly greater than $2 for versions like YYYY.MM.DD.NN.
+    local a="$1" b="$2" i ai bi
+    local IFS=.
+    local -a av bv
+    read -r -a av <<< "$a"
+    read -r -a bv <<< "$b"
+
+    for i in 0 1 2 3; do
+        ai="${av[$i]:-0}"
+        bi="${bv[$i]:-0}"
+        ai="${ai//[^0-9]/}"
+        bi="${bi//[^0-9]/}"
+        ai="${ai:-0}"
+        bi="${bi:-0}"
+        if (( 10#$ai > 10#$bi )); then
+            return 0
+        fi
+        if (( 10#$ai < 10#$bi )); then
+            return 1
+        fi
+    done
+    return 1
+}
+
 install_yehbp_from_file() {
     local src="$1"
+    local backup_mode="${2:-no-backup}"
     local backup=""
 
     mkdir -p "$(dirname "$INSTALL_BIN")" || return 1
 
     if [ -f "$INSTALL_BIN" ]; then
-        backup="${INSTALL_BIN}.bak-$(date +%Y%m%d-%H%M%S)"
-        cp -a "$INSTALL_BIN" "$backup" || return 1
-        echo "🧩 已备份当前版本：$backup"
+        if [ "$backup_mode" = "backup" ]; then
+            backup="${INSTALL_BIN}.bak-$(date +%Y%m%d-%H%M%S)"
+            cp -a "$INSTALL_BIN" "$backup" || return 1
+            echo "🧩 已备份当前版本：$backup"
+        else
+            echo "ℹ️ 覆盖当前版本，不创建备份。"
+        fi
     fi
 
     install -m 0755 "$src" "$INSTALL_BIN" || return 1
@@ -125,16 +155,15 @@ update_yehbp_cli() {
         return 1
     fi
 
-    local tmp backup
+    local tmp
     tmp="$(mktemp /tmp/${APP_NAME}.update.XXXXXX)" || return 1
-    backup="${INSTALL_BIN}.bak-$(date +%Y%m%d-%H%M%S)"
     trap 'rm -f "$tmp"' RETURN
 
     echo "⬆️ 正在升级 ${APP_TITLE} ..."
     download_yehbp_script "$tmp" || return 1
 
     [ ! -f "$INSTALL_BIN" ] && echo "ℹ️ 未检测到 ${INSTALL_BIN}，将执行首次安装。"
-    install_yehbp_from_file "$tmp" || return 1
+    install_yehbp_from_file "$tmp" no-backup || return 1
     echo "✅ 升级完成：${INSTALL_BIN}"
 }
 
@@ -148,6 +177,11 @@ check_yehbp_update() {
     fi
 
     if [ "$remote_version" = "$APP_VERSION" ]; then
+        return 0
+    fi
+
+    if ! version_gt "$remote_version" "$APP_VERSION"; then
+        echo "ℹ️ 远程版本不高于当前版本，跳过升级：${APP_VERSION} <- ${remote_version}"
         return 0
     fi
 
@@ -169,7 +203,7 @@ check_yehbp_update() {
             echo "❌ 下载新版脚本失败，继续使用当前版本。"
             return 0
         }
-        install_yehbp_from_file "$tmp" || {
+        install_yehbp_from_file "$tmp" no-backup || {
             echo "❌ 升级失败，继续使用当前版本。"
             return 0
         }
