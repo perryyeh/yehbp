@@ -2703,7 +2703,7 @@ install_lucky() {
 }
 
 install_portainer() {
-    local dockerapps portainer_dir compose_file host_ip
+    local dockerapps portainer_dir compose_file bak_dir ts host_ip
     local -a COMPOSE
 
     select_dockerapps_dir "portainer"
@@ -2724,13 +2724,21 @@ install_portainer() {
 
     portainer_dir="${dockerapps}/portainer"
     compose_file="${portainer_dir}/docker-compose.yml"
+    ts="$(date +%Y%m%d-%H%M%S)"
+
     if docker ps -a --format '{{.Names}}' | grep -qx portainer; then
         echo "🧩 发现旧 Portainer 容器，正在移除..."
         docker rm -f portainer >/dev/null || return 1
     fi
 
-    echo "🧹 覆盖 Portainer 目录：$portainer_dir"
-    rm -rf -- "$portainer_dir" || return 1
+    if [ -d "$portainer_dir" ]; then
+        bak_dir="${portainer_dir}.bak-${ts}"
+        echo "🔄 检测到现有 Portainer 目录，替换安装：$portainer_dir -> $bak_dir"
+        mv "$portainer_dir" "$bak_dir" || return 1
+    else
+        echo "⬇️ 首次安装 Portainer：$portainer_dir"
+    fi
+
     mkdir -p "$portainer_dir" || return 1
 
     cat > "$compose_file" <<EOF
