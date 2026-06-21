@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.21.04"
+APP_VERSION="2026.06.21.05"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -3150,33 +3150,24 @@ install_dockcheck_auto_update() {
 
 
 find_dockcheck_auto_update_base() {
-    local service_path script candidate
+    local service_path script
 
     service_path="/etc/systemd/system/yehbp-docker-auto-update.service"
-    if [ -f "$service_path" ]; then
-        script="$(grep -E '^ExecStart=' "$service_path" | head -n1 | cut -d= -f2-)"
-        script="${script%% *}"
-        script="${script%\"}"
-        script="${script#\"}"
-        if [ -x "$script" ]; then
-            dirname "$script"
-            return 0
-        fi
+    if [ ! -f "$service_path" ]; then
+        return 1
     fi
 
-    for candidate in \
-        /vol*/1000/dockerapps/_auto_update \
-        /volume*/dockerapps/_auto_update \
-        /data/dockerapps/_auto_update \
-        /mnt/*/dockerapps/_auto_update \
-        /srv/dockerapps/_auto_update; do
-        if [ -x "$candidate/docker-auto-update.sh" ]; then
-            echo "$candidate"
-            return 0
-        fi
-    done
+    script="$(grep -E '^ExecStart=' "$service_path" | head -n1 | cut -d= -f2-)"
+    script="${script%% *}"
+    script="${script%\"}"
+    script="${script#\"}"
 
-    return 1
+    if [ -z "$script" ] || [ ! -x "$script" ]; then
+        return 1
+    fi
+
+    dirname "$script"
+    return 0
 }
 
 run_dockcheck_auto_update_once() {
