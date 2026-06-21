@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.21.13"
+APP_VERSION="2026.06.21.14"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -3224,7 +3224,7 @@ run_dockcheck_auto_update_once() {
         return 1
     fi
 
-    local base_dir mode confirm
+    local base_dir mode confirm label non_compose_names name names_csv
     if ! base_dir="$(find_dockcheck_auto_update_base)"; then
         echo "❌ 未找到 Dockcheck 自动更新组件。"
         echo "👉 请先执行 96 安装 Dockcheck 自动更新。"
@@ -3232,20 +3232,48 @@ run_dockcheck_auto_update_once() {
     fi
 
     echo "安装目录：$base_dir"
-    echo "1）只检查，不更新"
-    echo "2）检查并更新一次"
-    read -r -p "请选择 [1/2，回车取消]: " mode
+    echo "1）只检查全部容器，不更新"
+    echo "2）Dockcheck 检查并更新 compose 容器"
+    echo "3）Dockcheck 检查/拉取非 compose 容器镜像（不重建容器）"
+    read -r -p "请选择 [1/2/3，回车取消]: " mode
     case "$mode" in
         1)
-            "$base_dir/docker-auto-update.sh" --check-only --fix-mac-interactive
+            "$base_dir/docker-auto-update.sh" --check-only --docker-run --fix-mac-interactive
             ;;
         2)
-            read -r -p "确认立即更新有新镜像的 Docker 容器？[y/N]: " confirm
+            read -r -p "确认立即更新有新镜像的 compose 容器？[y/N]: " confirm
             if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
                 echo "ℹ️ 已取消更新。"
                 return 0
             fi
             "$base_dir/docker-auto-update.sh" --ignore-delay --fix-mac-interactive
+            ;;
+        3)
+            non_compose_names=""
+            while IFS= read -r name; do
+                [ -n "$name" ] || continue
+                label="$(docker inspect "$name" --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' 2>/dev/null || true)"
+                if [ -z "$label" ] || [ "$label" = "<no value>" ]; then
+                    non_compose_names="${non_compose_names}${name}"$'\n'
+                fi
+            done < <(docker ps --format '{{.Names}}')
+
+            if [ -z "$non_compose_names" ]; then
+                echo "ℹ️ 当前没有运行中的非 compose 容器。"
+                return 0
+            fi
+
+            echo "将检查这些非 compose 容器："
+            printf '%s' "$non_compose_names" | sed 's/^/  - /'
+            echo "⚠️ Dockcheck 对非 compose 容器只会拉取新镜像，不会重建容器。"
+            read -r -p "确认继续？[y/N]: " confirm
+            if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+                echo "ℹ️ 已取消。"
+                return 0
+            fi
+
+            names_csv="$(printf '%s' "$non_compose_names" | paste -sd, -)"
+            "$base_dir/docker-auto-update.sh" --ignore-delay --docker-run --fix-mac-interactive "$names_csv"
             ;;
         "")
             echo "ℹ️ 已取消。"

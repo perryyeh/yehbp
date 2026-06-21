@@ -106,15 +106,23 @@ offer_fix_mac_mismatches() {
 mode="update"
 ignore_delay="false"
 fix_mac_interactive="false"
+docker_run="false"
+include_names=()
 for arg in "$@"; do
   case "$arg" in
     --check-only|-n) mode="check" ;;
     --ignore-delay) ignore_delay="true" ;;
     --fix-mac-interactive) fix_mac_interactive="true" ;;
+    --docker-run) docker_run="true" ;;
     --help|-h)
-      echo "Usage: $0 [--check-only|--ignore-delay|--fix-mac-interactive]"
+      echo "Usage: $0 [--check-only|--ignore-delay|--fix-mac-interactive|--docker-run] [container[,container...]]"
       exit 0
       ;;
+    --*)
+      echo "❌ 未知参数：$arg"
+      exit 2
+      ;;
+    *) include_names+=("$arg") ;;
   esac
 done
 
@@ -137,6 +145,9 @@ done
   if [ "$DELAY_DAYS" != "0" ] && [ "$ignore_delay" != "true" ]; then
     args+=("-d" "$DELAY_DAYS")
   fi
+  if [ "$docker_run" = "true" ]; then
+    args+=("-r")
+  fi
   if [ "$AUTO_PRUNE" = "true" ] && [ "$mode" = "update" ]; then
     args+=("-p")
   fi
@@ -144,6 +155,9 @@ done
     args+=("-n")
   else
     args+=("-a")
+  fi
+  if [ ${#include_names[@]} -gt 0 ]; then
+    args+=("${include_names[@]}")
   fi
 
   echo "+ ./dockcheck.sh ${args[*]}"
