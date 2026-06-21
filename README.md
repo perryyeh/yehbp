@@ -42,8 +42,9 @@
 | 72 | 优化journald日志                |
 | 90 | 创建macvlan bridge            |
 | 91 | 清理macvlan bridge            |
-| 97 | 安装watchtower 自动更新           |
-| 98 | 强制使用watchtower更新一次镜像        |
+| 96 | 安装 Dockcheck 自动更新           |
+| 97 | 清理 Dockcheck 自动更新           |
+| 98 | 立即执行 Dockcheck 检查/更新一次      |
 | 99 | 退出脚本                        |
 
 ## 🚀 使用方法
@@ -66,7 +67,7 @@ sudo yehbp
 是否现在升级？[y/N]:
 ```
 
-输入 `y` 才会升级；默认回车或输入 `n` 都不会升级。版本检查只读取仓库里的 `VERSION` 文件；确认升级后才会下载最新脚本并做语法检查。如果本机已有 `/usr/local/bin/yehbp`，会先备份为 `/usr/local/bin/yehbp.bak-时间戳`，再覆盖更新。
+输入 `y` 才会升级；默认回车或输入 `n` 都不会升级。版本检查只读取仓库里的 `VERSION` 文件；只有远程版本严格高于当前版本才会提示升级，确认升级后才会下载最新脚本并做语法检查，然后覆盖 `/usr/local/bin/yehbp`，默认不创建 `.bak-*` 备份。
 
 ### 2. 删除 yehbp 命令
 
