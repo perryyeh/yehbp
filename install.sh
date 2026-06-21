@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.21.08"
+APP_VERSION="2026.06.21.09"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -3085,7 +3085,7 @@ install_dockcheck_auto_update() {
         return 1
     fi
 
-    read -r -p "更新后自动 prune dangling images？[y/N]: " prune_ans
+    read -r -p "更新成功后，是否自动清理旧的无用镜像？[y/N]: " prune_ans
     if [[ "$prune_ans" =~ ^[Yy]$ ]]; then
         auto_prune=true
     else
