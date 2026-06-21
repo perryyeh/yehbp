@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.21.03"
+APP_VERSION="2026.06.21.04"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -3149,6 +3149,36 @@ install_dockcheck_auto_update() {
 }
 
 
+find_dockcheck_auto_update_base() {
+    local service_path script candidate
+
+    service_path="/etc/systemd/system/yehbp-docker-auto-update.service"
+    if [ -f "$service_path" ]; then
+        script="$(grep -E '^ExecStart=' "$service_path" | head -n1 | cut -d= -f2-)"
+        script="${script%% *}"
+        script="${script%\"}"
+        script="${script#\"}"
+        if [ -x "$script" ]; then
+            dirname "$script"
+            return 0
+        fi
+    fi
+
+    for candidate in \
+        /vol*/1000/dockerapps/_auto_update \
+        /volume*/dockerapps/_auto_update \
+        /data/dockerapps/_auto_update \
+        /mnt/*/dockerapps/_auto_update \
+        /srv/dockerapps/_auto_update; do
+        if [ -x "$candidate/docker-auto-update.sh" ]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
 run_dockcheck_auto_update_once() {
     echo "🚀 立即执行 Dockcheck 检查/更新"
 
@@ -3157,20 +3187,9 @@ run_dockcheck_auto_update_once() {
         return 1
     fi
 
-    local root_dir base_dir mode rc confirm
-    select_dockerapps_dir "Dockcheck 手动执行"
-    rc=$?
-    case "$rc" in
-        0) ;;
-        2) echo "✅ 已退出 Dockcheck 手动执行。"; return 0 ;;
-        *) return 1 ;;
-    esac
-
-    root_dir="$SELECTED_DOCKERAPPS_DIR"
-    base_dir="${root_dir%/}/_auto_update"
-
-    if [ ! -x "$base_dir/docker-auto-update.sh" ]; then
-        echo "❌ 未找到可执行脚本：$base_dir/docker-auto-update.sh"
+    local base_dir mode confirm
+    if ! base_dir="$(find_dockcheck_auto_update_base)"; then
+        echo "❌ 未找到 Dockcheck 自动更新组件。"
         echo "👉 请先执行 96 安装 Dockcheck 自动更新。"
         return 1
     fi
@@ -3184,7 +3203,7 @@ run_dockcheck_auto_update_once() {
             "$base_dir/docker-auto-update.sh" --check-only
             ;;
         2)
-            read -r -p "确认立即更新有新镜像的 Compose 容器？[y/N]: " confirm
+            read -r -p "确认立即更新有新镜像的 Docker 容器？[y/N]: " confirm
             if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
                 echo "ℹ️ 已取消更新。"
                 return 0

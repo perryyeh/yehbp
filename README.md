@@ -51,7 +51,7 @@
 ### 1. 安装命令
 
 ```bash
-curl -fsSL https://github.com/perryyeh/yehbp/raw/refs/heads/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh | sudo bash
 ```
 
 安装后直接运行：
@@ -71,25 +71,52 @@ sudo yehbp
 ### 2. 删除 yehbp 命令
 
 ```bash
-sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbp.bak-*
+sudo rm -f /usr/local/bin/yehbp
 ```
 
-这只会删除 `yehbp` 命令和升级备份，不会删除已安装的 Docker 容器、配置目录、macvlan、systemd 服务等。
+如需同时清理旧版本遗留的历史备份：
+
+```bash
+sudo rm -f /usr/local/bin/yehbp.bak-*
+```
+
+这只会删除 `yehbp` 命令和历史备份，不会删除已安装的 Docker 容器、配置目录、macvlan、systemd 服务等。
 
 ### 3. 安装步骤
 
-1. 确立docker容器安装目录，硬盘没有格式化&加载的先格式化&加载
-2. 没docker的先安装docker（群晖和飞牛已有，直接跳过）
-3. 群晖和飞牛的网卡建议先开open vSwitch
-4. 确立专有ip段给macvlan使用，ipv4建议给一个新的/24段（或现有ipv4的开头/结尾），ipv6 ula建议给/64段，在路由器上设置dhcp时候避开这段不分配
-5. 选择网卡（群晖和飞牛建议选ovs开头网卡）创建macvlan
-6. 没有surge/openwrt当代理的，可安装mihomo替代，mihomo需开tun模式并配置好上游代理。
-7. 路由器里配置静态路由，198.18.0.0/15下一跳到surge/mihomo的ip。
-8. 安装mosdns，选surge当上游时dns写198.18.0.2；选mihomo当上游时，dns写mihomo的ip。
-9. 安装adguardhome，用mosdns当上游，dns写mosdns的ip。
-10. 最后创建macvlan bridge，解决宿主机和容器之间的互通。
+1. 确认 Docker 容器安装目录；如需新硬盘，先完成格式化和挂载。
+2. 确认 Docker 已安装；群晖和飞牛通常已有 Docker，可跳过安装。
+3. 群晖和飞牛的网卡建议先开启 Open vSwitch。
+4. 确认专用 IP 段给 macvlan 使用：IPv4 建议使用新的 `/24` 段，IPv6 ULA 建议使用 `/64` 段，并在路由器 DHCP 中避开该地址段。
+5. 选择网卡创建 macvlan；群晖和飞牛建议选择 `ovs` 开头网卡。
+6. 没有 Surge / OpenWrt 作为代理时，可安装 Mihomo 替代；Mihomo 需开启 TUN 模式并配置好上游代理。
+7. 在路由器添加静态路由：`198.18.0.0/15` 下一跳到 Surge / Mihomo 的 IP。
+8. 安装 MosDNS；选择 Surge 作为上游时 DNS 写 `198.18.0.2`，选择 Mihomo 作为上游时 DNS 写 Mihomo 的 IP。
+9. 安装 AdGuardHome，并使用 MosDNS 作为上游 DNS。
+10. 最后创建 macvlan bridge，解决宿主机和容器之间的互通。
 
-### 4. mosdns 在 Surge 下使用 fake IPv6
+### 4. Docker 镜像自动更新
+
+菜单 `96` 可安装 Dockcheck 自动更新组件：
+
+- 选择 `dockerapps` 目录后，组件会安装到 `<dockerapps>/_auto_update`。
+- 可设置新镜像发布后延迟 N 天再更新。
+- 可选择更新后自动清理 dangling images。
+- 可选择是否启用每日 systemd timer。
+
+菜单 `97` 可清理 Dockcheck 自动更新：
+
+- 停用并移除 systemd service/timer。
+- 可选择是否删除 `_auto_update` 目录。
+
+菜单 `98` 可立即执行一次：
+
+- 只检查，不更新。
+- 检查并更新一次。
+
+需要固定容器 MAC 的服务，应在 compose 网络配置中显式写 `mac_address`；Dockcheck 更新后会检查 compose 期望 MAC 与实际容器 MAC 是否一致。
+
+### 5. MosDNS 在 Surge 下使用 fake IPv6
 
 mosdns 选择 Surge 作为上游，并开启 fake IPv6 解析前，需要先确认 Surge 的 fake IPv6 链路完整可用。仅 DNS 能返回 fake IPv6 不够，客户端还必须能把该 IPv6 段路由到运行 Surge 的 Mac，并由 Surge VIF 承载。
 
@@ -105,7 +132,7 @@ Mac 侧：
 
 如果上述条件不满足，安装 mosdns 时不要开启 fake IPv6 解析，让 AAAA 也走 fake IPv4。
 
-### 5.ipv4+ipv6回家
+### 6. IPv4 + IPv6 回家
 ⚠️ 入站协议尽量避免udp。下列方案依赖mihomo入站，请先安装mihomo并配置好入站端口。
 
 | 场景 | 公网ipv4 | 公网ipv6 | 容器可得ipv6 | 入站方式                                                                                           
@@ -121,8 +148,18 @@ Mac 侧：
 - 默认使用ipv4计算ipv6 ula地址（⚠️这不符合RFC4193，想合规可手工输入合规的ipv6 ula），生成fd10::/64（对应10.0.0.0/8）、fd17::/64（对应172.16.0.0/12）、fd19::/64（对应192.168.0.0/16）作为 IPv6 网段，如不默认则一定要手工输入ipv6 ula
 - 安装macvlan bridge错误请回滚操作，以免流量死循环导致无法进入而重新刷机
 
-## 📦 依赖：
-- 脚本会自动安装依赖的命令： ipcalc curl jq tar
+## 📦 依赖
+
+| 类型 | 依赖 |
+|---|---|
+| 基础脚本依赖 | `ipcalc`, `curl`, `jq`, `tar` |
+| Docker 功能依赖 | `docker`, `docker compose` |
+| Dockcheck 自动更新依赖 | `flock`, `python3`, `systemctl`, `regctl` |
+
+其中 `regctl` 会在安装 Dockcheck 自动更新时下载到 `_auto_update/bin`。
+
+不同 NAS / Linux 发行版自带命令差异较大，安装前建议先确认基础依赖和 Docker Compose 是否可用。
+
 - https://github.com/perryyeh/librespeed
 - https://github.com/perryyeh/adguardhome
 - https://github.com/perryyeh/mosdns
