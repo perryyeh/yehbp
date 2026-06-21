@@ -167,11 +167,11 @@ Mac 侧：
 - https://github.com/perryyeh/mihomo
 - https://github.com/perryyeh/ddnsgo
 - https://github.com/perryyeh/lucky
-- https://github.com/mag37/dockcheck
 
 ## 📚 参考文献：
 - https://github.com/IrineSistiana/mosdns
 - https://github.com/AdguardTeam/AdGuardHome
+- https://github.com/mag37/dockcheck
 
 ## 📜 License
 MIT License © 2026
