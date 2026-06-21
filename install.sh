@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.21.09"
+APP_VERSION="2026.06.21.10"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -2703,7 +2703,9 @@ install_lucky() {
 }
 
 install_portainer() {
-    local dockerapps
+    local dockerapps portainer_dir compose_file host_ip
+    local -a COMPOSE
+
     select_dockerapps_dir "portainer"
     case $? in
       0) dockerapps="$SELECTED_DOCKERAPPS_DIR" ;;
@@ -2711,18 +2713,52 @@ install_portainer() {
       *) return 1 ;;
     esac
 
-    mkdir -p "${dockerapps}/portainer" || return 1
-    docker run -d -p 9443:9443 --name=portainer --restart=always \
-    -v /var/run/docker.sock:/var/run/docker.sock -v "${dockerapps}/portainer:/data" portainer/portainer-ce:lts
+    if docker compose version >/dev/null 2>&1; then
+        COMPOSE=(docker compose)
+    elif command -v docker-compose >/dev/null 2>&1; then
+        COMPOSE=(docker-compose)
+    else
+        echo "❌ 未找到 docker compose / docker-compose，无法用 compose 管理 Portainer。"
+        return 1
+    fi
 
-    local host_ip
+    portainer_dir="${dockerapps}/portainer"
+    compose_file="${portainer_dir}/docker-compose.yml"
+    if docker ps -a --format '{{.Names}}' | grep -qx portainer; then
+        echo "🧩 发现旧 Portainer 容器，正在移除..."
+        docker rm -f portainer >/dev/null || return 1
+    fi
+
+    echo "🧹 覆盖 Portainer 目录：$portainer_dir"
+    rm -rf -- "$portainer_dir" || return 1
+    mkdir -p "$portainer_dir" || return 1
+
+    cat > "$compose_file" <<EOF
+services:
+  portainer:
+    image: portainer/portainer-ce:lts
+    container_name: portainer
+    restart: always
+    ports:
+      - "9443:9443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${portainer_dir}:/data
+EOF
+
+    echo "🔎 Portainer compose 校验..."
+    (cd "$portainer_dir" && "${COMPOSE[@]}" -p portainer -f docker-compose.yml config >/dev/null) || return 1
+
+    echo "🚀 使用 compose 启动 Portainer..."
+    (cd "$portainer_dir" && "${COMPOSE[@]}" -p portainer -f docker-compose.yml up -d) || return 1
+
     host_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')"
     [ -z "$host_ip" ] && host_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    echo "✅ Portainer 已用 compose 启动"
+    echo "  compose 文件：$compose_file"
     if [ -n "$host_ip" ]; then
-        echo "✅ Portainer 已安装"
         echo "  访问地址：https://${host_ip}:9443"
     else
-        echo "✅ Portainer 已安装"
         echo "  访问地址：https://<宿主机IP>:9443"
     fi
 }
