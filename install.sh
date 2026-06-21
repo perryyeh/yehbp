@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.17.08"
+APP_VERSION="2026.06.17.09"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -3032,7 +3032,7 @@ install_dockcheck_auto_update() {
         return 1
     fi
 
-    local root_dir base_dir log_dir enable_timer update_time delay_days prune_ans auto_prune timer_calendar rc
+    local root_dir base_dir log_dir enable_timer update_time delay_days prune_ans auto_prune timer_calendar check_now rc
     select_dockerapps_dir "Dockcheck Compose 自动更新"
     rc=$?
     case "$rc" in
@@ -3135,13 +3135,18 @@ install_dockcheck_auto_update() {
         echo "⚠️ 未检测到 systemctl，仅写入脚本；请自行定时调用：$base_dir/docker-auto-update.sh"
     fi
 
-    echo "🧪 执行一次只检查不更新..."
-    "$base_dir/docker-auto-update.sh" --check-only || return 1
-
     echo "✅ Dockcheck 自动更新组件安装完成。"
     echo "   手动检查：$base_dir/docker-auto-update.sh --check-only"
     echo "   手动更新：$base_dir/docker-auto-update.sh"
     echo "   日志目录：$log_dir"
+
+    read -r -p "是否现在执行一次只检查不更新？可能较慢 [y/N]: " check_now
+    if [[ "$check_now" =~ ^[Yy]$ ]]; then
+        echo "🧪 执行一次只检查不更新..."
+        "$base_dir/docker-auto-update.sh" --check-only || return 1
+    else
+        echo "ℹ️ 已跳过立即检查；安装已完成。"
+    fi
 }
 
 install_watchtower() {
