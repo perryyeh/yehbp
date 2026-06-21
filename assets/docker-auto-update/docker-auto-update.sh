@@ -49,7 +49,7 @@ esac
   if [ "$DELAY_DAYS" != "0" ]; then
     args+=("-d" "$DELAY_DAYS")
   fi
-  if [ "$AUTO_PRUNE" = "true" ]; then
+  if [ "$AUTO_PRUNE" = "true" ] && [ "$mode" = "update" ]; then
     args+=("-p")
   fi
   if [ "$mode" = "check" ]; then

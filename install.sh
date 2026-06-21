@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.17.07"
+APP_VERSION="2026.06.17.08"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -3118,7 +3118,11 @@ install_dockcheck_auto_update() {
     if command -v systemctl >/dev/null 2>&1; then
         cp "$base_dir/yehbp-docker-auto-update.service" /etc/systemd/system/yehbp-docker-auto-update.service
         cp "$base_dir/yehbp-docker-auto-update.timer" /etc/systemd/system/yehbp-docker-auto-update.timer
-        systemd-analyze verify /etc/systemd/system/yehbp-docker-auto-update.service /etc/systemd/system/yehbp-docker-auto-update.timer >/dev/null || return 1
+        systemd-analyze verify /etc/systemd/system/yehbp-docker-auto-update.service /etc/systemd/system/yehbp-docker-auto-update.timer >/dev/null 2>&1 || {
+            echo "❌ systemd unit 校验失败："
+            systemd-analyze verify /etc/systemd/system/yehbp-docker-auto-update.service /etc/systemd/system/yehbp-docker-auto-update.timer
+            return 1
+        }
         systemctl daemon-reload
         if [[ "$enable_timer" =~ ^[Yy]$ ]]; then
             systemctl enable --now yehbp-docker-auto-update.timer
