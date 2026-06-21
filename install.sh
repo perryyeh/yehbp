@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.17.10"
+APP_VERSION="2026.06.21.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -336,8 +336,8 @@ function show_menu() {
     echo "72) 优化journald日志"
     echo "90）创建macvlan bridge"
     echo "91）清理macvlan bridge"
-    echo "96）安装 Dockcheck Compose 自动更新"
-    echo "97）清理 Dockcheck Compose 自动更新"
+    echo "96）安装 Dockcheck 自动更新"
+    echo "97）清理 Dockcheck 自动更新"
     echo "98）立即执行 Dockcheck 检查/更新一次"
     echo "99）退出"
     echo "============================"
@@ -2944,7 +2944,7 @@ clean_macvlan_bridge() {
 
 
 cleanup_dockcheck_auto_update() {
-    echo "🧹 清理 Dockcheck Compose 自动更新"
+    echo "🧹 清理 Dockcheck 自动更新"
 
     if [ "${EUID:-$(id -u)}" -ne 0 ]; then
         echo "❌ 需要 root 权限，请使用 sudo 运行。"
@@ -2952,11 +2952,11 @@ cleanup_dockcheck_auto_update() {
     fi
 
     local root_dir base_dir delete_dir_ans rc
-    select_dockerapps_dir "Dockcheck Compose 自动更新清理"
+    select_dockerapps_dir "Dockcheck 自动更新清理"
     rc=$?
     case "$rc" in
         0) ;;
-        2) echo "✅ 已退出 Dockcheck Compose 自动更新清理。"; return 0 ;;
+        2) echo "✅ 已退出 Dockcheck 自动更新清理。"; return 0 ;;
         *) return 1 ;;
     esac
 
@@ -2996,11 +2996,11 @@ cleanup_dockcheck_auto_update() {
         echo "ℹ️ 未找到目录：$base_dir"
     fi
 
-    echo "✅ Dockcheck Compose 自动更新清理完成。"
+    echo "✅ Dockcheck 自动更新清理完成。"
 }
 
 install_dockcheck_auto_update() {
-    echo "🔧 安装 Dockcheck Compose 自动更新（保留 compose 网络/MAC 配置）"
+    echo "🔧 安装 Dockcheck 自动更新（保留 Docker 网络/MAC 配置）"
 
     if [ "${EUID:-$(id -u)}" -ne 0 ]; then
         echo "❌ 需要 root 权限，请使用 sudo 运行。"
@@ -3032,11 +3032,11 @@ install_dockcheck_auto_update() {
     fi
 
     local root_dir base_dir log_dir enable_timer update_time delay_days prune_ans auto_prune timer_calendar check_now rc
-    select_dockerapps_dir "Dockcheck Compose 自动更新"
+    select_dockerapps_dir "Dockcheck 自动更新"
     rc=$?
     case "$rc" in
         0) ;;
-        2) echo "✅ 已退出 Dockcheck Compose 自动更新安装。"; return 0 ;;
+        2) echo "✅ 已退出 Dockcheck 自动更新安装。"; return 0 ;;
         *) return 1 ;;
     esac
 
@@ -3150,7 +3150,7 @@ install_dockcheck_auto_update() {
 
 
 run_dockcheck_auto_update_once() {
-    echo "🚀 立即执行 Dockcheck Compose 检查/更新"
+    echo "🚀 立即执行 Dockcheck 检查/更新"
 
     if [ "${EUID:-$(id -u)}" -ne 0 ]; then
         echo "❌ 需要 root 权限，请使用 sudo 运行。"
@@ -3158,11 +3158,11 @@ run_dockcheck_auto_update_once() {
     fi
 
     local root_dir base_dir mode rc confirm
-    select_dockerapps_dir "Dockcheck Compose 手动执行"
+    select_dockerapps_dir "Dockcheck 手动执行"
     rc=$?
     case "$rc" in
         0) ;;
-        2) echo "✅ 已退出 Dockcheck Compose 手动执行。"; return 0 ;;
+        2) echo "✅ 已退出 Dockcheck 手动执行。"; return 0 ;;
         *) return 1 ;;
     esac
 
@@ -3171,7 +3171,7 @@ run_dockcheck_auto_update_once() {
 
     if [ ! -x "$base_dir/docker-auto-update.sh" ]; then
         echo "❌ 未找到可执行脚本：$base_dir/docker-auto-update.sh"
-        echo "👉 请先执行 96 安装 Dockcheck Compose 自动更新。"
+        echo "👉 请先执行 96 安装 Dockcheck 自动更新。"
         return 1
     fi
 
