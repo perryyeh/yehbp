@@ -9,6 +9,7 @@ CONFIG_FILE="${CONFIG_FILE:-${SCRIPT_DIR}/auto-update.conf}"
 ROOT_DIR="${ROOT_DIR:-$(dirname -- "$BASE_DIR_DEFAULT")}"
 BASE_DIR="${BASE_DIR:-$BASE_DIR_DEFAULT}"
 LOG_DIR="${LOG_DIR:-$BASE_DIR/logs}"
+LOG_RETENTION_DAYS="${LOG_RETENTION_DAYS:-7}"
 DOCKCHECK_EXTRA_ARGS="${DOCKCHECK_EXTRA_ARGS:--m -t 30}"
 AUTO_PRUNE="${AUTO_PRUNE:-false}"
 DELAY_DAYS="${DELAY_DAYS:-0}"
@@ -28,6 +29,13 @@ fi
 export PATH="$BASE_DIR/bin:$PATH"
 export ROOT_DIR
 export HOME="${HOME:-/root}"
+
+cleanup_old_logs() {
+  if [[ "$LOG_RETENTION_DAYS" =~ ^[0-9]+$ ]] && [ "$LOG_RETENTION_DAYS" -gt 0 ]; then
+    find "$LOG_DIR" -maxdepth 1 -type f -name 'update-*.log' -mtime +$((LOG_RETENTION_DAYS - 1)) -print -delete \
+      | sed 's/^/🧹 deleted old log: /'
+  fi
+}
 
 run_with_heartbeat() {
   local start now elapsed pid rc sleep_pid
@@ -130,6 +138,7 @@ done
   echo "=== $(date -Is) yehbp docker auto update start mode=$mode ==="
   echo "ROOT_DIR=$ROOT_DIR"
   echo "BASE_DIR=$BASE_DIR"
+  cleanup_old_logs
 
   cd "$BASE_DIR"
   if [ ! -x ./dockcheck.sh ]; then
