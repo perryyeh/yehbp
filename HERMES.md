@@ -2,8 +2,13 @@
 
 - Project identity: repository `https://github.com/perryyeh/yehbp`, installed command `yehbp`, title `Yeh Bypass (Gateway)`, personal bypass-router helper covering DNS cache/splitting, proxy access, and remote home-network access.
 - README install command should stay as a simple pipe form: `curl -fsSL <install.sh> | sudo bash`; do not change it to process substitution or require extra parameters.
-- Version numbers use `YYYY.MM.DD.NN` based on the current local date, not the previous version's date. If today's date changed, reset the suffix to `.01`; otherwise increment the suffix. README-only documentation changes do not require a version bump.
-- Keep `VERSION` and `APP_VERSION` in `install.sh` identical whenever a version bump is needed.
+- Version bump rule:
+  - Any code/script/behavior change must bump both `VERSION` and `APP_VERSION`.
+  - Documentation-only changes, including README/HERMES/docs/comments-only edits, do not require a version bump.
+  - Version format is `YYYY.MM.DD.NN` using the current local date.
+  - If the existing version date is today, increment today's suffix by 1, e.g. `2026.06.23.01` → `2026.06.23.02`.
+  - If the existing version date is not today, reset suffix to `.01`, e.g. `2026.06.22.03` → `2026.06.23.01`.
+  - `VERSION` and `APP_VERSION` must always be identical after a bump.
 - Run syntax checks before pushing: `bash -n install.sh`, `bash -n assets/docker-auto-update/docker-auto-update.sh`, and `python3 -m py_compile assets/docker-auto-update/check-compose-macs.py` when those files exist.
 - Commit and push validated functional/script changes to `perryyeh/yehbp`.
 - Larger helper scripts/templates belong under `assets/<feature>/`; `install.sh` should download/render them instead of embedding large heredocs.
