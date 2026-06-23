@@ -93,7 +93,7 @@ sudo rm -f /usr/local/bin/yehbp.bak-*
 7. 安装 MosDNS；选择 Surge 作为上游时 DNS 写 `198.18.0.2`，选择 Mihomo 作为上游时 DNS 写 Mihomo 的 IP。
 8. 安装 AdGuardHome，并使用 MosDNS 作为上游 DNS。
 9. 最后创建 macvlan bridge，解决宿主机和容器之间的互通。
-10. 在路由器添加 FakeIP 静态路由：`198.18.0.0/15` 和 `fd00:6152:0:9::/64` 下一跳到承载 FakeIP 的 Surge / Mihomo IP。若使用 Surge 承载 fake IPv6，Surge 侧还需要自己宣告 RA，让客户端能把 fake IPv6 段路由到 Surge。若 RA 链路没搞定，安装 MosDNS 时不要开启 IPv6 fake-ip。
+10. 在路由器添加 FakeIP 静态路由：`198.18.0.0/15` 和 `fd00:6152:0:9::/64` 下一跳到承载 FakeIP 的 Surge / Mihomo IP。若使用 Surge 承载 fake IPv6，参考下面的「5. MosDNS 在 Surge 下使用 fake IPv6」；若 RA 链路没搞定，安装 MosDNS 时不要开启 IPv6 fake-ip。
 11. 在路由器把 AdGuardHome 的 IP 设置为局域网 DNS。
 
 ### 4. Docker 镜像自动更新
@@ -122,15 +122,12 @@ sudo rm -f /usr/local/bin/yehbp.bak-*
 
 mosdns 选择 Surge 作为上游，并开启 fake IPv6 解析前，需要先确认 Surge 的 fake IPv6 链路完整可用。仅 DNS 能返回 fake IPv6 不够，客户端还必须能把该 IPv6 段路由到运行 Surge 的 Mac，并由 Surge VIF 承载。
 
-路由器侧：
-1. 添加静态路由：`fd00:6152::/126` 下一跳到运行 Surge 的 Mac。
-
-Mac 侧：
+Surge / Mac 侧：
 1. Surge 配置必须设置 `ipv6-vif = always`，不能用 `auto`，否则 IPv6 VIF 可能不会按预期拉起。
 2. 开启 IPv6 转发：`net.inet6.ip6.forwarding=1`。
-3. 把 `fd00:6152:0:9::/64` 绑定到 Surge VIF。
-4. 在主网卡发送 RA，告诉局域网：`fd00:6152:0:9::/64` 这个 IPv6 段由这台 Mac 承载。
-5. Mac 开机后或主网卡变动后，需要重新确认/切换第 3、4 步，确保 fake IPv6 段仍绑定在 Surge VIF，RA 仍从当前主网卡发布。
+3. 在主网卡发送 RA，让局域网客户端知道 fake IPv6 路由由这台 Mac 承载；当前方案宣告的是 `fd00:6152::/60`。
+4. 把 `fd00:6152::2` 和 `fd00:6152:0:9::/64` 路由到当前 Surge VIF。
+5. Mac 开机、Surge 重启或主网卡变动后，需要重新确认 RA 和路由仍指向当前主网卡 / 当前 Surge VIF。
 
 如果上述条件不满足，安装 mosdns 时不要开启 fake IPv6 解析，让 AAAA 也走 fake IPv4。
 
