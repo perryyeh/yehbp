@@ -86,14 +86,15 @@ sudo rm -f /usr/local/bin/yehbp.bak-*
 
 1. 确认 Docker 容器安装目录；如需新硬盘，先完成格式化和挂载。
 2. 确认 Docker 已安装；群晖和飞牛通常已有 Docker，可跳过安装。
-3. 群晖和飞牛的网卡建议先开启 Open vSwitch。
+3. 群晖的网卡建议先开启 Open vSwitch。
 4. 确认专用 IP 段给 macvlan 使用：IPv4 建议使用新的 `/24` 段，IPv6 ULA 建议使用 `/64` 段，并在路由器 DHCP 中避开该地址段。
-5. 选择网卡创建 macvlan；群晖和飞牛建议选择 `ovs` 开头网卡。
+5. 选择网卡创建 macvlan；群晖建议选择 `ovs` 开头网卡。
 6. 没有 Surge / OpenWrt 作为代理时，可安装 Mihomo 替代；Mihomo 需开启 TUN 模式并配置好上游代理。
-7. 在路由器添加静态路由：`198.18.0.0/15` 下一跳到 Surge / Mihomo 的 IP。
-8. 安装 MosDNS；选择 Surge 作为上游时 DNS 写 `198.18.0.2`，选择 Mihomo 作为上游时 DNS 写 Mihomo 的 IP。
-9. 安装 AdGuardHome，并使用 MosDNS 作为上游 DNS。
-10. 最后创建 macvlan bridge，解决宿主机和容器之间的互通。
+7. 安装 MosDNS；选择 Surge 作为上游时 DNS 写 `198.18.0.2`，选择 Mihomo 作为上游时 DNS 写 Mihomo 的 IP。
+8. 安装 AdGuardHome，并使用 MosDNS 作为上游 DNS。
+9. 最后创建 macvlan bridge，解决宿主机和容器之间的互通。
+10. 在路由器添加 FakeIP 静态路由：`198.18.0.0/15` 和 `fd00:6152:0:9::/64` 下一跳到承载 FakeIP 的 Surge / Mihomo IP。若 fake IPv4 / fake IPv6 由 Surge 承载，路由下一跳应指向 Surge；Mihomo 如需接入该链路，也应配置为使用 Surge 作为上游。
+11. 在路由器把 AdGuardHome 的 IP 设置为局域网 DNS。
 
 ### 4. Docker 镜像自动更新
 
