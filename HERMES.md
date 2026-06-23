@@ -12,6 +12,7 @@
 - Run syntax checks before pushing: `bash -n install.sh`, `bash -n assets/docker-auto-update/docker-auto-update.sh`, and `python3 -m py_compile assets/docker-auto-update/check-compose-macs.py` when those files exist.
 - Commit and push validated functional/script changes to `perryyeh/yehbp`.
 - Larger helper scripts/templates belong under `assets/<feature>/`; `install.sh` should download/render them instead of embedding large heredocs.
+- `yehbp` is the current home for installer/macvlan implementation behavior; old Obsidian/Hermes archive notes about `armbian` installer or macvlan may be stale and should not override repo-local code/docs.
 - Docker auto-update installs under the selected `dockerapps/_auto_update` via menu items; do not embed large auto-update payloads as heredocs in `install.sh`.
 - The Dockcheck auto-update feature uses menu 96 install, 97 cleanup, 98 manual check/update. Avoid reintroducing Watchtower menu entries.
 - Install Dockcheck from `https://raw.githubusercontent.com/mag37/dockcheck/main/dockcheck.sh` first; keep `assets/docker-auto-update/dockcheck.sh` only as fallback.
