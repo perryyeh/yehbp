@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.07.06.04"
+APP_VERSION="2026.07.06.05"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -174,10 +174,10 @@ uninstall_yehbp_cli() {
         return 1
     fi
 
-    local ans cleanup_backups
+    local ans
 
     echo "⚠️ 将删除 ${INSTALL_BIN}。"
-    echo "ℹ️ 这只会删除 ${APP_NAME} 命令，不会删除已安装的 Docker 容器、配置目录、macvlan、systemd 服务等。"
+    echo "ℹ️ 这只会删除 ${APP_NAME} 命令和历史备份 ${INSTALL_BIN}.bak-*，不会删除已安装的 Docker 容器、配置目录、macvlan、systemd 服务等。"
     read -r -p "确认删除？[y/N]: " ans
     if [[ ! "$ans" =~ ^[Yy]$ ]]; then
         echo "ℹ️ 已取消删除。"
@@ -192,11 +192,8 @@ uninstall_yehbp_cli() {
     fi
 
     if compgen -G "${INSTALL_BIN}.bak-*" >/dev/null; then
-        read -r -p "是否同时清理旧版本遗留备份 ${INSTALL_BIN}.bak-*？[y/N]: " cleanup_backups
-        if [[ "$cleanup_backups" =~ ^[Yy]$ ]]; then
-            rm -f ${INSTALL_BIN}.bak-* || return 1
-            echo "✅ 已清理旧备份：${INSTALL_BIN}.bak-*"
-        fi
+        rm -f ${INSTALL_BIN}.bak-* || return 1
+        echo "✅ 已清理旧备份：${INSTALL_BIN}.bak-*"
     fi
 }
 
@@ -377,7 +374,7 @@ function show_menu() {
     echo "97）清理 Dockcheck 自动更新"
     echo "98）立即执行 Dockcheck 检查/更新一次"
     echo "99）退出（也可输入 exit / quit / q）"
-    echo "999）删除 ${APP_NAME} 命令（也可输入 del / delete / uninstall / remove / rm）"
+    echo "999）删除 ${APP_NAME}（也可输入 del / delete / uninstall / remove / rm）"
     echo "============================"
 }
 
