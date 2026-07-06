@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.06.22.02"
+APP_VERSION="2026.07.06.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -168,6 +168,38 @@ update_yehbp_cli() {
     echo "✅ 升级完成：${INSTALL_BIN}"
 }
 
+uninstall_yehbp_cli() {
+    if [ "${EUID:-$(id -u)}" -ne 0 ]; then
+        echo "❌ 删除 ${APP_NAME} 需要 root 权限，请使用 sudo。"
+        return 1
+    fi
+
+    local ans cleanup_backups
+
+    echo "⚠️ 将删除 ${INSTALL_BIN}。"
+    echo "ℹ️ 这只会删除 ${APP_NAME} 命令，不会删除已安装的 Docker 容器、配置目录、macvlan、systemd 服务等。"
+    read -r -p "确认删除？[y/N]: " ans
+    if [[ ! "$ans" =~ ^[Yy]$ ]]; then
+        echo "ℹ️ 已取消删除。"
+        return 0
+    fi
+
+    if [ -e "$INSTALL_BIN" ]; then
+        rm -f "$INSTALL_BIN" || return 1
+        echo "✅ 已删除：${INSTALL_BIN}"
+    else
+        echo "ℹ️ 未找到：${INSTALL_BIN}"
+    fi
+
+    if compgen -G "${INSTALL_BIN}.bak-*" >/dev/null; then
+        read -r -p "是否同时清理旧版本遗留备份 ${INSTALL_BIN}.bak-*？[y/N]: " cleanup_backups
+        if [[ "$cleanup_backups" =~ ^[Yy]$ ]]; then
+            rm -f ${INSTALL_BIN}.bak-* || return 1
+            echo "✅ 已清理旧备份：${INSTALL_BIN}.bak-*"
+        fi
+    fi
+}
+
 check_yehbp_update() {
     local tmp remote_version ans
 
@@ -238,6 +270,10 @@ case "${1:-}" in
         ;;
     update|--update)
         update_yehbp_cli
+        exit $?
+        ;;
+    uninstall|--uninstall|delete|--delete|del|--del)
+        uninstall_yehbp_cli
         exit $?
         ;;
 esac
@@ -340,6 +376,7 @@ function show_menu() {
     echo "96）安装 Dockcheck 自动更新"
     echo "97）清理 Dockcheck 自动更新"
     echo "98）立即执行 Dockcheck 检查/更新一次"
+    echo "100）删除 ${APP_NAME} 命令（也可输入 del）"
     echo "99）退出"
     echo "============================"
 }
@@ -3706,6 +3743,7 @@ while true; do
         96) install_dockcheck_auto_update ;;
         97) cleanup_dockcheck_auto_update ;;
         98) run_dockcheck_auto_update_once ;;
+        100|del|delete|uninstall) uninstall_yehbp_cli ;;
         99) echo "退出脚本。"; exit 0 ;;
         *) echo "无效选项，请重新输入。" ;;
     esac

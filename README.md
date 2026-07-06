@@ -44,6 +44,7 @@
 | 96 | 安装 Dockcheck 自动更新           |
 | 97 | 清理 Dockcheck 自动更新           |
 | 98 | 立即执行 Dockcheck 检查/更新一次      |
+| 100 / del | 删除 `yehbp` 命令          |
 | 99 | 退出脚本                        |
 
 ## 🚀 使用方法
@@ -69,6 +70,28 @@ sudo yehbp
 输入 `y` 才会升级；默认回车或输入 `n` 都不会升级。版本检查只读取仓库里的 `VERSION` 文件；只有远程版本严格高于当前版本才会提示升级，确认升级后才会下载最新脚本并做语法检查，然后覆盖当前 `yehbp` 命令。
 
 ### 2. 删除 yehbp 命令
+
+可以直接运行删除命令：
+
+```bash
+sudo yehbp del
+```
+
+也可以进入交互菜单后输入：
+
+```text
+100
+```
+
+或：
+
+```text
+del
+```
+
+脚本会二次确认后删除 `/usr/local/bin/yehbp`。
+
+如需手动删除：
 
 ```bash
 sudo rm -f /usr/local/bin/yehbp
