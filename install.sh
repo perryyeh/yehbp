@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.07.06.03"
+APP_VERSION="2026.07.06.04"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -272,7 +272,7 @@ case "${1:-}" in
         update_yehbp_cli
         exit $?
         ;;
-    uninstall|--uninstall|delete|--delete|del|--del)
+    uninstall|--uninstall|delete|--delete|del|--del|remove|--remove|rm|--rm)
         uninstall_yehbp_cli
         exit $?
         ;;
@@ -377,7 +377,7 @@ function show_menu() {
     echo "97）清理 Dockcheck 自动更新"
     echo "98）立即执行 Dockcheck 检查/更新一次"
     echo "99）退出（也可输入 exit / quit / q）"
-    echo "999）删除 ${APP_NAME} 命令（也可输入 del）"
+    echo "999）删除 ${APP_NAME} 命令（也可输入 del / delete / uninstall / remove / rm）"
     echo "============================"
 }
 
@@ -3717,7 +3717,11 @@ install_dependencies
 show_menu
 
 while true; do
-    read -p "请输入选项: " choice
+    if ! read -r -p "请输入选项: " choice; then
+        echo
+        echo "退出脚本。"
+        exit 0
+    fi
     case $choice in
         0) show_menu ;;
         1) os_info ;;
@@ -3744,7 +3748,7 @@ while true; do
         97) cleanup_dockcheck_auto_update ;;
         98) run_dockcheck_auto_update_once ;;
         99|exit|quit|q) echo "退出脚本。"; exit 0 ;;
-        999|del|delete|uninstall) uninstall_yehbp_cli ;;
+        999|del|delete|uninstall|remove|rm) uninstall_yehbp_cli ;;
         *) echo "无效选项，请重新输入。" ;;
     esac
 done

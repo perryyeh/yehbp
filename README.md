@@ -45,7 +45,7 @@
 | 97 | 清理 Dockcheck 自动更新           |
 | 98 | 立即执行 Dockcheck 检查/更新一次      |
 | 99 / exit / quit / q | 退出脚本           |
-| 999 / del | 删除 `yehbp` 命令          |
+| 999 / del / delete / uninstall / remove / rm | 删除 `yehbp` 命令 |
 
 ## 🚀 使用方法
 
@@ -71,22 +71,16 @@ sudo yehbp
 
 ### 2. 删除 yehbp 命令
 
-可以直接运行删除命令：
+可以直接运行删除命令，支持 `del` / `delete` / `uninstall` / `remove` / `rm`：
 
 ```bash
 sudo yehbp del
 ```
 
-也可以进入交互菜单后输入：
+也可以进入交互菜单后输入 `999`，或上述任一删除别名：
 
 ```text
 999
-```
-
-或：
-
-```text
-del
 ```
 
 脚本会二次确认后删除 `/usr/local/bin/yehbp`。
