@@ -71,19 +71,25 @@ sudo yehbp
 
 ### 2. 删除 yehbp
 
-支持 `del` / `delete` / `uninstall` / `remove` / `rm`：
+先进入 `yehbp` 交互菜单：
 
 ```bash
-sudo yehbp del
+sudo yehbp
 ```
 
-交互菜单内可输入：
+然后输入任一删除命令：
 
 ```text
 999 / del / delete / uninstall / remove / rm
 ```
 
 脚本会二次确认后删除 `/usr/local/bin/yehbp` 和历史备份 `/usr/local/bin/yehbp.bak-*`，不会删除已安装的 Docker 容器、配置目录、macvlan、systemd 服务等。
+
+也可以手动删除：
+
+```bash
+sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbp.bak-*
+```
 
 ### 3. 设置旁路由步骤
 
