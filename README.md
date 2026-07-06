@@ -49,7 +49,7 @@
 
 ## 🚀 使用方法
 
-### 1. 安装命令
+### 1. 安装 yehbp
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh | sudo bash
@@ -85,7 +85,7 @@ sudo yehbp del
 
 脚本会二次确认后删除 `/usr/local/bin/yehbp` 和历史备份 `/usr/local/bin/yehbp.bak-*`，不会删除已安装的 Docker 容器、配置目录、macvlan、systemd 服务等。
 
-### 3. 安装步骤
+### 3. 设置旁路由步骤
 
 1. 确认 Docker 容器安装目录；如需新硬盘，先完成格式化和挂载。
 2. 确认 Docker 已安装；群晖和飞牛通常已有 Docker，可跳过安装。
