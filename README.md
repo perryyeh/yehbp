@@ -44,7 +44,7 @@
 | 96 | 安装 Dockcheck 自动更新           |
 | 97 | 清理 Dockcheck 自动更新           |
 | 98 | 立即执行 Dockcheck 检查/更新一次      |
-| 99 / exit | 退出脚本                    |
+| 99 / exit / quit / q | 退出脚本           |
 | 999 / del | 删除 `yehbp` 命令          |
 
 ## 🚀 使用方法
