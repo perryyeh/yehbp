@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.07.07.01"
+APP_VERSION="2026.07.07.02"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -1080,26 +1080,26 @@ repo_offer_delete_backup() {
     rm -rf "$bak"
     echo "🗑️ 已删除：$bak"
 
-    local target tmp_path tmp_mounts_found=0 tmp_deleted=0
+    local target cleanup_path mounts_found=0 cleanup_deleted=0
     target="${bak%.bak-*}"
-    for tmp_path in "${target}".tmp-*; do
-      [ -d "$tmp_path" ] || continue
+    for cleanup_path in "${target}".tmp-* "${target}".next-*; do
+      [ -d "$cleanup_path" ] || continue
       if [ -n "$container" ]; then
-        local tmp_mounts
-        tmp_mounts="$(docker inspect -f '{{range .Mounts}}{{println .Source}}{{end}}' "$container" 2>/dev/null | grep -F "$tmp_path" || true)"
-        if [ -n "$tmp_mounts" ]; then
-          echo "⚠️ [$name] 检测到容器仍挂载临时目录，跳过删除：$tmp_path"
-          tmp_mounts_found=1
+        local cleanup_mounts
+        cleanup_mounts="$(docker inspect -f '{{range .Mounts}}{{println .Source}}{{end}}' "$container" 2>/dev/null | grep -F "$cleanup_path" || true)"
+        if [ -n "$cleanup_mounts" ]; then
+          echo "⚠️ [$name] 检测到容器仍挂载临时/next目录，跳过删除：$cleanup_path"
+          mounts_found=1
           continue
         fi
       fi
-      rm -rf "$tmp_path"
-      echo "🗑️ 已删除临时目录：$tmp_path"
-      tmp_deleted=1
+      rm -rf "$cleanup_path"
+      echo "🗑️ 已删除临时/next目录：$cleanup_path"
+      cleanup_deleted=1
     done
 
-    [ "$tmp_mounts_found" -eq 1 ] && echo "ℹ️ 挂载中的临时目录已保留。"
-    [ "$tmp_deleted" -eq 0 ] && [ "$tmp_mounts_found" -eq 0 ] && echo "ℹ️ 未发现同应用临时目录：${target}.tmp-*"
+    [ "$mounts_found" -eq 1 ] && echo "ℹ️ 挂载中的临时/next目录已保留。"
+    [ "$cleanup_deleted" -eq 0 ] && [ "$mounts_found" -eq 0 ] && echo "ℹ️ 未发现同应用临时/next目录：${target}.tmp-* / ${target}.next-*"
   else
     echo "ℹ️ 已保留：$bak"
   fi
