@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.07.06.05"
+APP_VERSION="2026.07.07.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -797,6 +797,32 @@ remove_config_ipv6_fields() {
 
   # 3) dns.ipv6: true -> false，避免解析返回无法路由的 AAAA
   sed -i 's/^\([[:space:]]*\)ipv6:[[:space:]]*true/\1ipv6: false/' "$config_file"
+}
+
+disable_mosdns_fakeipv6() {
+  local config_file="${1:-config.yaml}"
+  local tmp
+
+  if ! grep -q '^[[:space:]]*exec:[[:space:]]*\$forward_fakeipv6[[:space:]]*$' "$config_file"; then
+    echo "❌ 未找到 mosdns fake IPv6 执行行：$config_file"
+    return 1
+  fi
+
+  tmp="$(mktemp)" || return 1
+  awk '
+    /^[[:space:]]*exec:[[:space:]]*\$forward_fakeipv6[[:space:]]*$/ {
+      indent = $0
+      sub(/exec:.*/, "", indent)
+      print indent "exec: reject 0"
+      print "      - matches: \"qtype 28\""
+      print "        exec: return"
+      next
+    }
+    { print }
+  ' "$config_file" > "$tmp" && cat "$tmp" > "$config_file"
+  local rc=$?
+  rm -f "$tmp"
+  return "$rc"
 }
 
 prompt_ipv4_last_octet() {
@@ -2144,7 +2170,7 @@ install_mosdns() {
         return 1
     fi
 
-    # 9) fake IPv6 开关：不开时 AAAA 也强制走 fake IPv4，避免 fake IPv6 链路不通导致解析可用但访问失败
+    # 9) fake IPv6 开关：不开时 AAAA 返回 NODATA，避免落到 fake IPv4 造成 AAAA 伪装成 A 链路
     if [ -f "config.yaml" ]; then
         local enable_fakeipv6
 
@@ -2153,23 +2179,23 @@ install_mosdns() {
             echo "⚠️ Surge fake IPv6 需要确认链路可用，坑较多。"
             read -r -p "是否开启 fake IPv6 解析？[y/N]: " enable_fakeipv6
             if [[ ! "$enable_fakeipv6" =~ ^[Yy]$ ]]; then
-                sed -i 's#exec: \$forward_fakeipv6#exec: \$forward_fakeipv4#g' config.yaml
-                echo "✅ 已关闭 fake IPv6 解析：AAAA 将走 forward_fakeipv4"
+                disable_mosdns_fakeipv6 config.yaml || return 1
+                echo "✅ 已关闭 fake IPv6 解析：AAAA 将返回 NODATA"
             else
                 echo "✅ 已开启 fake IPv6 解析：AAAA 将走 forward_fakeipv6"
             fi
         elif [ -z "$mihomo6" ]; then
             # mihomo 无 IPv6：直接关
             echo "⚠️ mihomo 无 IPv6，关闭 fake IPv6 解析。"
-            sed -i 's#exec: \$forward_fakeipv6#exec: \$forward_fakeipv4#g' config.yaml
-            echo "✅ 已关闭 fake IPv6 解析：AAAA 将走 forward_fakeipv4"
+            disable_mosdns_fakeipv6 config.yaml || return 1
+            echo "✅ 已关闭 fake IPv6 解析：AAAA 将返回 NODATA"
         else
             # mihomo 有 IPv6：询问
             echo "⚠️ mihomo 有 IPv6，是否开启 fake IPv6 解析？"
             read -r -p "是否开启 fake IPv6 解析？[y/N]: " enable_fakeipv6
             if [[ ! "$enable_fakeipv6" =~ ^[Yy]$ ]]; then
-                sed -i 's#exec: \$forward_fakeipv6#exec: \$forward_fakeipv4#g' config.yaml
-                echo "✅ 已关闭 fake IPv6 解析：AAAA 将走 forward_fakeipv4"
+                disable_mosdns_fakeipv6 config.yaml || return 1
+                echo "✅ 已关闭 fake IPv6 解析：AAAA 将返回 NODATA"
             else
                 echo "✅ 已开启 fake IPv6 解析：AAAA 将走 forward_fakeipv6"
             fi
