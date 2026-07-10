@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.07.07.02"
+APP_VERSION="2026.07.10.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -371,7 +371,7 @@ function show_menu() {
     echo "90）创建macvlan bridge"
     echo "91）清理macvlan bridge"
     echo "96）安装 Dockcheck 自动更新"
-    echo "97）清理 Dockcheck 自动更新"
+    echo "97）删除 Dockcheck 自动更新"
     echo "98）立即执行 Dockcheck 检查/更新一次"
     echo "99）退出（也可输入 exit / quit / q）"
     echo "999）删除 ${APP_NAME}（也可输入 del / delete / uninstall / remove / rm）"
@@ -3070,7 +3070,7 @@ clean_macvlan_bridge() {
 
 
 cleanup_dockcheck_auto_update() {
-    echo "🧹 清理 Dockcheck 自动更新"
+    echo "🧹 删除 Dockcheck 自动更新"
 
     if [ "${EUID:-$(id -u)}" -ne 0 ]; then
         echo "❌ 需要 root 权限，请使用 sudo 运行。"
@@ -3078,11 +3078,11 @@ cleanup_dockcheck_auto_update() {
     fi
 
     local root_dir base_dir delete_dir_ans rc
-    select_dockerapps_dir "Dockcheck 自动更新清理"
+    select_dockerapps_dir "Dockcheck 自动更新删除"
     rc=$?
     case "$rc" in
         0) ;;
-        2) echo "✅ 已退出 Dockcheck 自动更新清理。"; return 0 ;;
+        2) echo "✅ 已退出 Dockcheck 自动更新删除。"; return 0 ;;
         *) return 1 ;;
     esac
 
@@ -3122,7 +3122,7 @@ cleanup_dockcheck_auto_update() {
         echo "ℹ️ 未找到目录：$base_dir"
     fi
 
-    echo "✅ Dockcheck 自动更新清理完成。"
+    echo "✅ Dockcheck 自动更新删除完成。"
 }
 
 install_dockcheck_auto_update() {
