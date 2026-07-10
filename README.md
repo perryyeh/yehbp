@@ -2,12 +2,25 @@
 
 自用一键旁路由交互式菜单脚本，提供从 DNS 缓存、域名分流、远程解析、代理接入，到在外回家入口的一整套网络方案。
 
-核心容器包括 AdGuardHome、MosDNS、Mihomo、ddns-go：AdGuardHome 负责 DNS 缓存；MosDNS 负责域名分流，内部域名返回真实 IP，外部域名返回 FakeIP；代理由 Mihomo 或 Surge 承载。
-
-在外回家方案以 ddns-go + Mihomo 作为入口，统一处理 IPv4 / IPv6 访问与入站流量。
-
 支持 IPv6，已在群晖 7.3+（可能需要补全欠缺命令）、飞牛 1.0+、Armbian（Linux 6.1+）上测试通过。
 
+## ✅ 适用场景与前置要求
+
+YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器通常是：
+
+- AdGuardHome：DNS 缓存与管理入口
+- MosDNS：域名分流与 FakeIP 解析
+- Mihomo：代理入口与 FakeIP 流量承载
+
+DNS 流量本身很小，常规家庭旁路使用不需要很高硬件配置。一般来说，类似 RK3566 + 1GB 内存 + 千兆网口 + Armbian 这一级别的设备即可满足基础使用。
+
+需要注意：
+
+- 如果启用 Mihomo 承载大量代理流量，实际性能主要取决于 CPU、网口、代理协议和并发连接数。
+- FakeIP 旁路依赖主路由/网关支持静态路由：
+  - Fake IPv4：需要把 `198.18.0.0/15` 路由到 Surge / Mihomo 的局域网 IP。
+  - Fake IPv6：如启用，需要支持对应 ULA IPv6 静态路由，或使用 Surge/Mac 侧 RA 宣告方案。
+- 如果主路由不支持静态路由，客户端即使能解析到 FakeIP，流量也无法正确到达代理入口，FakeIP 旁路方案不可完整工作。
 
 ## ✨ 功能特性
 - 交互式选择网卡并确认 IP / 网关 / 子网配置
