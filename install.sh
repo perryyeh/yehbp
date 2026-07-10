@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.07.10.01"
+APP_VERSION="2026.07.10.02"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -193,7 +193,7 @@ uninstall_yehbp_cli() {
 
     if compgen -G "${INSTALL_BIN}.bak-*" >/dev/null; then
         rm -f ${INSTALL_BIN}.bak-* || return 1
-        echo "✅ 已清理旧备份：${INSTALL_BIN}.bak-*"
+        echo "✅ 已删除旧备份：${INSTALL_BIN}.bak-*"
     fi
 }
 
@@ -357,7 +357,7 @@ function show_menu() {
     echo "5）格式化磁盘并挂载"
     echo "7）安装docker"
     echo "8）创建macvlan（包括ipv4+ipv6）"
-    echo "9）清理macvlan"
+    echo "9）删除macvlan"
     echo "10）安装portainer面板"
     echo "11）安装librespeed测速"
     echo "14）安装adguardhome"
@@ -369,7 +369,7 @@ function show_menu() {
     echo "71) 优化docker日志"
     echo "72) 优化journald日志"
     echo "90）创建macvlan bridge"
-    echo "91）清理macvlan bridge"
+    echo "91）删除macvlan bridge"
     echo "96）安装 Dockcheck 自动更新"
     echo "97）删除 Dockcheck 自动更新"
     echo "98）立即执行 Dockcheck 检查/更新一次"
@@ -2854,7 +2854,7 @@ EOF
 
 # ========== 删除 docker macvlan 网络 ==========
 clean_macvlan_network() {
-    echo "🧹 清理 Docker macvlan 网络"
+    echo "🧹 删除 Docker macvlan 网络"
 
     # 找出所有以 macvlan 开头的 Docker 网络
     mapfile -t macvlan_networks < <(docker network ls --format '{{.Name}}' | grep '^macvlan' || true)
@@ -2941,13 +2941,13 @@ clean_macvlan_network() {
             continue
         fi
 
-        # —— 尝试同步清理当初创建的 VLAN 子接口（如 eth0.88）——
+        # —— 尝试同步删除当初创建的 VLAN 子接口（如 eth0.88）——
         # 仅当网络名为 macvlan_<phys>_<vid> 时尝试推断；phys 假定与系统实际接口同名（之前已做过安全化）
         if [[ "$net" =~ ^macvlan_([A-Za-z0-9_-]+)_([0-9]+)$ ]]; then
             phys_safe="${BASH_REMATCH[1]}"
             vid="${BASH_REMATCH[2]}"
 
-            # 如果其它 macvlan 仍在用相同 <phys>_<vid>，则不清理该 VLAN 子接口
+            # 如果其它 macvlan 仍在用相同 <phys>_<vid>，则不删除该 VLAN 子接口
             key="${phys_safe}_${vid}"
             if [ "${remain_key_count[$key]:-0}" -gt 0 ]; then
                 echo "ℹ️ 仍有其它 macvlan 使用 ${phys_safe}.${vid}，跳过删除该 VLAN 子接口。"
@@ -2987,7 +2987,7 @@ clean_macvlan_network() {
 
 # ========== 删除 docker macvlan bridge ==========
 clean_macvlan_bridge() {
-    echo "🧹 清理 macvlan bridge（支持多个）"
+    echo "🧹 删除 macvlan bridge（支持多个）"
 
     # 找 macvlan_* 的 systemd 服务
     local svc_files=()
@@ -3021,7 +3021,7 @@ clean_macvlan_bridge() {
     done
 
     echo
-    read -p "请输入要清理的序号，或输入 a 表示清理全部，回车取消: " choice
+    read -p "请输入要删除的序号，或输入 a 表示删除全部，回车取消: " choice
     [ -z "$choice" ] && { echo "⚠️ 已取消"; return 0; }
 
     local to_clean=()
@@ -3046,7 +3046,7 @@ clean_macvlan_bridge() {
                         head -n1 | sed -E 's/.*add "([^"]+)".*/\1/')
         fi
 
-        echo "🧻 清理: $svc_name"
+        echo "🧻 删除: $svc_name"
         echo "   bridge_if: ${bridge_if:-未知}"
         echo "   脚本: $setup_script"
 
@@ -3064,7 +3064,7 @@ clean_macvlan_bridge() {
     done
 
     systemctl daemon-reload
-    echo "✅ 清理完成。"
+    echo "✅ 删除完成。"
 }
 
 
@@ -3098,7 +3098,7 @@ cleanup_dockcheck_auto_update() {
         systemctl reset-failed yehbp-docker-auto-update.service yehbp-docker-auto-update.timer >/dev/null 2>&1 || true
         echo "✅ 已移除 systemd service/timer。"
     else
-        echo "ℹ️ 未检测到 systemctl，跳过 systemd 清理。"
+        echo "ℹ️ 未检测到 systemctl，跳过 systemd service/timer 删除。"
     fi
 
     if [ -d "$base_dir" ]; then
@@ -3210,7 +3210,7 @@ install_dockcheck_auto_update() {
         return 1
     fi
 
-    read -r -p "更新成功后，是否自动清理旧的无用镜像？[y/N]: " prune_ans
+    read -r -p "更新成功后，是否自动删除旧的无用镜像？[y/N]: " prune_ans
     if [[ "$prune_ans" =~ ^[Yy]$ ]]; then
         auto_prune=true
     else
