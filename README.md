@@ -19,7 +19,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 - 如果代理流量较大 / 客户端较多，瓶颈在 Mihomo 上，可使用 CPU 性能、网速更高的 x86 安装 Mihomo，或用 macOS 上的 Surge 替代 Mihomo，以获得更好的代理性能。
 - FakeIP 旁路依赖主路由/网关支持静态路由：
   - Fake IPv4：需要把 `198.18.0.0/15` 路由到 Surge / Mihomo 的局域网 IP。
-  - Fake IPv6：如使用 Mihomo，需要局域网开启 ULA IPv6，并把 `fd00:6152:0:9::/64` 路由到 Mihomo 的局域网 IPv6；如使用 Surge / Mac，可使用 RA 宣告方案。
+  - Fake IPv6：如使用 Mihomo，需要局域网开启 ULA IPv6，并把 `fd00:6152:0:9::/64` 路由到 Mihomo 的局域网 IPv6；如使用 Surge / Mac，可使用 RA 宣告方案，具体设置参考下面的 5. MosDNS 在 Surge 下使用 fake IPv6。
 > [!WARNING]
 > 如果主路由不支持静态路由，客户端即使能解析到 FakeIP，流量也无法正确到达代理入口，FakeIP 旁路方案不可完整工作。
 
