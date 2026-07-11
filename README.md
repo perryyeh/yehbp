@@ -10,13 +10,13 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 
 - AdGuardHome：DNS 缓存与管理入口
 - MosDNS：域名分流与 FakeIP 解析
-- Mihomo：代理入口与 FakeIP 流量承载
+- Mihomo：代理入口与 FakeIP 流量承载（Mihomo 换成 Surge 也可）
 
 分流后不需要代理的域名拿到的是真实 DNS，直接走路由器出去，不走旁路；只有需要代理的域名才走旁路。DNS 流量非常小，普通家用场景下，类似 RK3566 + 1GB 内存 + 千兆网口 + Armbian 这一级别的设备即可使用。
 
 需要注意：
 
-- 如果代理流量较大 / 客户端较多，瓶颈在 Mihomo 上，可使用网口更好的 x86 或 Surge 来获得更好的代理性能。
+- 如果代理流量较大 / 客户端较多，瓶颈在 Mihomo 上，可使用 CPU 性能、网速更高的 x86 安装 Mihomo，或用 macOS 上的 Surge 替代 Mihomo，以获得更好的代理性能。
 - FakeIP 旁路依赖主路由/网关支持静态路由：
   - Fake IPv4：需要把 `198.18.0.0/15` 路由到 Surge / Mihomo 的局域网 IP。
   - Fake IPv6：如使用 Mihomo，需要局域网开启 ULA IPv6，并把 `fd00:6152:0:9::/64` 路由到 Mihomo 的局域网 IPv6；如使用 Surge / Mac，可使用 RA 宣告方案。
