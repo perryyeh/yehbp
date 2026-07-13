@@ -160,6 +160,31 @@ Surge / Mac 侧：
 
 如果上述条件不满足，安装 mosdns 时不要开启 fake IPv6 解析，让 AAAA 也走 fake IPv4。
 
+#### macvlan 容器：接受 Surge RA 的 fake IPv6 路由
+
+使用 Docker `macvlan` 的容器还需要显式接受 RA 下发的非默认 IPv6 路由。否则即使容器能解析出 `fd00:6152:0:9::/64` 的 fake IPv6，也可能不会安装指向 Surge 的专用路由，而是错误走默认 IPv6 网关，导致 GitHub、Telegram 等 HTTPS 请求超时。
+
+在每个需要访问 fake IPv6 的服务的 `macvlan` 网络 endpoint 中加入：
+
+```yaml
+services:
+  app:
+    networks:
+      macvlan:
+        ipv4_address: ${ipv4}
+        ipv6_address: ${ipv6}
+        driver_opts:
+          com.docker.network.endpoint.sysctls: net.ipv6.conf.IFNAME.accept_ra_rt_info_max_plen=128
+```
+
+该项是服务级 `networks.macvlan` 配置，不是顶层 `networks` 配置。容器重建后可用下面命令确认路由已由 Surge RA 安装：
+
+```bash
+ip -6 route get fd00:6152:0:9::c612:1d4d
+```
+
+正常结果应命中 `fd00:6152::/60` 的专用下一跳，而不是默认 IPv6 网关。
+
 ### 6. IPv4 + IPv6 回家
 ⚠️ 入站协议尽量避免udp。下列方案依赖mihomo入站，请先安装mihomo并配置好入站端口。
 
