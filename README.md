@@ -177,13 +177,14 @@ services:
           com.docker.network.endpoint.sysctls: net.ipv6.conf.IFNAME.accept_ra_rt_info_max_plen=128
 ```
 
-该项是服务级 `networks.macvlan` 配置，不是顶层 `networks` 配置。容器重建后可用下面命令确认 Surge RA 的前缀路由已安装：
+该项是服务级 `networks.macvlan` 配置，不是顶层 `networks` 配置。容器重建后，应对当前 DNS 返回的 fake IPv6（形态为 `fd00:6152:0:9::…`）确认路由：
 
 ```bash
-ip -6 route show fd00:6152::/60
+# 将 <当前 fake IPv6> 替换为当前 DNS 解析出的 fd00:6152:0:9::… 地址
+ip -6 route get <当前 fake IPv6>
 ```
 
-正常结果应显示 `fd00:6152::/60` 的专用下一跳，而不是仅依赖默认 IPv6 网关。某个域名对应的 fake IPv6 形态为 `fd00:6152:0:9::…`，其中后缀是动态映射；不要把某次解析结果写死为验证地址。
+正常结果应命中 Surge RA 宣告的专用下一跳，而不是仅依赖默认 IPv6 网关。`fd00:6152::/60` 是 macmini 通过 RA 宣告的路由前缀；不要把某次解析结果写死为验证地址。
 
 ### 6. IPv4 + IPv6 回家
 ⚠️ 入站协议尽量避免udp。下列方案依赖mihomo入站，请先安装mihomo并配置好入站端口。
