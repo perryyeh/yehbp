@@ -177,13 +177,13 @@ services:
           com.docker.network.endpoint.sysctls: net.ipv6.conf.IFNAME.accept_ra_rt_info_max_plen=128
 ```
 
-该项是服务级 `networks.macvlan` 配置，不是顶层 `networks` 配置。容器重建后可用下面命令确认路由已由 Surge RA 安装：
+该项是服务级 `networks.macvlan` 配置，不是顶层 `networks` 配置。容器重建后可用下面命令确认 Surge RA 的前缀路由已安装：
 
 ```bash
-ip -6 route get fd00:6152:0:9::c612:1d4d
+ip -6 route show fd00:6152::/60
 ```
 
-正常结果应命中 `fd00:6152::/60` 的专用下一跳，而不是默认 IPv6 网关。
+正常结果应显示 `fd00:6152::/60` 的专用下一跳，而不是仅依赖默认 IPv6 网关。不要把某个域名当前解析出的 fake IPv6 写死为验证地址：fake-IP 映射会随 Surge/Mihomo 的状态和 DNS 查询变化。
 
 ### 6. IPv4 + IPv6 回家
 ⚠️ 入站协议尽量避免udp。下列方案依赖mihomo入站，请先安装mihomo并配置好入站端口。
