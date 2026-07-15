@@ -12,3 +12,7 @@ AUTO_PRUNE=__AUTO_PRUNE__
 DELAY_DAYS=__DELAY_DAYS__
 # Check compose mac_address against actual Docker endpoint after run.
 CHECK_MAC=true
+# Maximum seconds for one Dockcheck run. Timeout also terminates child docker pull processes.
+DOCKCHECK_TIMEOUT=1800
+# Seconds to wait after TERM before force-killing a timed-out Dockcheck process group.
+DOCKCHECK_TIMEOUT_GRACE=30
