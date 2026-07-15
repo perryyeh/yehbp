@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.07.10.02"
+APP_VERSION="2026.07.15.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -3265,14 +3265,6 @@ install_dockcheck_auto_update() {
     echo "   手动检查：$base_dir/docker-auto-update.sh --check-only"
     echo "   手动更新：$base_dir/docker-auto-update.sh"
     echo "   日志目录：$log_dir"
-
-    read -r -p "是否现在执行一次只检查不更新？可能较慢 [y/N]: " check_now
-    if [[ "$check_now" =~ ^[Yy]$ ]]; then
-        echo "🧪 执行一次只检查不更新..."
-        "$base_dir/docker-auto-update.sh" --check-only || return 1
-    else
-        echo "ℹ️ 已跳过立即检查；安装已完成。"
-    fi
 }
 
 
