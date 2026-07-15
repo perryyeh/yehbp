@@ -142,7 +142,7 @@ run_with_heartbeat() {
         wait "$pid" 2>/dev/null || true
         return 124
       fi
-      echo "⏳ Dockcheck 仍在运行，已等待 ${elapsed}s ..."
+      echo "⏳ Dockcheck 仍在运行，已执行 ${elapsed}s ..."
     fi
   done
 
