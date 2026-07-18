@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.07.18.01"
+APP_VERSION="2026.07.18.02"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -1791,6 +1791,12 @@ if [ -n "\$FAKE_IP6_GW" ]; then
 fi
 
 # 7. 内核参数调优
+# parent 与 macvlan companion 共享二层广播域；限制 ARP 代答和公告，避免网关
+# 将 parent 的 IPv4 误学到 companion MAC（ARP flux）。
+sysctl -w "net.ipv4.conf.${bridge_if}.arp_ignore=1" >/dev/null || true
+sysctl -w "net.ipv4.conf.${parent_if}.arp_ignore=1" >/dev/null || true
+sysctl -w "net.ipv4.conf.${bridge_if}.arp_announce=2" >/dev/null || true
+sysctl -w "net.ipv4.conf.${parent_if}.arp_announce=2" >/dev/null || true
 sysctl -w "net.ipv4.conf.${bridge_if}.rp_filter=0" >/dev/null || true
 sysctl -w "net.ipv4.conf.${parent_if}.rp_filter=0" >/dev/null || true
 sysctl -w "net.ipv4.conf.all.rp_filter=0" >/dev/null || true
