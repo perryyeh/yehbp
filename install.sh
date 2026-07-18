@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.07.15.03"
+APP_VERSION="2026.07.18.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -455,7 +455,17 @@ ipv4_to_ipv6_prefix() {
 get_subnet_v4() {
   local ip=$1
   local iface=$2
-  local cidr=$(ip route | grep -v "^default" | grep "$iface" | grep "$ip" | awk '{print $1}')
+  # 只接受该接口的 connected IPv4 路由。DHCP 可能额外注入 DNS、
+  # 网关等 host route；不能把它们与实际子网一起返回。
+  local cidr
+  cidr="$(
+    ip -4 route show dev "$iface" proto kernel scope link 2>/dev/null |
+      awk -v ip="$ip" '
+        $1 ~ /^[0-9.]+\/[0-9]+$/ && $0 ~ ("src " ip) {
+          print $1
+          exit
+        }'
+  )"
   
   if [ -z "$cidr" ]; then
     local prefix_len=$(ip -4 addr show $iface | grep inet | awk '{print $2}' | cut -d'/' -f2)
