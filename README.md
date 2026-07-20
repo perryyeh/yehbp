@@ -125,6 +125,9 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbp.bak-*
       - Surge：需要局域网开启 ULA IPv6，然后参考下面的「5. MosDNS 在 Surge 下使用 fake IPv6」。
 11. 在路由器把 AdGuardHome 的 IP 设置为局域网 DNS。
 
+> [!WARNING]
+> 如果安装 `macvlan bridge` 时，已将 FakeIP 路由 `198.18.0.0/15` 指向本机的 Mihomo，且 ddns-go 容器使用 `host` 网络模式，应注释 ddns-go 配置中的 `httpinterface: end0`（或对应的物理网口名）。否则 ddns-go 获取公网 IPv4 或提交 DNS 记录时可能异常。
+
 ### 4. Docker 镜像自动更新
 
 菜单 `96` 可安装 Dockcheck 自动更新组件：
