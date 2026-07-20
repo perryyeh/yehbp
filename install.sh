@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.07.20.02"
+APP_VERSION="2026.07.20.03"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -372,7 +372,7 @@ function show_menu() {
     echo "91）删除macvlan bridge"
     echo "96）安装 Dockcheck 自动更新"
     echo "97）删除 Dockcheck 自动更新"
-    echo "98）立即执行 Dockcheck 检查/更新一次"
+    echo "98）Dockcheck 检查/更新与维护"
     echo "99）退出（也可输入 exit / quit / q）"
     echo "999）删除 ${APP_NAME}（也可输入 del / delete / uninstall / remove / rm）"
     echo "============================"
@@ -3305,8 +3305,53 @@ find_dockcheck_auto_update_base() {
     return 0
 }
 
+sync_dockcheck_auto_update_components() {
+    local base_dir tmp_dir dockcheck_source
+
+    if [ "${EUID:-$(id -u)}" -ne 0 ]; then
+        echo "❌ 需要 root 权限，请使用 sudo 运行。"
+        return 1
+    fi
+    if ! base_dir="$(find_dockcheck_auto_update_base)"; then
+        echo "❌ 未找到 Dockcheck 自动更新组件。"
+        echo "👉 请先执行 96 安装 Dockcheck 自动更新。"
+        return 1
+    fi
+
+    tmp_dir="$(mktemp -d /tmp/${APP_NAME}.dockcheck-sync.XXXXXX)" || return 1
+    trap 'rm -rf "$tmp_dir"' RETURN
+    echo "🔄 同步 Dockcheck 自动更新组件"
+    echo "安装目录：$base_dir"
+    echo "⬇️ 下载 Dockcheck（优先上游 mag37/dockcheck）..."
+    dockcheck_source="上游 mag37/dockcheck"
+    if ! curl --connect-timeout 10 --max-time 60 -fsSL "$DOCKCHECK_URL" -o "$tmp_dir/dockcheck.sh"; then
+        echo "⚠️ 上游 Dockcheck 下载失败，改用 yehbp 内置副本。"
+        download_yehbp_asset "assets/docker-auto-update/dockcheck.sh" "$tmp_dir/dockcheck.sh" || return 1
+        dockcheck_source="yehbp 内置副本"
+    fi
+    download_yehbp_asset "assets/docker-auto-update/docker-auto-update.sh" "$tmp_dir/docker-auto-update.sh" || return 1
+    download_yehbp_asset "assets/docker-auto-update/check-compose-macs.py" "$tmp_dir/check-compose-macs.py" || return 1
+    download_yehbp_asset "assets/docker-auto-update/auto-update.conf.tpl" "$tmp_dir/auto-update.conf.tpl" || return 1
+    download_yehbp_asset "assets/docker-auto-update/yehbp-docker-auto-update.service.tpl" "$tmp_dir/yehbp-docker-auto-update.service.tpl" || return 1
+    download_yehbp_asset "assets/docker-auto-update/yehbp-docker-auto-update.timer.tpl" "$tmp_dir/yehbp-docker-auto-update.timer.tpl" || return 1
+
+    bash -n "$tmp_dir/dockcheck.sh" || return 1
+    bash -n "$tmp_dir/docker-auto-update.sh" || return 1
+    python3 -m py_compile "$tmp_dir/check-compose-macs.py" || return 1
+
+    install -m 0755 "$tmp_dir/dockcheck.sh" "$base_dir/dockcheck.sh" || return 1
+    install -m 0755 "$tmp_dir/docker-auto-update.sh" "$base_dir/docker-auto-update.sh" || return 1
+    install -m 0755 "$tmp_dir/check-compose-macs.py" "$base_dir/check-compose-macs.py" || return 1
+    install -m 0644 "$tmp_dir/auto-update.conf.tpl" "$base_dir/auto-update.conf.tpl" || return 1
+    install -m 0644 "$tmp_dir/yehbp-docker-auto-update.service.tpl" "$base_dir/yehbp-docker-auto-update.service.tpl" || return 1
+    install -m 0644 "$tmp_dir/yehbp-docker-auto-update.timer.tpl" "$base_dir/yehbp-docker-auto-update.timer.tpl" || return 1
+
+    echo "✅ 组件已同步（Dockcheck 来源：$dockcheck_source）。"
+    echo "ℹ️ 未修改 $base_dir/auto-update.conf，未执行 Dockcheck 或容器更新。"
+}
+
 run_dockcheck_auto_update_once() {
-    echo "🚀 立即执行 Dockcheck 检查/更新"
+    echo "🚀 Dockcheck 检查/更新与维护"
 
     if [ "${EUID:-$(id -u)}" -ne 0 ]; then
         echo "❌ 需要 root 权限，请使用 sudo 运行。"
@@ -3324,7 +3369,8 @@ run_dockcheck_auto_update_once() {
     echo "1）只检查全部容器，不更新"
     echo "2）Dockcheck 检查并更新 compose 容器"
     echo "3）Dockcheck 检查/拉取非 compose 容器镜像（不重建容器）"
-    read -r -p "请选择 [1/2/3，回车取消]: " mode
+    echo "4）升级已安装的 Dockcheck 自动更新组件（不执行检查/更新）"
+    read -r -p "请选择 [1/2/3/4，回车取消]: " mode
     case "$mode" in
         1)
             "$base_dir/docker-auto-update.sh" --check-only --docker-run --fix-mac-interactive
@@ -3363,6 +3409,9 @@ run_dockcheck_auto_update_once() {
 
             names_csv="$(printf '%s' "$non_compose_names" | paste -sd, -)"
             "$base_dir/docker-auto-update.sh" --ignore-delay --docker-run --fix-mac-interactive "$names_csv"
+            ;;
+        4)
+            sync_dockcheck_auto_update_components
             ;;
         "")
             echo "ℹ️ 已取消。"
