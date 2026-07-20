@@ -105,10 +105,25 @@ export ROOT_DIR
 export HOME="${HOME:-/root}"
 
 cleanup_old_logs() {
-  if [[ "$LOG_RETENTION_DAYS" =~ ^[0-9]+$ ]] && [ "$LOG_RETENTION_DAYS" -gt 0 ]; then
-    find "$LOG_DIR" -maxdepth 1 -type f -name 'update-*.log' -mtime +$((LOG_RETENTION_DAYS - 1)) -print -delete \
-      | sed 's/^/🧹 deleted old log: /'
+  local cutoff_date log_file log_name log_date
+
+  if ! [[ "$LOG_RETENTION_DAYS" =~ ^[1-9][0-9]*$ ]]; then
+    return 0
   fi
+
+  # Logs are one file per calendar date. Compare their YYYYMMDD suffixes so
+  # retention means exactly this date plus the preceding N-1 calendar dates,
+  # rather than N rolling 24-hour periods.
+  cutoff_date="$(date -d "$((LOG_RETENTION_DAYS - 1)) days ago" +%Y%m%d)"
+  while IFS= read -r -d '' log_file; do
+    log_name="${log_file##*/}"
+    log_date="${log_name#update-}"
+    log_date="${log_date%.log}"
+    if [[ "$log_date" =~ ^[0-9]{8}$ && "$log_date" < "$cutoff_date" ]]; then
+      rm -f -- "$log_file"
+      echo "🧹 deleted old log: $log_file"
+    fi
+  done < <(find "$LOG_DIR" -maxdepth 1 -type f -name 'update-*.log' -print0)
 }
 
 run_with_heartbeat() {

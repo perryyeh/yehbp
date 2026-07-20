@@ -2,7 +2,7 @@
 ROOT_DIR=__ROOT_DIR__
 BASE_DIR=__BASE_DIR__
 LOG_DIR=__LOG_DIR__
-# Keep only recent update logs; 7 means delete update-*.log older than 6 full days.
+# Keep update logs by calendar date; 7 retains today plus the preceding 6 dates.
 LOG_RETENTION_DAYS=7
 # Extra dockcheck options. Keep automatic mode in wrapper; do not put -a/-n here.
 DOCKCHECK_EXTRA_ARGS="-m -t 30"
