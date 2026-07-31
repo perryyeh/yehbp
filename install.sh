@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.07.20.03"
+APP_VERSION="2026.07.31.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -3350,6 +3350,21 @@ sync_dockcheck_auto_update_components() {
     echo "ℹ️ 未修改 $base_dir/auto-update.conf，未执行 Dockcheck 或容器更新。"
 }
 
+run_dockcheck_manual_action() {
+    local base_dir="$1" rc
+    shift
+
+    echo "▶️ 正在执行 Dockcheck，请等待完成..."
+    "$base_dir/docker-auto-update.sh" "$@"
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+        echo "✅ Dockcheck 任务完成。"
+    else
+        echo "❌ Dockcheck 任务失败（退出码：${rc}）。"
+    fi
+    return "$rc"
+}
+
 run_dockcheck_auto_update_once() {
     echo "🚀 Dockcheck 检查/更新与维护"
 
@@ -3373,7 +3388,7 @@ run_dockcheck_auto_update_once() {
     read -r -p "请选择 [1/2/3/4，回车取消]: " mode
     case "$mode" in
         1)
-            "$base_dir/docker-auto-update.sh" --check-only --docker-run --fix-mac-interactive
+            run_dockcheck_manual_action "$base_dir" --check-only --docker-run --fix-mac-interactive
             ;;
         2)
             read -r -p "确认立即更新有新镜像的 compose 容器？[y/N]: " confirm
@@ -3381,7 +3396,7 @@ run_dockcheck_auto_update_once() {
                 echo "ℹ️ 已取消更新。"
                 return 0
             fi
-            "$base_dir/docker-auto-update.sh" --ignore-delay --fix-mac-interactive
+            run_dockcheck_manual_action "$base_dir" --ignore-delay --fix-mac-interactive
             ;;
         3)
             non_compose_names=""
@@ -3408,7 +3423,7 @@ run_dockcheck_auto_update_once() {
             fi
 
             names_csv="$(printf '%s' "$non_compose_names" | paste -sd, -)"
-            "$base_dir/docker-auto-update.sh" --ignore-delay --docker-run --fix-mac-interactive "$names_csv"
+            run_dockcheck_manual_action "$base_dir" --ignore-delay --docker-run --fix-mac-interactive "$names_csv"
             ;;
         4)
             sync_dockcheck_auto_update_components
