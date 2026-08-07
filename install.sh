@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.07.01"
+APP_VERSION="2026.08.07.02"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -410,9 +410,8 @@ function show_menu() {
     echo "72) 优化journald日志"
     echo "90）创建macvlan bridge"
     echo "91）删除macvlan bridge"
-    echo "96）安装 Dockcheck 自动更新"
-    echo "97）删除 Dockcheck 自动更新"
-    echo "98）Dockcheck 检查/更新与维护"
+    echo "96）Dockcheck 安装/删除/管理"
+    echo "98）Dockcheck 检查/更新镜像"
     echo "99）退出（也可输入 exit / quit / q）"
     echo "999）删除 ${APP_NAME}（也可输入 del / delete / uninstall / remove / rm）"
     echo "============================"
@@ -3354,7 +3353,7 @@ sync_dockcheck_auto_update_components() {
     fi
     if ! base_dir="$(find_dockcheck_auto_update_base)"; then
         echo "❌ 未找到 Dockcheck 自动更新组件。"
-        echo "👉 请先执行 96 安装 Dockcheck 自动更新。"
+        echo "👉 请先执行 96 → 2 安装 Dockcheck 自动更新。"
         return 1
     fi
 
@@ -3416,6 +3415,49 @@ sync_dockcheck_auto_update_components() {
     echo "ℹ️ 未修改 $base_dir/auto-update.conf，未执行 Dockcheck 或容器更新。"
 }
 
+show_dockcheck_auto_update_status() {
+    local base_dir local_version timer_enabled timer_active
+
+    if ! base_dir="$(find_dockcheck_auto_update_base)"; then
+        echo "ℹ️ Dockcheck 自动更新尚未安装。"
+        return 0
+    fi
+
+    local_version="$(read_dockcheck_version "$base_dir/dockcheck.sh")"
+    echo "📋 Dockcheck 状态"
+    echo "安装目录：$base_dir"
+    if [ -n "$local_version" ]; then
+        echo "Dockcheck 版本：$local_version"
+    else
+        echo "Dockcheck 版本：无法识别"
+    fi
+
+    if command -v systemctl >/dev/null 2>&1; then
+        timer_enabled="$(systemctl is-enabled yehbp-docker-auto-update.timer 2>/dev/null || true)"
+        timer_active="$(systemctl is-active yehbp-docker-auto-update.timer 2>/dev/null || true)"
+        echo "自动更新 timer：${timer_enabled:-未安装} / ${timer_active:-未运行}"
+    fi
+}
+
+manage_dockcheck_auto_update() {
+    local choice
+
+    echo "🛠️ Dockcheck 安装/删除/管理"
+    echo "1）查看 Dockcheck 状态/版本"
+    echo "2）安装 Dockcheck 自动更新"
+    echo "3）删除 Dockcheck 自动更新"
+    echo "4）升级 Dockcheck 自动更新组件"
+    read -r -p "请选择 [1/2/3/4，回车取消]: " choice
+    case "$choice" in
+        1) show_dockcheck_auto_update_status ;;
+        2) install_dockcheck_auto_update ;;
+        3) cleanup_dockcheck_auto_update ;;
+        4) sync_dockcheck_auto_update_components ;;
+        "") echo "ℹ️ 已取消。" ;;
+        *) echo "❌ 无效选择：$choice"; return 1 ;;
+    esac
+}
+
 run_dockcheck_manual_action() {
     local base_dir="$1" rc
     shift
@@ -3432,7 +3474,7 @@ run_dockcheck_manual_action() {
 }
 
 run_dockcheck_auto_update_once() {
-    echo "🚀 Dockcheck 检查/更新与维护"
+    echo "🚀 Dockcheck 检查/更新镜像"
 
     if [ "${EUID:-$(id -u)}" -ne 0 ]; then
         echo "❌ 需要 root 权限，请使用 sudo 运行。"
@@ -3442,7 +3484,7 @@ run_dockcheck_auto_update_once() {
     local base_dir mode confirm label non_compose_names name names_csv
     if ! base_dir="$(find_dockcheck_auto_update_base)"; then
         echo "❌ 未找到 Dockcheck 自动更新组件。"
-        echo "👉 请先执行 96 安装 Dockcheck 自动更新。"
+        echo "👉 请先执行 96 → 2 安装 Dockcheck 自动更新。"
         return 1
     fi
 
@@ -3450,8 +3492,7 @@ run_dockcheck_auto_update_once() {
     echo "1）只检查全部容器，不更新"
     echo "2）Dockcheck 检查并更新 compose 容器"
     echo "3）Dockcheck 检查/拉取非 compose 容器镜像（不重建容器）"
-    echo "4）升级已安装的 Dockcheck 自动更新组件（不执行检查/更新）"
-    read -r -p "请选择 [1/2/3/4，回车取消]: " mode
+    read -r -p "请选择 [1/2/3，回车取消]: " mode
     case "$mode" in
         1)
             run_dockcheck_manual_action "$base_dir" --check-only --docker-run --fix-mac-interactive
@@ -3490,9 +3531,6 @@ run_dockcheck_auto_update_once() {
 
             names_csv="$(printf '%s' "$non_compose_names" | paste -sd, -)"
             run_dockcheck_manual_action "$base_dir" --ignore-delay --docker-run --fix-mac-interactive "$names_csv"
-            ;;
-        4)
-            sync_dockcheck_auto_update_components
             ;;
         "")
             echo "ℹ️ 已取消。"
@@ -3905,8 +3943,7 @@ while true; do
         72) optimize_journald_to_volatile ;;
         90) create_macvlan_bridge ;;
         91) clean_macvlan_bridge ;;
-        96) install_dockcheck_auto_update ;;
-        97) cleanup_dockcheck_auto_update ;;
+        96) manage_dockcheck_auto_update ;;
         98) run_dockcheck_auto_update_once ;;
         99|exit|quit|q) echo "退出脚本。"; exit 0 ;;
         999|del|delete|uninstall|remove|rm) uninstall_yehbp_cli ;;
