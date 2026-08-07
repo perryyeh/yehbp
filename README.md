@@ -57,9 +57,8 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 72 | 优化journald日志                |
 | 90 | 创建macvlan bridge            |
 | 91 | 删除macvlan bridge            |
-| 96 | 安装 Dockcheck 自动更新           |
-| 97 | 删除 Dockcheck 自动更新           |
-| 98 | Dockcheck 检查/更新与维护            |
+| 96 | Dockcheck 安装/删除/管理          |
+| 98 | Dockcheck 检查/更新镜像           |
 | 99 / exit / quit / q | 退出脚本           |
 | 999 / del / delete / uninstall / remove / rm | 删除 `yehbp` |
 
@@ -130,7 +129,14 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbp.bak-*
 
 ### 4. Docker 镜像自动更新
 
-菜单 `96` 可安装 Dockcheck 自动更新组件：
+菜单 `96` 提供 Dockcheck 管理：
+
+- 查看 Dockcheck 状态/版本。
+- 安装 Dockcheck。
+- 删除 Dockcheck。
+- 升级 Dockcheck。
+
+安装 Dockcheck 时：
 
 - 选择 `dockerapps` 目录后，组件会安装到 `<dockerapps>/_auto_update`。
 - Dockcheck 脚本优先从上游 raw 脚本地址下载：`https://raw.githubusercontent.com/mag37/dockcheck/main/dockcheck.sh`；如该 raw 地址下载失败，则使用 yehbp 仓库内置副本。
@@ -138,17 +144,16 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbp.bak-*
 - 可选择更新后自动删除 dangling images。
 - 可选择是否启用每日 systemd timer。
 
-菜单 `97` 可删除 Dockcheck 自动更新：
+删除 Dockcheck 时会停用并移除 systemd service/timer，并可选择是否删除 `_auto_update` 目录。
 
-- 停用并移除 systemd service/timer。
-- 可选择是否删除 `_auto_update` 目录。
+升级 Dockcheck 时会先显示本地与上游版本；仅上游版本严格更高时才下载并同步 Dockcheck、wrapper、MAC 检查脚本和模板。升级不会修改 `auto-update.conf`，也不会执行 Dockcheck、更新容器或重启 timer。
 
-菜单 `98` 提供检查、更新和维护操作：
+菜单 `98` 提供镜像检查和更新操作：
 
 - 只检查全部容器，不更新。
 - 检查并更新 compose 容器。
 - 检查/拉取非 compose 容器镜像；不会重建该类容器。
-- 升级已安装的 Dockcheck 自动更新组件：更新 Dockcheck、wrapper、MAC 检查脚本和模板；不会修改 `auto-update.conf`，也不会执行 Dockcheck、更新容器或重启 timer。
+
 
 需要固定容器 MAC 的服务，应在 compose 网络配置中显式写 `mac_address`；Dockcheck 更新后会检查 compose 期望 MAC 与实际容器 MAC 是否一致。
 

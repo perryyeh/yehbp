@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.07.02"
+APP_VERSION="2026.08.07.03"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -3444,9 +3444,9 @@ manage_dockcheck_auto_update() {
 
     echo "🛠️ Dockcheck 安装/删除/管理"
     echo "1）查看 Dockcheck 状态/版本"
-    echo "2）安装 Dockcheck 自动更新"
-    echo "3）删除 Dockcheck 自动更新"
-    echo "4）升级 Dockcheck 自动更新组件"
+    echo "2）安装 Dockcheck"
+    echo "3）删除 Dockcheck"
+    echo "4）升级 Dockcheck"
     read -r -p "请选择 [1/2/3/4，回车取消]: " choice
     case "$choice" in
         1) show_dockcheck_auto_update_status ;;
