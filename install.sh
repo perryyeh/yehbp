@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.07.31.01"
+APP_VERSION="2026.08.07.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -105,6 +105,46 @@ version_gt() {
             return 0
         fi
         if (( 10#$ai < 10#$bi )); then
+            return 1
+        fi
+    done
+    return 1
+}
+
+read_dockcheck_version() {
+    local script="$1"
+
+    [ -r "$script" ] || return 1
+    sed -nE 's/^VERSION="([^"[:space:]]+)".*/\1/p' "$script" | head -n1
+}
+
+fetch_remote_dockcheck_version() {
+    # VERSION is at the top of the upstream script. Fetch only that prefix for
+    # the check; download the complete script only after a newer version exists.
+    curl --connect-timeout 10 --max-time 30 -fsSL --range 0-1023 "$DOCKCHECK_URL" 2>/dev/null | \
+        sed -nE 's/^VERSION="([^"[:space:]]+)".*/\1/p' | head -n1
+}
+
+dockcheck_version_gt() {
+    # Return 0 only when $1 is a strictly newer dotted numeric version than $2.
+    # Dockcheck versions are currently formatted like v0.8.3.
+    local a="${1#v}" b="${2#v}" i ai bi max
+    local IFS=.
+    local -a av bv
+
+    read -r -a av <<< "$a"
+    read -r -a bv <<< "$b"
+    max=${#av[@]}
+    [ ${#bv[@]} -gt "$max" ] && max=${#bv[@]}
+
+    for ((i = 0; i < max; i++)); do
+        ai="${av[$i]:-0}"
+        bi="${bv[$i]:-0}"
+        [[ "$ai" =~ ^[0-9]+$ && "$bi" =~ ^[0-9]+$ ]] || return 1
+        if ((10#$ai > 10#$bi)); then
+            return 0
+        fi
+        if ((10#$ai < 10#$bi)); then
             return 1
         fi
     done
@@ -3306,7 +3346,7 @@ find_dockcheck_auto_update_base() {
 }
 
 sync_dockcheck_auto_update_components() {
-    local base_dir tmp_dir dockcheck_source
+    local base_dir tmp_dir dockcheck_source local_version remote_version
 
     if [ "${EUID:-$(id -u)}" -ne 0 ]; then
         echo "❌ 需要 root 权限，请使用 sudo 运行。"
@@ -3318,10 +3358,36 @@ sync_dockcheck_auto_update_components() {
         return 1
     fi
 
+    local_version="$(read_dockcheck_version "$base_dir/dockcheck.sh")"
+    if [ -z "$local_version" ]; then
+        echo "❌ 无法识别本地 Dockcheck 版本：$base_dir/dockcheck.sh"
+        echo "ℹ️ 为避免未知版本被覆盖，未执行更新。"
+        return 1
+    fi
+
+    echo "🔍 检查 Dockcheck 版本"
+    echo "安装目录：$base_dir"
+    echo "本地版本：$local_version"
+    remote_version="$(fetch_remote_dockcheck_version)"
+    if [ -z "$remote_version" ]; then
+        echo "⚠️ 无法识别上游 Dockcheck 版本；未下载或更新任何组件。"
+        return 1
+    fi
+    echo "上游版本：$remote_version"
+
+    if [ "$remote_version" = "$local_version" ]; then
+        echo "✅ Dockcheck 已是最新版本，无需下载或更新。"
+        return 0
+    fi
+    if ! dockcheck_version_gt "$remote_version" "$local_version"; then
+        echo "ℹ️ 上游版本不高于本地版本，跳过更新：$local_version <- $remote_version"
+        return 0
+    fi
+
     tmp_dir="$(mktemp -d /tmp/${APP_NAME}.dockcheck-sync.XXXXXX)" || return 1
     trap 'rm -rf "$tmp_dir"' RETURN
     echo "🔄 同步 Dockcheck 自动更新组件"
-    echo "安装目录：$base_dir"
+    echo "检测到新版本：$local_version -> $remote_version"
     echo "⬇️ 下载 Dockcheck（优先上游 mag37/dockcheck）..."
     dockcheck_source="上游 mag37/dockcheck"
     if ! curl --connect-timeout 10 --max-time 60 -fsSL "$DOCKCHECK_URL" -o "$tmp_dir/dockcheck.sh"; then
