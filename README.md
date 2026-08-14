@@ -19,7 +19,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 - 如果代理流量较大 / 客户端较多，瓶颈在 Mihomo 上，可使用 CPU 性能、网速更高的 x86 安装 Mihomo，或用 macOS 上的 Surge 替代 Mihomo，以获得更好的代理性能。
 - FakeIP 旁路依赖主路由/网关支持静态路由：
   - Fake IPv4：需要把 `198.18.0.0/15` 路由到 Surge / Mihomo 的局域网 IP。
-  - Fake IPv6：如使用 Mihomo，需要局域网开启 ULA IPv6，并把 `2001:2:0:6152:0:9::/96` 路由到 Mihomo 的局域网 IPv6；如使用 Surge / Mac，可使用 RA 宣告方案，具体设置参考下面的 5. MosDNS 在 Surge 下使用 fake IPv6。
+  - Fake IPv6：如使用 Mihomo，需要局域网开启 ULA IPv6，并把 `2001:2:0:6152::/64` 路由到 Mihomo 的局域网 IPv6；如使用 Surge / Mac，可使用 RA 宣告方案，具体设置参考下面的 5. MosDNS 在 Surge 下使用 fake IPv6。
 > [!WARNING]
 > 如果主路由不支持静态路由，客户端即使能解析到 FakeIP，流量也无法正确到达代理入口，FakeIP 旁路方案不可完整工作。
 
@@ -120,7 +120,7 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbp.bak-*
 10. 配置 FakeIP 路由：
     - fake IPv4：Surge 和 Mihomo 都是在路由器添加静态路由：`198.18.0.0/15` 下一跳到 Surge / Mihomo 的局域网 IP。
     - fake IPv6：
-      - Mihomo：需要局域网开启 ULA IPv6，在路由器添加静态路由：`2001:2:0:6152:0:9::/96` 下一跳到 Mihomo 所在的局域网 IPv6。
+      - Mihomo：需要局域网开启 ULA IPv6，在路由器添加静态路由：`2001:2:0:6152::/64` 下一跳到 Mihomo 所在的局域网 IPv6。
       - Surge：需要局域网开启 ULA IPv6，然后参考下面的「5. MosDNS 在 Surge 下使用 fake IPv6」。
 11. 在路由器把 AdGuardHome 的 IP 设置为局域网 DNS。
 
@@ -165,7 +165,7 @@ Surge / Mac 侧：
 1. Surge 配置必须设置 `ipv6-vif = always`，不能用 `auto`，否则 IPv6 VIF 可能不会按预期拉起。
 2. 开启 IPv6 转发：`net.inet6.ip6.forwarding=1`。
 3. 在主网卡发送 RA，让局域网客户端知道 fake IPv6 路由由这台 Mac 承载；当前方案宣告的是 `2001:2:0:6152::/64`。
-4. 把 `2001:2:0:6152::2` 和 `2001:2:0:6152:0:9::/96` 路由到当前 Surge VIF。
+4. 把 `2001:2:0:6152::/64` 路由到当前 Surge VIF。
 5. Mac 开机、Surge 重启或主网卡变动后，需要重新确认 RA 和路由仍指向当前主网卡 / 当前 Surge VIF。
 
 如果上述条件不满足，安装 mosdns 时不要开启 fake IPv6 解析，让 AAAA 也走 fake IPv4。
