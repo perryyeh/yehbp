@@ -1826,7 +1826,7 @@ fi
 # 6.1 2001:2:0:6152:0:9::/96（IPv6 Fake-IP）
 # 放在子网路由之后，避免 macvlan bridge 重建后内核拒绝 via 路由
 if [ -n "\$FAKE_IP6_GW" ]; then
-  ip -6 route replace 2001:2:0:6152:0:9::/96 via "\$FAKE_IP6_GW" dev "$bridge_if" onlink 2>/dev/null || true
+  ip -6 route replace 2001:2:0:6152:0:9::/96 via "\$FAKE_IP6_GW" dev "$bridge_if" src "\${BRIDGE6_CIDR%/*}" onlink 2>/dev/null || true
 fi
 
 # 7. 内核参数调优
