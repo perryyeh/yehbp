@@ -19,7 +19,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 - 如果代理流量较大 / 客户端较多，瓶颈在 Mihomo 上，可使用 CPU 性能、网速更高的 x86 安装 Mihomo，或用 macOS 上的 Surge 替代 Mihomo，以获得更好的代理性能。
 - FakeIP 旁路依赖主路由/网关支持静态路由：
   - Fake IPv4：需要把 `198.18.0.0/15` 路由到 Surge / Mihomo 的局域网 IP。
-  - Fake IPv6：如使用 Mihomo，需要局域网开启 ULA IPv6，并把 `fd00:6152:0:9::/64` 路由到 Mihomo 的局域网 IPv6；如使用 Surge / Mac，可使用 RA 宣告方案，具体设置参考下面的 5. MosDNS 在 Surge 下使用 fake IPv6。
+  - Fake IPv6：如使用 Mihomo，需要局域网开启 ULA IPv6，并把 `2001:2:0:6152:0:9::/96` 路由到 Mihomo 的局域网 IPv6；如使用 Surge / Mac，可使用 RA 宣告方案，具体设置参考下面的 5. MosDNS 在 Surge 下使用 fake IPv6。
 > [!WARNING]
 > 如果主路由不支持静态路由，客户端即使能解析到 FakeIP，流量也无法正确到达代理入口，FakeIP 旁路方案不可完整工作。
 
@@ -120,7 +120,7 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbp.bak-*
 10. 配置 FakeIP 路由：
     - fake IPv4：Surge 和 Mihomo 都是在路由器添加静态路由：`198.18.0.0/15` 下一跳到 Surge / Mihomo 的局域网 IP。
     - fake IPv6：
-      - Mihomo：需要局域网开启 ULA IPv6，在路由器添加静态路由：`fd00:6152:0:9::/64` 下一跳到 Mihomo 所在的局域网 IPv6。
+      - Mihomo：需要局域网开启 ULA IPv6，在路由器添加静态路由：`2001:2:0:6152:0:9::/96` 下一跳到 Mihomo 所在的局域网 IPv6。
       - Surge：需要局域网开启 ULA IPv6，然后参考下面的「5. MosDNS 在 Surge 下使用 fake IPv6」。
 11. 在路由器把 AdGuardHome 的 IP 设置为局域网 DNS。
 
@@ -164,15 +164,15 @@ mosdns 选择 Surge 作为上游，并开启 fake IPv6 解析前，需要先确�
 Surge / Mac 侧：
 1. Surge 配置必须设置 `ipv6-vif = always`，不能用 `auto`，否则 IPv6 VIF 可能不会按预期拉起。
 2. 开启 IPv6 转发：`net.inet6.ip6.forwarding=1`。
-3. 在主网卡发送 RA，让局域网客户端知道 fake IPv6 路由由这台 Mac 承载；当前方案宣告的是 `fd00:6152::/60`。
-4. 把 `fd00:6152::2` 和 `fd00:6152:0:9::/64` 路由到当前 Surge VIF。
+3. 在主网卡发送 RA，让局域网客户端知道 fake IPv6 路由由这台 Mac 承载；当前方案宣告的是 `2001:2:0:6152::/64`。
+4. 把 `2001:2:0:6152::2` 和 `2001:2:0:6152:0:9::/96` 路由到当前 Surge VIF。
 5. Mac 开机、Surge 重启或主网卡变动后，需要重新确认 RA 和路由仍指向当前主网卡 / 当前 Surge VIF。
 
 如果上述条件不满足，安装 mosdns 时不要开启 fake IPv6 解析，让 AAAA 也走 fake IPv4。
 
 #### macvlan 容器：接受 Surge RA 的 fake IPv6 路由
 
-使用 Docker `macvlan` 的容器还需要显式接受 RA 下发的非默认 IPv6 路由。否则即使容器能解析出 `fd00:6152:0:9::/64` 的 fake IPv6，也可能不会安装指向 Surge 的专用路由，而是错误走默认 IPv6 网关，导致 GitHub、Telegram 等 HTTPS 请求超时。
+使用 Docker `macvlan` 的容器还需要显式接受 RA 下发的非默认 IPv6 路由。否则即使容器能解析出 `2001:2:0:6152:0:9::/96` 的 fake IPv6，也可能不会安装指向 Surge 的专用路由，而是错误走默认 IPv6 网关，导致 GitHub、Telegram 等 HTTPS 请求超时。
 
 在每个需要访问 fake IPv6 的服务的 `macvlan` 网络 endpoint 中加入：
 
@@ -187,14 +187,14 @@ services:
           com.docker.network.endpoint.sysctls: net.ipv6.conf.IFNAME.accept_ra_rt_info_max_plen=128
 ```
 
-该项是服务级 `networks.macvlan` 配置，不是顶层 `networks` 配置。容器重建后，应对当前 DNS 返回的 fake IPv6（形态为 `fd00:6152:0:9::…`）确认路由：
+该项是服务级 `networks.macvlan` 配置，不是顶层 `networks` 配置。容器重建后，应对当前 DNS 返回的 fake IPv6（形态为 `2001:2:0:6152:0:9::…`）确认路由：
 
 ```bash
-# 将 <当前 fake IPv6> 替换为当前 DNS 解析出的 fd00:6152:0:9::… 地址
+# 将 <当前 fake IPv6> 替换为当前 DNS 解析出的 2001:2:0:6152:0:9::… 地址
 ip -6 route get <当前 fake IPv6>
 ```
 
-正常结果应命中 Surge RA 宣告的专用下一跳，而不是仅依赖默认 IPv6 网关。`fd00:6152::/60` 是 macmini 通过 RA 宣告的路由前缀；不要把某次解析结果写死为验证地址。
+正常结果应命中 Surge RA 宣告的专用下一跳，而不是仅依赖默认 IPv6 网关。`2001:2:0:6152::/64` 是 macmini 通过 RA 宣告的路由前缀；不要把某次解析结果写死为验证地址。
 
 ### 6. IPv4 + IPv6 回家
 ⚠️ 入站协议尽量避免udp。下列方案依赖mihomo入站，请先安装mihomo并配置好入站端口。

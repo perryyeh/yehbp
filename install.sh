@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.07.04"
+APP_VERSION="2026.08.14.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -1732,9 +1732,9 @@ create_macvlan_bridge() {
         [ -n "$mihomo_ip" ] && route_prompt="198.18.0.0/15"
         if [ -n "$mihomo_ip6" ]; then
           if [ -n "$route_prompt" ]; then
-            route_prompt="$route_prompt + fd00:6152:0:9::/64"
+            route_prompt="$route_prompt + 2001:2:0:6152:0:9::/96"
           else
-            route_prompt="fd00:6152:0:9::/64"
+            route_prompt="2001:2:0:6152:0:9::/96"
           fi
         fi
         echo "🔎 检测到 mihomo 相关容器，探测到 IP: ${mihomo_ip:-<无>} / IPv6: ${mihomo_ip6:-<无>}"
@@ -1752,9 +1752,9 @@ create_macvlan_bridge() {
       echo "ℹ️ 不写入 198.18.0.0/15 的静态路由。"
     fi
     if [ -n "$FAKE_IP6_GW" ]; then
-      echo "✅ 将写入路由规则: fd00:6152:0:9::/64 via $FAKE_IP6_GW"
+      echo "✅ 将写入路由规则: 2001:2:0:6152:0:9::/96 via $FAKE_IP6_GW"
     else
-      echo "ℹ️ 不写入 fd00:6152:0:9::/64 的静态路由。"
+      echo "ℹ️ 不写入 2001:2:0:6152:0:9::/96 的静态路由。"
     fi
 
     read -p "确认创建/更新以上 bridge？(y/n): " yn
@@ -1823,10 +1823,10 @@ if [ -n "\$ROUTE6_PREF" ]; then
   ip -6 route replace "\$ROUTE6_PREF" dev "$bridge_if" metric 10
 fi
 
-# 6.1 fd00:6152:0:9::/64（Fake-IP IPv6 / mihomo surge 兼容）
+# 6.1 2001:2:0:6152:0:9::/96（IPv6 Fake-IP）
 # 放在子网路由之后，避免 macvlan bridge 重建后内核拒绝 via 路由
 if [ -n "\$FAKE_IP6_GW" ]; then
-  ip -6 route replace fd00:6152:0:9::/64 via "\$FAKE_IP6_GW" dev "$bridge_if" onlink 2>/dev/null || true
+  ip -6 route replace 2001:2:0:6152:0:9::/96 via "\$FAKE_IP6_GW" dev "$bridge_if" onlink 2>/dev/null || true
 fi
 
 # 7. 内核参数调优
@@ -2135,7 +2135,7 @@ install_mosdns() {
         mihomo="$(echo "$mihomo_input" | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n1)"
         [ -n "$mihomo" ] || { echo "❌ 无法解析 IPv4：$mihomo_input"; return 1; }
         if [ "$mihomo" = "198.18.0.2" ]; then
-            mihomo6="fd00:6152::2"
+            mihomo6="2001:2:0:6152::2"
         else
             mihomo6=""
             calculate_ip_mac "${mihomo##*.}"
@@ -2215,7 +2215,7 @@ install_mosdns() {
         # 用 # 作为分隔符更稳（避免 / 等字符导致 sed 崩）
         sed -i "s#198.18.0.2#${mihomo}#g" dns.yaml
         if [ -n "$mihomo6" ]; then
-            sed -i "s#fd00:6152::2#${mihomo6}#g" dns.yaml
+            sed -i "s#2001:2:0:6152::2#${mihomo6}#g" dns.yaml
         fi
         if [ -n "$gateway" ] && [ "$gateway" != "null" ]; then
             sed -i "s#10.0.0.1#${gateway}#g" dns.yaml
