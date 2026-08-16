@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.14.02"
+APP_VERSION="2026.08.17.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -488,6 +488,30 @@ ipv4_to_ipv6_prefix() {
   fi
 
   echo "${prefix}:${second_octet}:${third_octet}"
+}
+
+# 返回 IPv4 CIDR 的最后一个可用单播地址（broadcast 前一位）。
+cidr_last_usable_ipv4() {
+  python3 - "$1" <<'PY'
+import ipaddress
+import sys
+
+network = ipaddress.IPv4Network(sys.argv[1], strict=False)
+if network.num_addresses < 4:
+    raise SystemExit("IPv4 IPRange 至少需要 4 个地址以分配 bridge 地址")
+print(network.broadcast_address - 1)
+PY
+}
+
+# 返回 IPv6 CIDR 的最后一个地址。IPv6 没有 broadcast，该地址可用作 host bridge。
+cidr_last_ipv6() {
+  python3 - "$1" <<'PY'
+import ipaddress
+import sys
+
+network = ipaddress.IPv6Network(sys.argv[1], strict=False)
+print(network[-1])
+PY
 }
 
 # 获取网卡子网
@@ -1413,32 +1437,13 @@ create_macvlan_network() {
   iprangev4="$(echo "$iprange" | cut -d'/' -f1)"
   subnet4="$(echo "$iprange" | cut -d'/' -f2)"
 
-  # ========= IPv6：更稳的收敛逻辑 =========
+  # ========= IPv6：优先按 IPv4 网关推导；用户输入可覆盖默认值 =========
   local gateway6="" cidr6="" iprange6="" subnet6="" iprangev6_prefix="" suggest_gateway6="" suggest_cidr6="" auto_cidr6=""
-  # 优先：从接口/父接口拿到 ULA 前缀（fdxx）
-  local ip6_cidr ip6_addr prefix_len6 ula_prefix
-
-  ip6_cidr="$(ip -6 addr show "$networkcard" 2>/dev/null | awk '/ inet6 / && $2 ~ /^fd/{print $2; exit}')"
-  if [ -z "$ip6_cidr" ]; then
-    parent_iface="${networkcard%%.*}"
-    ip6_cidr="$(ip -6 addr show "$parent_iface" 2>/dev/null | awk '/ inet6 / && $2 ~ /^fd/{print $2; exit}')"
-  fi
-
-  if [ -n "$ip6_cidr" ]; then
-    ip6_addr="${ip6_cidr%/*}"
-    prefix_len6="${ip6_cidr#*/}"
-    # 取前 4 段作为稳定 ULA /64 前缀（fd10:0:1:xx）
-    ula_prefix="$(echo "$ip6_addr" | awk -F: '{print $1":"$2":"$3":"$4}')"
-    suggest_cidr6="${ula_prefix}::/64"
-    suggest_gateway6="${ula_prefix}::1"
-  else
-    # 没有现成 ULA：退回你原来的“IPv4->ULA 前缀”方案（但只作为建议）
-    if [ -n "$gateway" ]; then
-      local prefix6
-      prefix6="$(ipv4_to_ipv6_prefix "$gateway")"
-      suggest_cidr6="${prefix6}::/64"
-      suggest_gateway6="${prefix6}::1"
-    fi
+  if [ -n "$gateway" ]; then
+    local prefix6
+    prefix6="$(ipv4_to_ipv6_prefix "$gateway")"
+    suggest_cidr6="${prefix6}::/64"
+    suggest_gateway6="${prefix6}::1"
   fi
 
   if [ -n "$suggest_gateway6" ]; then
@@ -1588,8 +1593,11 @@ create_macvlan_bridge() {
     route4_cidr="${iprange4_cidr:-$subnet4_cidr}"
     prefix4="${route4_cidr#*/}"
 
-    # 用 base 前 3 段 + .254 作为 bridge IP
-    bridge4="${base4%.*}.254"
+    # bridge IPv4 使用 IPRange（缺省为 Subnet）的最后一个可用地址。
+    bridge4="$(cidr_last_usable_ipv4 "$route4_cidr")" || {
+      echo "❌ 无法计算 IPv4 bridge 地址：$route4_cidr"
+      return 1
+    }
     bridge4_cidr="${bridge4}/${prefix4}"
     echo "📍 计划 bridge IPv4: $bridge4_cidr"
 
@@ -1601,7 +1609,7 @@ create_macvlan_bridge() {
     fi
     echo "🧷 计划固定 bridge MAC: $bridge_mac"
 
-    # === IPv6 部分：IPRange 优先，没有则用 Subnet；统一收敛到 /64，bridge 用 ::eeee ===
+    # === IPv6 部分：IPRange 优先，没有则用 Subnet；bridge 使用范围最后一个地址 ===
     subnet6_cidr=$(echo "$network_info" | jq -r '.[0].IPAM.Config[] | select(.Subnet | test(":")) | .Subnet // empty' | head -n1)
     bridge6_cidr=""
     route6_pref=""
@@ -1621,20 +1629,23 @@ create_macvlan_bridge() {
             base6="${subnet6_cidr%/*}"     # 比如 fd10:0:20::
         fi
 
-        # 归一：提纯前缀主体，统一 /64，bridge 固定 ::eeee
-        base6_addr="${subnet6_cidr%/*}"   # fd10:0:20::  或 fd10:0:20:1::
-        base6_prefix="${base6_addr%%::*}" # fd10:0:20    或 fd10:0:20:1
-
-        bridge6_cidr="${base6_prefix}::eeee/64"
-
-        # IPv6 路由：从 IPv4 IPRange 推导 /112（只覆盖容器段），避免劫持网关
+        # bridge IPv6 用 IPv6 IPRange（缺省为 Subnet）的最后一个地址。
+        # host 仅路由 IPv4 IPRange 对应的 IPv6 /112 容器池，避免劫持 LAN ULA /64。
         if [ -n "$iprange4_cidr" ]; then
-            # 提取 IPv4 第三段 → IPv6 第七组：10.86.11.0/24 → 11 → fd10:86:10::11:0/112
+            base6_addr="${subnet6_cidr%/*}"
+            base6_prefix="${base6_addr%%::*}"
             v4_third=$(echo "$iprange4_cidr" | cut -d'/' -f1 | cut -d'.' -f3)
             route6_pref="${base6_prefix}::${v4_third}:0/112"
         else
-            route6_pref="${base6_prefix}::/64"
+            route6_pref="${iprange6_cidr:-$subnet6_cidr}"
         fi
+
+        bridge6_range="${iprange6_cidr:-$subnet6_cidr}"
+        bridge6="$(cidr_last_ipv6 "$bridge6_range")" || {
+            echo "❌ 无法计算 IPv6 bridge 地址：$bridge6_range"
+            return 1
+        }
+        bridge6_cidr="${bridge6}/${bridge6_range#*/}"
         echo "  计划 bridge IPv6: $bridge6_cidr"
     fi
 
