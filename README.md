@@ -55,7 +55,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 72 | 优化journald日志                |
 | 90 | 创建macvlan bridge            |
 | 91 | 删除macvlan bridge            |
-| 96 | Dockcheck 安装/删除/管理          |
+| 97 | Dockcheck 安装/删除/管理          |
 | 98 | Dockcheck 检查/更新镜像           |
 | 99 / exit / quit / q | 退出脚本           |
 | 999 / del / delete / uninstall / remove / rm | 删除 `yehbp` |
@@ -142,7 +142,7 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbp.bak-*
 
 ### 4. Docker 镜像自动更新
 
-菜单 `96` 提供 Dockcheck 管理：
+菜单 `97` 提供 Dockcheck 管理：
 
 - 查看 Dockcheck 状态/版本。
 - 安装 Dockcheck。

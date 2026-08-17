@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.17.04"
+APP_VERSION="2026.08.17.05"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -410,7 +410,7 @@ function show_menu() {
     echo "72) 优化journald日志"
     echo "90）创建macvlan bridge"
     echo "91）删除macvlan bridge"
-    echo "96）Dockcheck 安装/删除/管理"
+    echo "97）Dockcheck 安装/删除/管理"
     echo "98）Dockcheck 检查/更新镜像"
     echo "99）退出（也可输入 exit / quit / q）"
     echo "999）删除 ${APP_NAME}（也可输入 del / delete / uninstall / remove / rm）"
@@ -3457,7 +3457,7 @@ sync_dockcheck_auto_update_components() {
     fi
     if ! base_dir="$(find_dockcheck_auto_update_base)"; then
         echo "❌ 未找到 Dockcheck 自动更新组件。"
-        echo "👉 请先执行 96 → 2 安装 Dockcheck 自动更新。"
+        echo "👉 请先执行 97 → 2 安装 Dockcheck 自动更新。"
         return 1
     fi
 
@@ -3588,7 +3588,7 @@ run_dockcheck_auto_update_once() {
     local base_dir mode confirm label non_compose_names name names_csv
     if ! base_dir="$(find_dockcheck_auto_update_base)"; then
         echo "❌ 未找到 Dockcheck 自动更新组件。"
-        echo "👉 请先执行 96 → 2 安装 Dockcheck 自动更新。"
+        echo "👉 请先执行 97 → 2 安装 Dockcheck 自动更新。"
         return 1
     fi
 
@@ -4047,7 +4047,7 @@ while true; do
         72) optimize_journald_to_volatile ;;
         90) create_macvlan_bridge ;;
         91) clean_macvlan_bridge ;;
-        96) manage_dockcheck_auto_update ;;
+        97) manage_dockcheck_auto_update ;;
         98) run_dockcheck_auto_update_once ;;
         99|exit|quit|q) echo "退出脚本。"; exit 0 ;;
         999|del|delete|uninstall|remove|rm) uninstall_yehbp_cli ;;
