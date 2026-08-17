@@ -208,8 +208,8 @@ run_with_heartbeat() {
 }
 
 recreate_compose_container() {
-  local cname="$1"
-  local project service workdir files file
+  local cname="$1" replace_conflict="${2:-false}"
+  local project service workdir files file existing_project existing_workdir existing_service
   local -a compose_files fargs=()
 
   project="$(docker inspect "$cname" --format '{{index .Config.Labels "com.docker.compose.project"}}' 2>/dev/null || true)"
@@ -227,8 +227,40 @@ recreate_compose_container() {
     fargs+=("-f" "$file")
   done
 
-  echo "🔁 重建 $cname，恢复 compose 中固定的 MAC 地址..."
+  echo "🔁 强制重建 $cname，应用已拉取的镜像并恢复 compose 配置..."
+  if (cd "$workdir" && docker compose -p "$project" "${fargs[@]}" up -d --force-recreate "$service"); then
+    return 0
+  fi
+
+  [ "$replace_conflict" = "true" ] || return 1
+  existing_project="$(docker inspect "$cname" --format '{{index .Config.Labels "com.docker.compose.project"}}' 2>/dev/null || true)"
+  existing_workdir="$(docker inspect "$cname" --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' 2>/dev/null || true)"
+  existing_service="$(docker inspect "$cname" --format '{{index .Config.Labels "com.docker.compose.service"}}' 2>/dev/null || true)"
+  if [ "$existing_project" != "$project" ] || [ "$existing_workdir" != "$workdir" ] || [ "$existing_service" != "$service" ]; then
+    echo "❌ 同名容器 $cname 不属于预期 Compose 服务，拒绝删除。"
+    return 1
+  fi
+
+  echo "⚠️ $cname 同名冲突；删除旧容器后重新创建。"
+  docker rm -f "$cname" || return 1
   (cd "$workdir" && docker compose -p "$project" "${fargs[@]}" up -d --force-recreate "$service")
+}
+
+retry_dockcheck_failed_recreates() {
+  local output_file="$1" cname rc=0
+  local -a failed=()
+
+  mapfile -t failed < <(awk '/Failed to recreate [^,]+, skipping\./ {for (i = 1; i <= NF; i++) if ($i == "recreate") {name = $(i + 1); sub(/,.*/, "", name); print name}}' "$output_file" | sort -u)
+  [ ${#failed[@]} -gt 0 ] || return 0
+
+  echo "⚠️ Dockcheck 未能重建：${failed[*]}；正在使用 Compose 强制重建。"
+  for cname in "${failed[@]}"; do
+    if ! recreate_compose_container "$cname" true; then
+      echo "❌ $cname 强制重建失败。"
+      rc=1
+    fi
+  done
+  return "$rc"
 }
 
 offer_fix_mac_mismatches() {
@@ -317,7 +349,19 @@ done
   fi
 
   echo "+ ./dockcheck.sh ${args[*]}"
-  run_with_heartbeat ./dockcheck.sh "${args[@]}"
+  dockcheck_capture="$(mktemp "$BASE_DIR/.dockcheck-output.XXXXXX")" || exit 1
+  trap 'rm -f "$RUN_INFO_FILE" "$dockcheck_capture"' EXIT
+  set +e
+  run_with_heartbeat ./dockcheck.sh "${args[@]}" 2>&1 | tee "$dockcheck_capture"
+  dockcheck_rc=${PIPESTATUS[0]}
+  set -e
+  if [ "$dockcheck_rc" -ne 0 ]; then
+    exit "$dockcheck_rc"
+  fi
+  if ! retry_dockcheck_failed_recreates "$dockcheck_capture"; then
+    exit 1
+  fi
+  rm -f "$dockcheck_capture"
 
   if [ "$CHECK_MAC" = "true" ]; then
     echo "+ ./check-compose-macs.py"
