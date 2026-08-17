@@ -111,21 +111,13 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbp.bak-*
 3. 群晖的网卡建议先开启 Open vSwitch。
 4. **IP 段规划：**
    - IPv4：建议为 macvlan 使用新的、独立的 `/24` 网段，避免与现有 LAN 的 IPRange 或静态地址重叠。示例：将 LAN 从 `10.0.0.1/24` 放宽为网关 `10.0.0.1`、Subnet `10.0.0.0/23`；DHCP IPRange 仍保持 `10.0.0.2–10.0.0.255`，再为 YehBP/Docker macvlan 设置相同的 Subnet `10.0.0.0/23` 与独立的 IPRange `10.0.1.0/24`。
-   - IPv6 ULA：创建时会提供四个明确选项：`1` 使用所选网卡读取到的 IPv6 默认网关和 CIDR（读取失败时不可选择）；`2` 按 IPv4 网关推导 ULA `/64`；`3` 手动输入 IPv6 网关、CIDR 与 range；`4` 不启用 macvlan IPv6。回车默认选择 `2`，`n` 等同于 `4`。VLAN 子接口无完整 IPv6 信息时，选项 `1` 会回退检查物理 parent。
-
-     | macvlan IPv4 网段 | 默认 IPv6 ULA `/64` |
-     |---|---|
-     | `10.A.B.0/24` | `fd10:A:B::/64` |
-     | `172.A.B.0/24` | `fd17:A:B::/64` |
-     | `192.168.B.0/24` | `fd19:168:B::/64` |
-
-     推导规则和原因见「5.1 ULA：YehBP 为什么这样推导」。
+   - IPv6 ULA：创建时会提供四个明确选项：`1` 使用所选网卡读取到的 IPv6 默认网关和 CIDR（读取失败时不可选择）；`2` 按 IPv4 网关推导 ULA `/64`（[规则与原因](#ula-derivation)）；`3` 手动输入 IPv6 网关、CIDR 与 range；`4` 不启用 macvlan IPv6。回车默认选择 `2`，`n` 等同于 `4`。VLAN 子接口无完整 IPv6 信息时，选项 `1` 会回退检查物理 parent。
 5. 选择网卡创建 macvlan；群晖建议选择 `ovs` 开头网卡。
 6. 没有 Surge / OpenWrt 作为代理时，可安装 Mihomo 替代；Mihomo 需开启 TUN 模式并配置好上游代理。
 7. 安装 MosDNS；选择 Surge 作为上游时 DNS 写 `198.18.0.2`，选择 Mihomo 作为上游时 DNS 写 Mihomo 的 局域网IP。
 8. 安装 AdGuardHome，并使用 MosDNS 作为上游 DNS。
 9. 最后创建 macvlan bridge，解决宿主机和容器之间的互通。bridge IPv4 使用 macvlan IPRange 的最后一个可用地址，IPv6 使用 IPv6 IPRange 的最后一个地址；宿主机只对 IPv4 IPRange 对应的 IPv6 `/112` 容器池写入本地路由，避免劫持整个 LAN ULA `/64`。
-10. 按下方「5. FakeIP 旁路与 IPv6 规划」完成 Surge 或 Mihomo 的 FakeIP 数据面转发与验证。
+10. 按下方「[5. FakeIP 旁路与 IPv6 规划](#fakeip-routing)」完成 Surge 或 Mihomo 的 FakeIP 数据面转发与验证。
 11. 在路由器把 AdGuardHome 的 IP 设置为局域网 DNS。
 
 > [!WARNING]
@@ -173,9 +165,13 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbp.bak-*
 
 需要固定容器 MAC 的服务，应在 compose 网络配置中显式写 `mac_address`；Dockcheck 更新后会检查 compose 期望 MAC 与实际容器 MAC 是否一致。
 
+<a id="fakeip-routing"></a>
+
 ### 5. FakeIP 旁路与 IPv6 规划
 
 FakeIP 的 DNS 返回地址只是代理流量的目标地址；客户端、路由器或宿主机还必须把该地址段的数据流送到 Surge / Mihomo。验证时始终使用当前 DNS 实际返回的 FakeIP，不要写死某次解析结果。
+
+<a id="ula-derivation"></a>
 
 #### 5.1 ULA：YehBP 为什么这样推导
 
