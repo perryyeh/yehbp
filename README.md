@@ -187,7 +187,7 @@ YehBP 默认把 RFC1918 IPv4 网段映射为独立 ULA `/64`：
 | `172.A.B.0/24` | `fd17:A:B::/64` |
 | `192.168.B.0/24` | `fd19:168:B::/64` |
 
-这样可保留 IPv4 网段的可读性，例如 `10.86.10.0/24` 对应 `fd10:86:10::/64`；每个 macvlan 网络也能拥有独立 ULA `/64`，供容器、bridge 和代理下一跳使用，而不依赖可能变化的公网 IPv6 GUA。不要复用主 LAN 的同一个 ULA `/64` 给 macvlan 网络。
+这样可保留 IPv4 网段的可读性，例如 `10.88.99.0/24` 对应 `fd10:88:99::/64`；每个 macvlan 网络也能拥有独立 ULA `/64`，供容器、bridge 和代理下一跳使用，而不依赖可能变化的公网 IPv6 GUA。不要复用主 LAN 的同一个 ULA `/64` 给 macvlan 网络。
 
 这只是便捷、确定性的映射，不是 RFC4193 随机 Global ID。多站点、跨网络互联或长期正式部署时，建议自行规划 RFC4193 ULA，并在创建 macvlan 时输入完整 IPv6 CIDR。
 
@@ -207,27 +207,19 @@ Surge 使用 VIF 承载 FakeIP。Mac 上必须设置 `ipv6-vif = always`，开�
 
 主路由必须添加静态路由：`198.18.0.0/15` 的下一跳为运行 Surge 的 Mac 局域网 IPv4。LAN 客户端先将 Fake IPv4 流量交给主路由，再由主路由转发到 Mac，Mac 最后将该地址池交给 Surge VIF。
 
-##### Fake IPv6：旧版 Surge
+##### Fake IPv6：Surge 旧版与新版对照（新版 6.8.0，2026.08.06 发布）
 
-| 项目 | 地址 / 前缀 |
-|---|---|
-| Surge VIF 网关 | `fd00:6152::1` |
-| Fake DNS IPv6 | `fd00:6152::2` |
-| Fake IPv6 池 | `fd00:6152:0:9::/64` |
-| macmini 本机路由 / LAN RIO | `fd00:6152::1/127`、`fd00:6152:0:9::/64` |
+| 项目 | 旧版 Surge | 新版 Surge |
+|---|---|---|
+| Surge VIF 网关 | `fd00:6152::1` | `2001:2:0:6152::1` |
+| Fake DNS IPv6 | `fd00:6152::2` | `2001:2:0:6152::2` |
+| 实际 Fake IPv6 池 | `fd00:6152:0:9::/64` | `2001:2:0:6152:0:9::/96` |
+| macmini 本机路由 / LAN RIO | `fd00:6152::1/127`、`fd00:6152:0:9::/64` | `2001:2:0:6152::/64` |
 
-旧版方案保留 VIF 网关链路和 Fake-IP 地址池两类 IPv6 路由项。macmini 应按表中前缀将流量交给当前 Surge VIF；不要把 Fake-IP 池作为 LAN 的 SLAAC 地址前缀宣告。
+旧版保留 VIF 网关链路和 Fake-IP 地址池两类 IPv6 路由项；新版的实际动态 FakeIP 位于 `/96`，由表中聚合的 macmini 本机路由与 LAN RIO 覆盖。路由/RA 前缀可以覆盖实际 Fake-IP 地址池；二者不必有相同的 prefix length。macmini 应按表中前缀将流量交给当前 Surge VIF，不要把 Fake-IP 池作为 LAN 的 SLAAC 地址前缀宣告。
 
-##### Fake IPv6：新版 Surge（6.8.0，2026.08.06 正式版）
-
-| 项目 | 地址 / 前缀 |
-|---|---|
-| Surge VIF 网关 | `2001:2:0:6152::1` |
-| Fake DNS IPv6 | `2001:2:0:6152::2` |
-| 实际 Fake IPv6 池 | `2001:2:0:6152:0:9::/96` |
-| macmini 本机路由 / LAN RIO 聚合前缀 | `2001:2:0:6152::/64` |
-
-新版的实际动态 FakeIP 位于 `/96`；表中单列了覆盖它的 macmini 本机路由与 LAN RIO 聚合前缀。路由/RA 前缀可以覆盖实际 Fake-IP 地址池；二者不必有相同的 prefix length。
+> [!WARNING]
+> 注意 Surge 版本区别：YehBP 当前代码只处理新版 Surge 的 `2001:2:0:6152` 地址体系。旧版 Surge 用户需按上表自行对照修改 VIF 路由、LAN RIO 与相关 Fake-IP 配置。
 
 如果上述 Surge 链路未验证完成，安装 mosdns 时不要开启 fake IPv6 解析。
 
