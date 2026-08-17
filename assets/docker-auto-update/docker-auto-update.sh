@@ -31,8 +31,8 @@ if ! [[ "$LOCK_WAIT_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
   echo "❌ LOCK_WAIT_SECONDS 必须是大于 0 的秒数：$LOCK_WAIT_SECONDS"
   exit 2
 fi
-if ! command -v setsid >/dev/null 2>&1; then
-  echo "❌ 未找到 setsid，无法安全管理 Dockcheck 的超时子进程。"
+if [ ! -t 0 ] && ! command -v setsid >/dev/null 2>&1; then
+  echo "❌ 未找到 setsid，无法安全管理 Dockcheck 的非交互超时子进程。"
   exit 1
 fi
 
@@ -57,7 +57,7 @@ find_lock_owner() {
     [ "$candidate" = "$$" ] && continue
     cmd="$(ps -p "$candidate" -o args= 2>/dev/null || true)"
     case "$cmd" in
-      *"$BASE_DIR/docker-auto-update.sh"*)
+      *"$BASE_DIR/docker-auto-update.sh"*|*"$BASE_DIR/dockcheck.sh"*)
         printf '%s\n' "$candidate"
         return 0
         ;;
@@ -67,14 +67,14 @@ find_lock_owner() {
 }
 
 terminate_process_tree() {
-  local parent="$1" child
+  local parent="$1" signal="${2:-TERM}" child
 
   if command -v pgrep >/dev/null 2>&1; then
     while IFS= read -r child; do
-      [ -n "$child" ] && terminate_process_tree "$child"
+      [ -n "$child" ] && terminate_process_tree "$child" "$signal"
     done < <(pgrep -P "$parent" 2>/dev/null || true)
   fi
-  kill -TERM "$parent" 2>/dev/null || true
+  kill "-$signal" "$parent" 2>/dev/null || true
 }
 
 exec 9>"$LOCK_FILE"
@@ -86,13 +86,34 @@ if ! flock -n 9; then
     exit 1
   fi
 
-  echo "⚠️ Dockcheck 已有任务运行中（PID $owner_pid）；正在终止旧任务及其子进程..."
-  echo "$(date -Is) terminating existing Dockcheck run: pid=$owner_pid" >> "$LOG_FILE"
-  terminate_process_tree "$owner_pid"
-  if ! flock -w "$LOCK_WAIT_SECONDS" 9; then
-    echo "❌ 等待 ${LOCK_WAIT_SECONDS}s 后旧 Dockcheck 任务仍未释放锁；本次未执行。"
-    echo "$(date -Is) existing Dockcheck run did not release lock within ${LOCK_WAIT_SECONDS}s" >> "$LOG_FILE"
+  if [ ! -t 0 ]; then
+    echo "⚠️ Dockcheck 已有任务运行中（PID $owner_pid）；非交互任务不会终止已有任务。"
+    echo "$(date -Is) Dockcheck lock held by pid=$owner_pid; non-interactive run cancelled" >> "$LOG_FILE"
     exit 1
+  fi
+
+  echo "⚠️ Dockcheck 已有任务运行中（PID $owner_pid）。"
+  echo "1）强制终止旧任务及其子进程，再继续本次任务"
+  echo "2）取消，返回 YehBP 菜单"
+  read -r -p "请选择 [1/2，回车取消]: " replace_choice
+  if [ "$replace_choice" != "1" ]; then
+    echo "ℹ️ 已取消，本次未执行。"
+    exit 0
+  fi
+
+  echo "⚠️ 正在终止旧 Dockcheck 任务及其子进程..."
+  echo "$(date -Is) terminating existing Dockcheck run: pid=$owner_pid" >> "$LOG_FILE"
+  terminate_process_tree "$owner_pid" TERM
+  if ! flock -w "$LOCK_WAIT_SECONDS" 9; then
+    force_pid="$(find_lock_owner || true)"
+    force_pid="${force_pid:-$owner_pid}"
+    echo "⚠️ 等待 ${LOCK_WAIT_SECONDS}s 后旧任务仍未释放锁；正在强制终止 PID $force_pid..."
+    terminate_process_tree "$force_pid" KILL
+    if ! flock -w 5 9; then
+      echo "❌ 强制终止后旧 Dockcheck 任务仍未释放锁；本次未执行。"
+      echo "$(date -Is) existing Dockcheck run did not release lock after forced termination" >> "$LOG_FILE"
+      exit 1
+    fi
   fi
   echo "✅ 旧 Dockcheck 任务已终止；开始本次任务。"
 fi
@@ -127,14 +148,29 @@ cleanup_old_logs() {
 }
 
 run_with_heartbeat() {
-  local start now elapsed pid rc sleep_pid deadline
+  local start now elapsed pid rc sleep_pid deadline isolated="false"
   start="$(date +%s)"
   rc=0
 
-  # Isolate Dockcheck so timeout cleanup also reaches descendants such as
-  # a stuck `docker pull`.
-  setsid "$@" &
+  # 交互式运行保留在当前终端进程组，Ctrl-C 可终止当前 Dockcheck。
+  # systemd/timer 等非交互运行才隔离进程组，供超时处理整组清理。
+  if [ -t 0 ]; then
+    "$@" &
+  else
+    setsid "$@" 9>&- &
+    isolated="true"
+  fi
   pid=$!
+
+  terminate_heartbeat_child() {
+    if [ "$isolated" = "true" ]; then
+      kill -TERM -- "-$pid" 2>/dev/null || true
+    else
+      terminate_process_tree "$pid" TERM
+    fi
+  }
+
+  trap 'terminate_heartbeat_child; wait "$pid" 2>/dev/null || true; exit 130' INT TERM
 
   while kill -0 "$pid" 2>/dev/null; do
     sleep "$HEARTBEAT_INTERVAL" &
@@ -145,16 +181,21 @@ run_with_heartbeat() {
       elapsed=$((now - start))
       if [ "$elapsed" -ge "$DOCKCHECK_TIMEOUT" ]; then
         echo "⏱️ Dockcheck 超时（${elapsed}s，限制 ${DOCKCHECK_TIMEOUT}s）；正在终止其进程组..."
-        kill -TERM -- "-$pid" 2>/dev/null || true
+        terminate_heartbeat_child
         deadline=$(( $(date +%s) + DOCKCHECK_TIMEOUT_GRACE ))
         while kill -0 "$pid" 2>/dev/null && [ "$(date +%s)" -lt "$deadline" ]; do
           sleep 1
         done
         if kill -0 "$pid" 2>/dev/null; then
           echo "⚠️ Dockcheck 在 ${DOCKCHECK_TIMEOUT_GRACE}s 宽限期后仍未退出，强制终止。"
-          kill -KILL -- "-$pid" 2>/dev/null || true
+          if [ "$isolated" = "true" ]; then
+            kill -KILL -- "-$pid" 2>/dev/null || true
+          else
+            terminate_process_tree "$pid" KILL
+          fi
         fi
         wait "$pid" 2>/dev/null || true
+        trap - INT TERM
         return 124
       fi
       echo "⏳ Dockcheck 仍在运行，已执行 ${elapsed}s ..."
@@ -162,6 +203,7 @@ run_with_heartbeat() {
   done
 
   wait "$pid" || rc=$?
+  trap - INT TERM
   return "$rc"
 }
 
