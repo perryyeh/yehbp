@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.17.03"
+APP_VERSION="2026.08.17.04"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -3593,21 +3593,21 @@ run_dockcheck_auto_update_once() {
     fi
 
     echo "安装目录：$base_dir"
-    echo "1）只检查全部容器，不更新"
-    echo "2）Dockcheck 检查并更新 compose 容器"
+    echo "1）Dockcheck 检查并更新 compose 容器"
+    echo "2）只检查全部容器，不更新"
     echo "3）Dockcheck 检查/拉取非 compose 容器镜像（不重建容器）"
     read -r -p "请选择 [1/2/3，回车取消]: " mode
     case "$mode" in
         1)
-            run_dockcheck_manual_action "$base_dir" --check-only --docker-run --fix-mac-interactive
-            ;;
-        2)
             read -r -p "确认立即更新有新镜像的 compose 容器？[y/N]: " confirm
             if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
                 echo "ℹ️ 已取消更新。"
                 return 0
             fi
             run_dockcheck_manual_action "$base_dir" --ignore-delay --fix-mac-interactive
+            ;;
+        2)
+            run_dockcheck_manual_action "$base_dir" --check-only --docker-run --fix-mac-interactive
             ;;
         3)
             non_compose_names=""
