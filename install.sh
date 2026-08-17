@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.17.07"
+APP_VERSION="2026.08.17.08"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -3449,7 +3449,7 @@ find_dockcheck_auto_update_base() {
 }
 
 sync_dockcheck_auto_update_components() {
-    local base_dir tmp_dir dockcheck_source local_version remote_version
+    local base_dir tmp_dir dockcheck_source dockcheck_update local_version remote_version
 
     if [ "${EUID:-$(id -u)}" -ne 0 ]; then
         echo "❌ 需要 root 权限，请使用 sudo 运行。"
@@ -3472,50 +3472,54 @@ sync_dockcheck_auto_update_components() {
     echo "安装目录：$base_dir"
     echo "本地版本：$local_version"
     remote_version="$(fetch_remote_dockcheck_version)"
-    if [ -z "$remote_version" ]; then
-        echo "⚠️ 无法识别上游 Dockcheck 版本；未下载或更新任何组件。"
-        return 1
-    fi
-    echo "上游版本：$remote_version"
-
-    if [ "$remote_version" = "$local_version" ]; then
-        echo "✅ Dockcheck 已是最新版本，无需下载或更新。"
-        return 0
-    fi
-    if ! dockcheck_version_gt "$remote_version" "$local_version"; then
-        echo "ℹ️ 上游版本不高于本地版本，跳过更新：$local_version <- $remote_version"
-        return 0
-    fi
-
     tmp_dir="$(mktemp -d /tmp/${APP_NAME}.dockcheck-sync.XXXXXX)" || return 1
     trap 'rm -rf "$tmp_dir"' RETURN
-    echo "🔄 同步 Dockcheck 自动更新组件"
-    echo "检测到新版本：$local_version -> $remote_version"
-    echo "⬇️ 下载 Dockcheck（优先上游 mag37/dockcheck）..."
-    dockcheck_source="上游 mag37/dockcheck"
-    if ! curl --connect-timeout 10 --max-time 60 -fsSL "$DOCKCHECK_URL" -o "$tmp_dir/dockcheck.sh"; then
-        echo "⚠️ 上游 Dockcheck 下载失败，改用 yehbp 内置副本。"
-        download_yehbp_asset "assets/docker-auto-update/dockcheck.sh" "$tmp_dir/dockcheck.sh" || return 1
-        dockcheck_source="yehbp 内置副本"
+    dockcheck_source=""
+    dockcheck_update=false
+
+    if [ -z "$remote_version" ]; then
+        echo "⚠️ 无法识别上游 Dockcheck 版本；保留当前 Dockcheck，仅同步 YehBP 自有组件。"
+    else
+        echo "上游版本：$remote_version"
+        if dockcheck_version_gt "$remote_version" "$local_version"; then
+            echo "⬇️ 检测到新 Dockcheck：$local_version -> $remote_version"
+            dockcheck_source="上游 mag37/dockcheck"
+            if ! curl --connect-timeout 10 --max-time 60 -fsSL "$DOCKCHECK_URL" -o "$tmp_dir/dockcheck.sh"; then
+                echo "⚠️ 上游 Dockcheck 下载失败，改用 yehbp 内置副本。"
+                download_yehbp_asset "assets/docker-auto-update/dockcheck.sh" "$tmp_dir/dockcheck.sh" || return 1
+                dockcheck_source="yehbp 内置副本"
+            fi
+            bash -n "$tmp_dir/dockcheck.sh" || return 1
+            dockcheck_update=true
+        else
+            echo "ℹ️ Dockcheck 未发现更高版本，保留当前版本：$local_version"
+        fi
     fi
+
+    echo "🔄 同步 YehBP Dockcheck 组件"
     download_yehbp_asset "assets/docker-auto-update/docker-auto-update.sh" "$tmp_dir/docker-auto-update.sh" || return 1
     download_yehbp_asset "assets/docker-auto-update/check-compose-macs.py" "$tmp_dir/check-compose-macs.py" || return 1
     download_yehbp_asset "assets/docker-auto-update/auto-update.conf.tpl" "$tmp_dir/auto-update.conf.tpl" || return 1
     download_yehbp_asset "assets/docker-auto-update/yehbp-docker-auto-update.service.tpl" "$tmp_dir/yehbp-docker-auto-update.service.tpl" || return 1
     download_yehbp_asset "assets/docker-auto-update/yehbp-docker-auto-update.timer.tpl" "$tmp_dir/yehbp-docker-auto-update.timer.tpl" || return 1
 
-    bash -n "$tmp_dir/dockcheck.sh" || return 1
     bash -n "$tmp_dir/docker-auto-update.sh" || return 1
     python3 -m py_compile "$tmp_dir/check-compose-macs.py" || return 1
 
-    install -m 0755 "$tmp_dir/dockcheck.sh" "$base_dir/dockcheck.sh" || return 1
+    if [ "$dockcheck_update" = true ]; then
+        install -m 0755 "$tmp_dir/dockcheck.sh" "$base_dir/dockcheck.sh" || return 1
+    fi
     install -m 0755 "$tmp_dir/docker-auto-update.sh" "$base_dir/docker-auto-update.sh" || return 1
     install -m 0755 "$tmp_dir/check-compose-macs.py" "$base_dir/check-compose-macs.py" || return 1
     install -m 0644 "$tmp_dir/auto-update.conf.tpl" "$base_dir/auto-update.conf.tpl" || return 1
     install -m 0644 "$tmp_dir/yehbp-docker-auto-update.service.tpl" "$base_dir/yehbp-docker-auto-update.service.tpl" || return 1
     install -m 0644 "$tmp_dir/yehbp-docker-auto-update.timer.tpl" "$base_dir/yehbp-docker-auto-update.timer.tpl" || return 1
 
-    echo "✅ 组件已同步（Dockcheck 来源：$dockcheck_source）。"
+    if [ "$dockcheck_update" = true ]; then
+        echo "✅ Dockcheck 与 YehBP 组件已同步（Dockcheck 来源：$dockcheck_source）。"
+    else
+        echo "✅ YehBP 组件已同步；Dockcheck 保持版本：$local_version。"
+    fi
     echo "ℹ️ 未修改 $base_dir/auto-update.conf，未执行 Dockcheck 或容器更新。"
 }
 

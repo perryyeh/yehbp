@@ -159,7 +159,7 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbp.bak-*
 
 删除 Dockcheck 时会停用并移除 systemd service/timer，并可选择是否删除 `_auto_update` 目录。
 
-升级 Dockcheck 时会先显示本地与上游版本；仅上游版本严格更高时才下载并同步 Dockcheck、wrapper、MAC 检查脚本和模板。升级不会修改 `auto-update.conf`，也不会执行 Dockcheck、更新容器或重启 timer。
+升级 Dockcheck 时会先显示本地与上游版本；仅上游版本严格更高时才替换 Dockcheck 本体。无论 Dockcheck 是否有新版本，都会同步 YehBP 的 wrapper、MAC 检查脚本和模板。升级不会修改 `auto-update.conf`，也不会执行 Dockcheck、更新容器或重启 timer。
 
 菜单 `98` 提供镜像检查和更新操作：
 
