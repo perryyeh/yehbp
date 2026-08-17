@@ -230,7 +230,7 @@ Mihomo 与 Surge 使用相同的 FakeIP 原理，但下一跳是 Mihomo 的稳�
 | 流量 | 路由前缀 | 下一跳 |
 |---|---|---|
 | Fake IPv4 | `198.18.0.0/15` | Mihomo 的 LAN IPv4 |
-| Fake IPv6 | 以 `dns.fake-ip-range6` 实际配置为准；默认模板为 `2001:2:0:6152:0:9::/96` | Mihomo 的 LAN ULA IPv6 |
+| Fake IPv6 | 字段 `dns.fake-ip-range6`，默认值 `2001:2:0:6152:0:9::/96`；如有变更，需要重新创建宿主机到容器的 bridge 互通。 | Mihomo 的 LAN ULA IPv6 |
 
 路由器的 IPv6 路由前缀必须覆盖 Mihomo 实际 Fake IPv6 池。YehBP 创建 macvlan bridge 时，如探测到 Mihomo，会询问是否同时写入宿主机直达 Mihomo 的 FakeIP route；这只优化宿主机访问，不替代 LAN 或 macvlan 客户端所需的路由。
 
