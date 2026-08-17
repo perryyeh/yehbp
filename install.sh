@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.17.09"
+APP_VERSION="2026.08.17.10"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -43,8 +43,9 @@ download_yehbp_asset() {
     local url="${RAW_ASSET_BASE}/${src}?t=$(date +%s)"
 
     mkdir -p "$(dirname "$dst")" || return 1
-    curl --connect-timeout 10 --max-time 60 -fsSL "$url" -o "$dst" || {
-        echo "❌ 下载失败：$src"
+    curl --connect-timeout 10 --max-time 30 -fsSL "$url" -o "$dst" || {
+        rm -f "$dst"
+        echo "❌ 下载失败（30s 超时或网络错误）：$src；请重试。"
         return 1
     }
 }
@@ -3496,11 +3497,16 @@ sync_dockcheck_auto_update_components() {
         fi
     fi
 
-    echo "🔄 同步 YehBP Dockcheck 组件"
+    echo "🔄 更新 YehBP Dockcheck 组件"
+    echo "  ⬇ docker-auto-update.sh"
     download_yehbp_asset "assets/docker-auto-update/docker-auto-update.sh" "$tmp_dir/docker-auto-update.sh" || return 1
+    echo "  ⬇ check-compose-macs.py"
     download_yehbp_asset "assets/docker-auto-update/check-compose-macs.py" "$tmp_dir/check-compose-macs.py" || return 1
+    echo "  ⬇ auto-update.conf.tpl"
     download_yehbp_asset "assets/docker-auto-update/auto-update.conf.tpl" "$tmp_dir/auto-update.conf.tpl" || return 1
+    echo "  ⬇ yehbp-docker-auto-update.service.tpl"
     download_yehbp_asset "assets/docker-auto-update/yehbp-docker-auto-update.service.tpl" "$tmp_dir/yehbp-docker-auto-update.service.tpl" || return 1
+    echo "  ⬇ yehbp-docker-auto-update.timer.tpl"
     download_yehbp_asset "assets/docker-auto-update/yehbp-docker-auto-update.timer.tpl" "$tmp_dir/yehbp-docker-auto-update.timer.tpl" || return 1
 
     bash -n "$tmp_dir/docker-auto-update.sh" || return 1
@@ -3516,12 +3522,11 @@ sync_dockcheck_auto_update_components() {
     install -m 0644 "$tmp_dir/yehbp-docker-auto-update.timer.tpl" "$base_dir/yehbp-docker-auto-update.timer.tpl" || return 1
 
     if [ "$dockcheck_update" = true ]; then
-        echo "✅ Dockcheck 与 YehBP 组件已同步（Dockcheck 来源：$dockcheck_source）。"
+        echo "✅ Dockcheck 已更新（来源：$dockcheck_source）。"
     else
-        echo "✅ YehBP 组件已同步；Dockcheck 保持版本：$local_version。"
+        echo "ℹ️ Dockcheck 保持版本：$local_version。"
     fi
-    echo "已同步文件："
-    [ "$dockcheck_update" = true ] && echo "  - dockcheck.sh"
+    echo "✅ YehBP 组件已更新："
     echo "  - docker-auto-update.sh"
     echo "  - check-compose-macs.py"
     echo "  - auto-update.conf.tpl"
