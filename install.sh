@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.17.08"
+APP_VERSION="2026.08.17.09"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -3520,7 +3520,13 @@ sync_dockcheck_auto_update_components() {
     else
         echo "✅ YehBP 组件已同步；Dockcheck 保持版本：$local_version。"
     fi
-    echo "ℹ️ 未修改 $base_dir/auto-update.conf，未执行 Dockcheck 或容器更新。"
+    echo "已同步文件："
+    [ "$dockcheck_update" = true ] && echo "  - dockcheck.sh"
+    echo "  - docker-auto-update.sh"
+    echo "  - check-compose-macs.py"
+    echo "  - auto-update.conf.tpl"
+    echo "  - yehbp-docker-auto-update.service.tpl"
+    echo "  - yehbp-docker-auto-update.timer.tpl"
 }
 
 show_dockcheck_auto_update_status() {
