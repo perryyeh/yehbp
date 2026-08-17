@@ -111,7 +111,7 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbp.bak-*
 3. 群晖的网卡建议先开启 Open vSwitch。
 4. **IP 段规划：**
    - **IPv4：**为 macvlan 使用新的、独立的 `/24` 网段，避免与现有 DHCP 或静态地址重叠。
-   - **IPv6 ULA：**创建时先读取所选网卡的 IPv6 默认网关、地址和 CIDR；VLAN 子接口无完整信息时会回退物理 parent。只有读取不到完整 IPv6 信息时，才按该 IPv4 网段给出 ULA `/64` 推导建议。回车接受当前推荐值，输入 `n` 才关闭 IPv6；输入完整 IPv6 CIDR 可覆盖推荐值。
+   - **IPv6 ULA：**创建时会提供四个明确选项：`1` 使用所选网卡读取到的 IPv6 默认网关和 CIDR（读取失败时不可选择）；`2` 按 IPv4 网关推导 ULA `/64`；`3` 手动输入 IPv6 网关、CIDR 与 range；`4` 不启用 macvlan IPv6。回车默认选择 `2`，`n` 等同于 `4`。VLAN 子接口无完整 IPv6 信息时，选项 `1` 会回退检查物理 parent。
 
      | macvlan IPv4 网段 | 默认 IPv6 ULA `/64` |
      |---|---|

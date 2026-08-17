@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.17.02"
+APP_VERSION="2026.08.17.03"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -1483,7 +1483,7 @@ create_macvlan_network() {
   subnet4="$(echo "$iprange" | cut -d'/' -f2)"
 
   # ========= IPv6：优先读取选中接口；无完整信息才按 IPv4 网关推导 =========
-  local gateway6="" cidr6="" iprange6="" subnet6="" iprangev6_prefix="" suggest_gateway6="" suggest_cidr6="" auto_cidr6=""
+  local gateway6="" cidr6="" iprange6="" subnet6="" iprangev6_prefix=""
   local ipv6_info_iface="" iface6_addr="" iface6_gateway="" iface6_cidr=""
 
   # VLAN 子接口通常没有地址/默认路由；此时回退其物理 parent。
@@ -1507,39 +1507,60 @@ create_macvlan_network() {
     fi
   fi
 
+  local interface_ipv6_available=0 derived_gateway6="" derived_cidr6="" ipv6_mode=""
   if [ -n "$iface6_addr" ] && [ -n "$iface6_gateway" ] && [ -n "$iface6_cidr" ]; then
-    suggest_gateway6="$iface6_gateway"
-    suggest_cidr6="$iface6_cidr"
-    echo "👉 检测到接口 $ipv6_info_iface 的 IPv6：地址 $iface6_addr，网关 $suggest_gateway6，子网 $suggest_cidr6"
-  elif [ -n "$gateway" ]; then
-    local prefix6
-    prefix6="$(ipv4_to_ipv6_prefix "$gateway")"
-    suggest_cidr6="${prefix6}::/64"
-    suggest_gateway6="${prefix6}::1"
-    echo "ℹ️ 未能从接口 $networkcard 读取完整 IPv6 网关/CIDR；按 IPv4 网关推荐：网关 $suggest_gateway6，子网 $suggest_cidr6"
+    interface_ipv6_available=1
   fi
 
-  if [ -n "$suggest_gateway6" ]; then
-    read -r -p "请输入 IPv6 网关 (回车使用推荐 $suggest_gateway6，输入n 表示不开启): " gateway6
-    case "$gateway6" in
-      "") gateway6="$suggest_gateway6" ;;
-      "n"|"N") gateway6="" ;;
-    esac
+  local prefix6
+  prefix6="$(ipv4_to_ipv6_prefix "$gateway")"
+  derived_gateway6="${prefix6}::1"
+  derived_cidr6="${prefix6}::/64"
+
+  echo "请选择 macvlan IPv6 配置："
+  if [ "$interface_ipv6_available" -eq 1 ]; then
+    echo "  1) 使用接口 $ipv6_info_iface：网关 $iface6_gateway，子网 $iface6_cidr"
   else
-    read -r -p "请输入 IPv6 网关 (例如 fd10:168:1::1，输入n表示不启用IPv6): " gateway6
-    case "$gateway6" in
-      "n"|"N") gateway6="" ;;
-    esac
+    echo "  1) 使用接口 IPv6 信息（不可用：未读取到完整 IPv6 地址、默认网关和 CIDR）"
   fi
+  echo "  2) 按 IPv4 网关推导 ULA：网关 $derived_gateway6，子网 $derived_cidr6"
+  echo "  3) 手动输入 IPv6 网关、CIDR 与 range"
+  echo "  4) 不启用 macvlan IPv6"
+  read -r -p "请输入选择（回车默认 2，n 等同于 4）: " ipv6_mode
+  case "$ipv6_mode" in
+    ""|2)
+      gateway6="$derived_gateway6"
+      cidr6="$derived_cidr6"
+      ;;
+    1)
+      if [ "$interface_ipv6_available" -ne 1 ]; then
+        echo "❌ 未读取到完整接口 IPv6 信息，不能选择 1；请使用 2、3 或 4。"
+        return 1
+      fi
+      gateway6="$iface6_gateway"
+      cidr6="$iface6_cidr"
+      ;;
+    3)
+      read -r -p "请输入 IPv6 网关: " gateway6
+      [ -n "$gateway6" ] || { echo "❌ IPv6 网关不能为空。"; return 1; }
+      read -r -p "请输入 IPv6 子网CIDR: " cidr6
+      [ -n "$cidr6" ] || { echo "❌ IPv6 子网CIDR不能为空。"; return 1; }
+      ;;
+    4|n|N)
+      gateway6=""
+      cidr6=""
+      ;;
+    *)
+      echo "❌ 无效的 IPv6 选择：$ipv6_mode"
+      return 1
+      ;;
+  esac
 
   if [ -z "$gateway6" ]; then
     cidr6=""; iprange6=""; subnet6=""; iprangev6_prefix=""
   else
-    auto_cidr6="${suggest_cidr6:-$(ipv4_to_ipv6_prefix "$gateway")::/64}"
-    echo "👉 IPv6 子网推荐值：$auto_cidr6"
-    read -r -p "请输入 IPv6 子网CIDR (回车使用推荐 $auto_cidr6): " cidr6
-    [ -z "$cidr6" ] && cidr6="$auto_cidr6"
-
+    echo "👉 IPv6 网关：$gateway6"
+    echo "👉 IPv6 子网CIDR：$cidr6"
     echo "⚠️ 提示：IPv6 IPRange 建议 /64（不要与现网 RA/DHCPv6 冲突）。"
     read -r -p "请输入 macvlan IPv6 range (回车使用 $cidr6): " iprange6
     [ -z "$iprange6" ] && iprange6="$cidr6"
