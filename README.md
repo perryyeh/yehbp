@@ -110,8 +110,8 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbp.bak-*
 2. 确认 Docker 已安装；群晖和飞牛通常已有 Docker，可跳过安装。
 3. 群晖的网卡建议先开启 Open vSwitch。
 4. **IP 段规划：**
-   - **IPv4：**为 macvlan 使用新的、独立的 `/24` 网段，避免与现有 DHCP 或静态地址重叠。
-   - **IPv6 ULA：**创建时会提供四个明确选项：`1` 使用所选网卡读取到的 IPv6 默认网关和 CIDR（读取失败时不可选择）；`2` 按 IPv4 网关推导 ULA `/64`；`3` 手动输入 IPv6 网关、CIDR 与 range；`4` 不启用 macvlan IPv6。回车默认选择 `2`，`n` 等同于 `4`。VLAN 子接口无完整 IPv6 信息时，选项 `1` 会回退检查物理 parent。
+   - IPv4：建议为 macvlan 使用新的、独立的 `/24` 网段，避免与现有 LAN 的 IPRange 或静态地址重叠。示例：将 LAN 从 `10.0.0.1/24` 放宽为网关 `10.0.0.1`、Subnet `10.0.0.0/23`；DHCP IPRange 仍保持 `10.0.0.2–10.0.0.255`，再为 YehBP/Docker macvlan 设置相同的 Subnet `10.0.0.0/23` 与独立的 IPRange `10.0.1.0/24`。
+   - IPv6 ULA：创建时会提供四个明确选项：`1` 使用所选网卡读取到的 IPv6 默认网关和 CIDR（读取失败时不可选择）；`2` 按 IPv4 网关推导 ULA `/64`；`3` 手动输入 IPv6 网关、CIDR 与 range；`4` 不启用 macvlan IPv6。回车默认选择 `2`，`n` 等同于 `4`。VLAN 子接口无完整 IPv6 信息时，选项 `1` 会回退检查物理 parent。
 
      | macvlan IPv4 网段 | 默认 IPv6 ULA `/64` |
      |---|---|
@@ -122,7 +122,7 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbp.bak-*
      推导规则和原因见「5.1 ULA：YehBP 为什么这样推导」。
 5. 选择网卡创建 macvlan；群晖建议选择 `ovs` 开头网卡。
 6. 没有 Surge / OpenWrt 作为代理时，可安装 Mihomo 替代；Mihomo 需开启 TUN 模式并配置好上游代理。
-7. 安装 MosDNS；选择 Surge 作为上游时 DNS 写 `198.18.0.2`，选择 Mihomo 作为上游时 DNS 写 Mihomo 的 IP。
+7. 安装 MosDNS；选择 Surge 作为上游时 DNS 写 `198.18.0.2`，选择 Mihomo 作为上游时 DNS 写 Mihomo 的 局域网IP。
 8. 安装 AdGuardHome，并使用 MosDNS 作为上游 DNS。
 9. 最后创建 macvlan bridge，解决宿主机和容器之间的互通。bridge IPv4 使用 macvlan IPRange 的最后一个可用地址，IPv6 使用 IPv6 IPRange 的最后一个地址；宿主机只对 IPv4 IPRange 对应的 IPv6 `/112` 容器池写入本地路由，避免劫持整个 LAN ULA `/64`。
 10. 按下方「5. FakeIP 旁路与 IPv6 规划」完成 Surge 或 Mihomo 的 FakeIP 数据面转发与验证。
@@ -187,15 +187,13 @@ YehBP 默认把 RFC1918 IPv4 网段映射为独立 ULA `/64`：
 | `172.A.B.0/24` | `fd17:A:B::/64` |
 | `192.168.B.0/24` | `fd19:168:B::/64` |
 
-这样可保留 IPv4 网段的可读性，例如 `10.88.99.0/24` 对应 `fd10:88:99::/64`；每个 macvlan 网络也能拥有独立 ULA `/64`，供容器、bridge 和代理下一跳使用，而不依赖可能变化的公网 IPv6 GUA。不要复用主 LAN 的同一个 ULA `/64` 给 macvlan 网络。
+这样可保留 IPv4 网段的可读性，例如 `10.88.99.0/24` 对应 `fd10:88:99::/64`；每个 macvlan 网络也能拥有独立 ULA `/64`，供容器、bridge 和代理下一跳使用，而不依赖可能变化的公网 IPv6 GUA。
 
 这只是便捷、确定性的映射，不是 RFC4193 随机 Global ID。多站点、跨网络互联或长期正式部署时，建议自行规划 RFC4193 ULA，并在创建 macvlan 时输入完整 IPv6 CIDR。
 
 > Fake-IP 地址池与 LAN ULA 是不同概念：LAN ULA 用于稳定的局域网下一跳；Fake-IP 是 DNS 为代理域名返回的目标地址。
 
 #### 5.2 转发到 macOS Surge
-
-Surge 使用 VIF 承载 FakeIP。Mac 上必须设置 `ipv6-vif = always`，开启 `net.inet6.ip6.forwarding=1`，并在开机、Surge 重启或主网卡变化后确认 VIF、本机路由和 LAN RA 仍一致。
 
 ##### Fake IPv4
 
@@ -205,9 +203,13 @@ Surge 使用 VIF 承载 FakeIP。Mac 上必须设置 `ipv6-vif = always`，开�
 | Fake DNS IPv4 | `198.18.0.2` |
 | Fake IPv4 池 | `198.18.0.0/15` |
 
-主路由必须添加静态路由：`198.18.0.0/15` 的下一跳为运行 Surge 的 Mac 局域网 IPv4。LAN 客户端先将 Fake IPv4 流量交给主路由，再由主路由转发到 Mac，Mac 最后将该地址池交给 Surge VIF。
+主路由必须添加静态路由：`198.18.0.0/15` 的下一跳为运行 Surge 的 Mac 局域网 IPv4，例子：如果surge所在的mac局域网ip是10.0.0.120，那么在路由器上静态路由198.18.0.0/15下一跳为10.0.0.120。
 
-##### Fake IPv6：Surge 旧版与新版对照（新版 6.8.0，2026.08.06 发布）
+##### Fake IPv6：Surge VIF 与 LAN RIO
+
+Surge 使用 VIF 承载 FakeIP，必须设置 `ipv6-vif = always`。Mac 须开启 `net.inet6.ip6.forwarding=1`；Mac 开机、Surge 重启或主网卡变化后，需要确认当前 VIF、本机路由和 LAN RA 仍保持一致。
+
+###### Surge 旧版与新版 Fake IPv6 对照（新版 6.8.0，2026.08.06 发布）
 
 | 项目 | 旧版 Surge | 新版 Surge |
 |---|---|---|
@@ -216,7 +218,9 @@ Surge 使用 VIF 承载 FakeIP。Mac 上必须设置 `ipv6-vif = always`，开�
 | 实际 Fake IPv6 池 | `fd00:6152:0:9::/64` | `2001:2:0:6152:0:9::/96` |
 | macmini 本机路由 / LAN RIO | `fd00:6152::1/127`、`fd00:6152:0:9::/64` | `2001:2:0:6152::/64` |
 
-旧版保留 VIF 网关链路和 Fake-IP 地址池两类 IPv6 路由项；新版的实际动态 FakeIP 位于 `/96`，由表中聚合的 macmini 本机路由与 LAN RIO 覆盖。路由/RA 前缀可以覆盖实际 Fake-IP 地址池；二者不必有相同的 prefix length。macmini 应按表中前缀将流量交给当前 Surge VIF，不要把 Fake-IP 池作为 LAN 的 SLAAC 地址前缀宣告。
+旧版：mac进行ra宣告`fd00:6152::1/127`、`fd00:6152:0:9::/64`，并把流量转发给surge所在的tun；
+
+新版：mac进行ra宣告`2001:2:0:6152::/64` ，并把流量转发给surge所在的tun；
 
 > [!WARNING]
 > 注意 Surge 版本区别：YehBP 当前代码只处理新版 Surge 的 `2001:2:0:6152` 地址体系。旧版 Surge 用户需按上表自行对照修改 VIF 路由、LAN RIO 与相关 Fake-IP 配置。
@@ -225,14 +229,14 @@ Surge 使用 VIF 承载 FakeIP。Mac 上必须设置 `ipv6-vif = always`，开�
 
 #### 5.3 转发到 Mihomo
 
-Mihomo 与 Surge 使用相同的 FakeIP 原理，但下一跳是 Mihomo 的稳定 LAN ULA，而不是 Mac 的 Surge VIF。
+Mihomo 也使用 FakeIP，但与 Surge 不同：它没有 Surge VIF 的 `::1` 网关和 `::2` Fake DNS 地址；Fake-IP 前缀由 Mihomo 配置直接决定，下一跳是 Mihomo 的稳定 LAN ULA。
 
 | 流量 | 路由前缀 | 下一跳 |
 |---|---|---|
 | Fake IPv4 | `198.18.0.0/15` | Mihomo 的 LAN IPv4 |
-| Fake IPv6 | 字段 `dns.fake-ip-range6`，默认值 `2001:2:0:6152:0:9::/96`；如有变更，需要重新创建宿主机到容器的 bridge 互通。 | Mihomo 的 LAN ULA IPv6 |
+| Fake IPv6 | 字段 `dns.fake-ip-range6`，默认值 `2001:2:0:6152:0:9::/96`；路由器与 YehBP host bridge 均应使用该实际精确前缀。如有变更，需要重新创建宿主机到容器的 bridge 互通。 | Mihomo 的 LAN ULA IPv6 |
 
-路由器的 IPv6 路由前缀必须覆盖 Mihomo 实际 Fake IPv6 池。YehBP 创建 macvlan bridge 时，如探测到 Mihomo，会询问是否同时写入宿主机直达 Mihomo 的 FakeIP route；这只优化宿主机访问，不替代 LAN 或 macvlan 客户端所需的路由。
+路由器的 IPv6 静态路由与 YehBP host bridge 路由应使用 Mihomo 实际 `dns.fake-ip-range6` 前缀，而不是沿用 Surge 的 `/64` 聚合前缀。YehBP 创建 macvlan bridge 时，如探测到 Mihomo，会询问是否同时写入宿主机直达 Mihomo 的 FakeIP route；这只优化宿主机访问，不替代 LAN 或 macvlan 客户端所需的路由。
 
 #### 5.4 macvlan 容器：接受 Surge RA 的 Fake IPv6 路由
 
