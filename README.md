@@ -163,8 +163,8 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbp.bak-*
 
 菜单 `98` 提供镜像检查和更新操作：
 
-- 只检查全部容器，不更新。
 - 检查并更新 compose 容器。
+- 只检查全部容器，不更新。
 - 检查/拉取非 compose 容器镜像；不会重建该类容器。
 
 
