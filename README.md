@@ -191,6 +191,8 @@ YehBP 默认把 RFC1918 IPv4 网段映射为独立 ULA `/64`：
 
 这样可完整保留 IPv4 前三个 octet 的可读性，例如 `10.88.99.0/24` 对应 `fd00:10:88:99::/64`；每个 macvlan 网络也能拥有独立 ULA `/64`，供容器、bridge 和代理下一跳使用，而不依赖可能变化的公网 IPv6 GUA。IPv6 hextet 按十六进制解析；此处使用 IPv4 十进制文本作为可读标签，不是二进制位级映射。
 
+选择自动 ULA 模式时，YehBP 还会按 IPv4 `IPRange` 的第三段建议 IPv6 `IPRange`：例如 IPv4 gateway 为 `10.86.8.1`、IPv4 `IPRange` 为 `10.86.9.0/24` 时，默认 ULA Subnet 为 `fd00:10:86:8::/64`，默认 IPv6 `IPRange` 为 `fd00:10:86:8::9:0/112`。这是便于兼容 `::第三段:最后段` 静态容器地址的推导建议；IPv4 `/25` 或更窄时仍使用对应第三段的 `/112`，不改变现有静态 IPv6 地址格式。手动输入 IPv6 `IPRange` 始终优先。
+
 这只是便捷、确定性的映射，不是 RFC4193 随机 Global ID。多站点、跨网络互联或长期正式部署时，建议自行规划 RFC4193 ULA，并在创建 macvlan 时输入完整 IPv6 CIDR。
 
 > Fake-IP 地址池与 LAN ULA 是不同概念：LAN ULA 用于稳定的局域网下一跳；Fake-IP 是 DNS 为代理域名返回的目标地址。

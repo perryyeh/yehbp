@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.20.10"
+APP_VERSION="2026.08.20.11"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -478,6 +478,27 @@ ipv4_to_ipv6_prefix() {
   local first_octet second_octet third_octet
   IFS='.' read -r first_octet second_octet third_octet _ <<< "$ip"
   echo "fd00:${first_octet}:${second_octet}:${third_octet}"
+}
+
+# 自动 ULA 模式下，将 IPv4 IPRange 的第三段映射为容器 IPv6 池标记。
+# 保留现有 ::<IPv4第三段>:<IPv4最后段> 静态地址约定，固定使用 /112。
+# 例：10.86.9.0/24 + fd00:10:86:8::/64 → fd00:10:86:8::9:0/112。
+derive_ipv6_iprange_from_ipv4() {
+  local ipv4_range="$1" ipv6_cidr="$2"
+  local ipv4_addr first_octet second_octet third_octet fourth_octet base6
+
+  ipv4_addr="${ipv4_range%/*}"
+  IFS='.' read -r first_octet second_octet third_octet fourth_octet <<< "$ipv4_addr"
+  if [[ ! "$third_octet" =~ ^[0-9]+$ ]] || (( third_octet < 0 || third_octet > 255 )); then
+    return 1
+  fi
+
+  base6="${ipv6_cidr%/*}"
+  if [[ "$base6" == *"::" ]]; then
+    echo "${base6}${third_octet}:0/112"
+  else
+    echo "${base6}::${third_octet}:0/112"
+  fi
 }
 
 # 返回 IPv4 CIDR 的最后一个可用单播地址（broadcast 前一位）。
@@ -1477,7 +1498,7 @@ create_macvlan_network() {
   subnet4="$(echo "$iprange" | cut -d'/' -f2)"
 
   # ========= IPv6：优先读取选中接口；无完整信息才按 IPv4 网关推导 =========
-  local gateway6="" cidr6="" iprange6="" subnet6="" iprangev6_prefix=""
+  local gateway6="" cidr6="" iprange6="" subnet6="" iprangev6_prefix="" iprange6_default=""
   local ipv6_info_iface="" iface6_addr="" iface6_gateway="" iface6_cidr=""
 
   # VLAN 子接口通常没有地址/默认路由；此时回退其物理 parent。
@@ -1553,12 +1574,20 @@ create_macvlan_network() {
   if [ -z "$gateway6" ]; then
     cidr6=""; iprange6=""; subnet6=""; iprangev6_prefix=""
   else
+    iprange6_default="$cidr6"
+    if [[ "$ipv6_mode" == "" || "$ipv6_mode" == "2" ]]; then
+      iprange6_default="$(derive_ipv6_iprange_from_ipv4 "$iprange" "$cidr6")" || {
+        echo "❌ 无法根据 IPv4 IPRange 推导 IPv6 IPRange：$iprange"
+        return 1
+      }
+      echo "👉 根据 IPv4 IPRange $iprange 推导 IPv6 IPRange：$iprange6_default"
+    fi
     echo "👉 IPv6 网关：$gateway6"
     echo "👉 IPv6 子网CIDR：$cidr6"
     echo "⚠️ 提示：IPv6 IPRange 将同时作为 Docker 分配范围、bridge IPv6 地址范围和宿主机 bridge 路由范围。"
     echo "⚠️ 手动输入优先；如与 parent 接口现有 RA/on-link 前缀重叠，请确认该路由设计符合预期。"
-    read -r -p "请输入 macvlan IPv6 range (回车使用 $cidr6): " iprange6
-    [ -z "$iprange6" ] && iprange6="$cidr6"
+    read -r -p "请输入 macvlan IPv6 range (回车使用 $iprange6_default): " iprange6
+    [ -z "$iprange6" ] && iprange6="$iprange6_default"
 
     subnet6="$(echo "$iprange6" | cut -d'/' -f2)"
     iprangev6_prefix="$(echo "$iprange6" | cut -d'/' -f1)"
