@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.20.04"
+APP_VERSION="2026.08.20.05"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -436,14 +436,14 @@ select_macvlan_or_exit() {
         echo "  $((i + 1))) ${macvlan_networks[$i]}"
     done
 
-    read -r -p "请输入要使用的 macvlan 序号（回车退出安装）: " choice
+    read -r -p "请输入 macvlan 序号（1 起始；0/回车/其他输入退出）: " choice
     if [ -z "$choice" ]; then
         echo "✅ 已退出安装。"
         return 2
     fi
     if [[ ! "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "${#macvlan_networks[@]}" ]; then
-        echo "❌ 无效的序号：$choice"
-        return 1
+        echo "ℹ️ 已退出安装。"
+        return 2
     fi
 
     SELECTED_MACVLAN="${macvlan_networks[$((choice - 1))]}"
@@ -680,7 +680,7 @@ select_dockerapps_dir() {
         done
 
         while true; do
-          read -r -p "请选择目录序号，输入 m 手工输入，回车退出: " choice
+          read -r -p "请选择目录序号（1 起始；m 手工输入；0/回车/其他输入退出）: " choice
           if [ -z "$choice" ]; then
             return 2
           fi
@@ -694,7 +694,7 @@ select_dockerapps_dir() {
                 echo "✅ 使用已有目录：${SELECTED_DOCKERAPPS_DIR}"
                 return 0
               fi
-              echo "❌ 无效选择：$choice"
+              return 2
               ;;
           esac
         done
@@ -1377,7 +1377,7 @@ create_macvlan_network() {
   done
 
   local netcard_index networkcard
-  read -r -p "输入网卡序号(1 起始，直接回车退出): " netcard_index
+  read -r -p "输入网卡序号（1 起始；0/回车/其他输入退出）: " netcard_index
 
   # 直接回车：退出（不报错）
   if [ -z "$netcard_index" ]; then
@@ -1386,8 +1386,8 @@ create_macvlan_network() {
   fi
 
   if [[ ! "$netcard_index" =~ ^[0-9]+$ ]] || [ "$netcard_index" -lt 1 ] || [ "$netcard_index" -gt "${#interfaces[@]}" ]; then
-    echo "❌ 网卡序号无效：$netcard_index"
-    return 1
+    echo "退出 macvlan 创建。"
+    return 0
   fi
   networkcard="${interfaces[$((netcard_index - 1))]}"
   [ -n "$networkcard" ] || { echo "❌ 未能获取网卡名称"; return 1; }
@@ -3034,7 +3034,7 @@ clean_macvlan_network() {
     done
 
     echo
-    echo "请输入要删除的网络序号（1 起始），或输入 a 表示删除全部，回车取消："
+    echo "请输入要删除的网络序号（1 起始），或输入 a 表示删除全部；0/回车/其他输入取消："
     read -p "你的选择: " choice
 
     if [ -z "$choice" ]; then
@@ -3046,15 +3046,15 @@ clean_macvlan_network() {
 
     if [[ "$choice" =~ ^[0-9]+$ ]]; then
         if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#macvlan_networks[@]}" ]; then
-            echo "❌ 无效的序号。"
-            return 1
+            echo "⚠️ 已取消删除 macvlan 网络。"
+            return 0
         fi
         to_delete=("${macvlan_networks[$((choice - 1))]}")
     elif [[ "$choice" =~ ^[Aa]$ ]]; then
         to_delete=("${macvlan_networks[@]}")
     else
-        echo "❌ 无效输入。"
-        return 1
+        echo "⚠️ 已取消删除 macvlan 网络。"
+        return 0
     fi
 
     # 先构建剩余网络的 <phys>_<vlan> 索引，用于判断 VLAN 是否仍被其他 macvlan 使用
@@ -3178,21 +3178,21 @@ clean_macvlan_bridge() {
     done
 
     echo
-    read -p "请输入要删除的序号（1 起始），或输入 a 表示删除全部，回车取消: " choice
+    read -p "请输入要删除的序号（1 起始），或输入 a 表示删除全部；0/回车/其他输入取消: " choice
     [ -z "$choice" ] && { echo "⚠️ 已取消"; return 0; }
 
     local to_clean=()
     if [[ "$choice" =~ ^[0-9]+$ ]]; then
         if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#svc_files[@]}" ]; then
-            echo "❌ 无效序号：$choice"
-            return 1
+            echo "⚠️ 已取消"
+            return 0
         fi
         to_clean=("${svc_files[$((choice - 1))]}")
     elif [[ "$choice" =~ ^[Aa]$ ]]; then
         to_clean=("${svc_files[@]}")
     else
-        echo "❌ 无效输入"
-        return 1
+        echo "⚠️ 已取消"
+        return 0
     fi
 
     for svc_path in "${to_clean[@]}"; do
@@ -3567,14 +3567,14 @@ manage_dockcheck_auto_update() {
     echo "2）安装 Dockcheck"
     echo "3）删除 Dockcheck"
     echo "4）升级 Dockcheck"
-    read -r -p "请选择 [1/2/3/4，回车取消]: " choice
+    read -r -p "请选择 [1/2/3/4；0/回车/其他输入取消]: " choice
     case "$choice" in
         1) show_dockcheck_auto_update_status ;;
         2) install_dockcheck_auto_update ;;
         3) cleanup_dockcheck_auto_update ;;
         4) sync_dockcheck_auto_update_components ;;
         "") echo "ℹ️ 已取消。" ;;
-        *) echo "❌ 无效选择：$choice"; return 1 ;;
+        *) echo "ℹ️ 已取消。"; return 0 ;;
     esac
 }
 
@@ -3612,7 +3612,7 @@ run_dockcheck_auto_update_once() {
     echo "1）Dockcheck 检查并更新 compose 容器"
     echo "2）只检查全部容器，不更新"
     echo "3）Dockcheck 检查/拉取非 compose 容器镜像（不重建容器）"
-    read -r -p "请选择 [1/2/3，回车取消]: " mode
+    read -r -p "请选择 [1/2/3；0/回车/其他输入取消]: " mode
     case "$mode" in
         1)
             read -r -p "确认立即更新有新镜像的 compose 容器？[y/N]: " confirm
@@ -3657,8 +3657,8 @@ run_dockcheck_auto_update_once() {
             return 0
             ;;
         *)
-            echo "❌ 无效选择：$mode"
-            return 1
+            echo "ℹ️ 已取消。"
+            return 0
             ;;
     esac
 }
