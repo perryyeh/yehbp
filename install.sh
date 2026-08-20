@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.20.11"
+APP_VERSION="2026.08.20.12"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -241,6 +241,7 @@ uninstall_yehbp_cli() {
 check_yehbp_update() {
     local tmp remote_version ans
 
+    echo "🔎 正在检测新版本（最多等待 10 秒；检测失败则下次再试）…"
     remote_version="$(fetch_remote_yehbp_version)"
     if [ -z "$remote_version" ]; then
         echo "⚠️ 无法识别远程版本，继续使用当前版本：${APP_VERSION}"
