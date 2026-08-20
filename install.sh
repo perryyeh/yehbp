@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.20.08"
+APP_VERSION="2026.08.20.09"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -14,15 +14,15 @@ download_yehbp_script() {
     local dst="$1"
     local url="${RAW_INSTALL_URL}?t=$(date +%s)"
 
-    echo "ℹ️ 下载超时限制 50s，超时则本次不更新。"
+    echo "ℹ️ 下载超时限制 60s，超时则本次不更新。"
 
     if command -v curl >/dev/null 2>&1; then
-        curl --connect-timeout 10 --max-time 50 -fsSL "$url" -o "$dst" || {
+        curl --connect-timeout 10 --max-time 60 -fsSL "$url" -o "$dst" || {
             echo "❌ 下载失败，本次不更新。"
             return 1
         }
     elif command -v wget >/dev/null 2>&1; then
-        wget --timeout=50 -qO "$dst" "$url" || {
+        wget --timeout=60 -qO "$dst" "$url" || {
             echo "❌ 下载失败，本次不更新。"
             return 1
         }
@@ -43,9 +43,9 @@ download_yehbp_asset() {
     local url="${RAW_ASSET_BASE}/${src}?t=$(date +%s)"
 
     mkdir -p "$(dirname "$dst")" || return 1
-    curl --connect-timeout 10 --max-time 30 -fsSL "$url" -o "$dst" || {
+    curl --connect-timeout 10 --max-time 60 -fsSL "$url" -o "$dst" || {
         rm -f "$dst"
-        echo "❌ 下载失败（30s 超时或网络错误）：$src；请重试。"
+        echo "❌ 下载失败（60s 超时或网络错误）：$src；请重试。"
         return 1
     }
 }
@@ -122,7 +122,7 @@ read_dockcheck_version() {
 fetch_remote_dockcheck_version() {
     # VERSION is at the top of the upstream script. Fetch only that prefix for
     # the check; download the complete script only after a newer version exists.
-    curl --connect-timeout 10 --max-time 30 -fsSL --range 0-1023 "$DOCKCHECK_URL" 2>/dev/null | \
+    curl --connect-timeout 10 --max-time 60 -fsSL --range 0-1023 "$DOCKCHECK_URL" 2>/dev/null | \
         sed -nE 's/^VERSION="([^"[:space:]]+)".*/\1/p' | head -n1
 }
 
