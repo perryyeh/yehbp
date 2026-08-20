@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.20.06"
+APP_VERSION="2026.08.20.07"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -436,7 +436,7 @@ select_macvlan_or_exit() {
         echo "  $((i + 1))) ${macvlan_networks[$i]}"
     done
 
-    read -r -p "请输入 macvlan 序号（1 起始；0/回车/其他输入退出）: " choice
+    read -r -p "请输入 macvlan 序号（0/回车/其他输入退出）: " choice
     if [ -z "$choice" ]; then
         echo "✅ 已退出安装。"
         return 2
@@ -680,7 +680,7 @@ select_dockerapps_dir() {
         done
 
         while true; do
-          read -r -p "请选择目录序号（1 起始；m 手工输入；0/回车/其他输入退出）: " choice
+          read -r -p "请选择目录序号（m 手工输入；0/回车/其他输入退出）: " choice
           if [ -z "$choice" ]; then
             return 2
           fi
@@ -1377,7 +1377,7 @@ create_macvlan_network() {
   done
 
   local netcard_index networkcard
-  read -r -p "输入网卡序号（1 起始；0/回车/其他输入退出）: " netcard_index
+  read -r -p "输入网卡序号（0/回车/其他输入退出）: " netcard_index
 
   # 直接回车：退出（不报错）
   if [ -z "$netcard_index" ]; then
@@ -1644,7 +1644,7 @@ create_macvlan_bridge() {
         echo "  $((i + 1))) ${macvlan_networks[$i]}"
     done
 
-    read -p "请输入要配置 bridge 的 macvlan 序号(1 起始，默认 1): " idx
+    read -p "请输入要配置 bridge 的 macvlan 序号(默认 1): " idx
     idx=${idx:-1}
     if ! [[ "$idx" =~ ^[0-9]+$ ]] || [ "$idx" -lt 1 ] || [ "$idx" -gt "${#macvlan_networks[@]}" ]; then
         echo "❌ 输入序号无效。"
@@ -3034,7 +3034,7 @@ clean_macvlan_network() {
     done
 
     echo
-    echo "请输入要删除的网络序号（1 起始），或输入 a 表示删除全部；0/回车/其他输入取消："
+    echo "请输入要删除的网络序号，或输入 a 表示删除全部；0/回车/其他输入取消："
     read -p "你的选择: " choice
 
     if [ -z "$choice" ]; then
@@ -3178,7 +3178,7 @@ clean_macvlan_bridge() {
     done
 
     echo
-    read -p "请输入要删除的序号（1 起始），或输入 a 表示删除全部；0/回车/其他输入取消: " choice
+    read -p "请输入要删除的序号，或输入 a 表示删除全部；0/回车/其他输入取消: " choice
     [ -z "$choice" ] && { echo "⚠️ 已取消"; return 0; }
 
     local to_clean=()
