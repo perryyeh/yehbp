@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.20.05"
+APP_VERSION="2026.08.20.06"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -3615,6 +3615,7 @@ run_dockcheck_auto_update_once() {
     read -r -p "请选择 [1/2/3；0/回车/其他输入取消]: " mode
     case "$mode" in
         1)
+            echo "⚠️ 更新会拉取新镜像并重建相关 compose 容器；对应服务网络可能短暂中断。"
             read -r -p "确认立即更新有新镜像的 compose 容器？[y/N]: " confirm
             if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
                 echo "ℹ️ 已取消更新。"
