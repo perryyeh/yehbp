@@ -121,7 +121,7 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbp.bak-*
 6. 没有 Surge / OpenWrt 作为代理时，可安装 Mihomo 替代；Mihomo 需开启 TUN 模式并配置好上游代理。
 7. 安装 MosDNS；选择 Surge 作为上游时 DNS 写 `198.18.0.2`，选择 Mihomo 作为上游时 DNS 写 Mihomo 的 局域网IP。
 8. 安装 AdGuardHome，并使用 MosDNS 作为上游 DNS。
-9. 最后创建 macvlan bridge，解决宿主机和容器之间的互通。bridge IPv4 使用 macvlan IPRange 的最后一个可用地址，IPv6 使用 IPv6 IPRange 的最后一个地址；宿主机只对 IPv4 IPRange 对应的 IPv6 `/112` 容器池写入本地路由，避免劫持整个 LAN ULA `/64`。
+9. 最后创建 macvlan bridge，解决宿主机和容器之间的互通。bridge IPv4 使用 macvlan IPv4 IPRange 的最后一个可用地址；bridge IPv6 使用 Docker IPv6 IPRange 的最后一个地址，宿主机也对该相同 IPv6 IPRange 写入 bridge 路由。手动输入的 IPv6 CIDR/IPRange/Gateway 优先；如 IPv6 IPRange 与 parent 接口现有 RA/on-link 前缀重叠，应确认该路由设计符合预期。
 10. 按下方「[5. FakeIP 旁路与 IPv6 规划](#fakeip-routing)」完成 Surge 或 Mihomo 的 FakeIP 数据面转发与验证。
 11. 在路由器把 AdGuardHome 的 IP 设置为局域网 DNS。
 

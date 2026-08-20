@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.20.02"
+APP_VERSION="2026.08.20.03"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -1562,7 +1562,8 @@ create_macvlan_network() {
   else
     echo "👉 IPv6 网关：$gateway6"
     echo "👉 IPv6 子网CIDR：$cidr6"
-    echo "⚠️ 提示：IPv6 IPRange 建议 /64（不要与现网 RA/DHCPv6 冲突）。"
+    echo "⚠️ 提示：IPv6 IPRange 将同时作为 Docker 分配范围、bridge IPv6 地址范围和宿主机 bridge 路由范围。"
+    echo "⚠️ 手动输入优先；如与 parent 接口现有 RA/on-link 前缀重叠，请确认该路由设计符合预期。"
     read -r -p "请输入 macvlan IPv6 range (回车使用 $cidr6): " iprange6
     [ -z "$iprange6" ] && iprange6="$cidr6"
 
@@ -1718,23 +1719,15 @@ create_macvlan_bridge() {
         ' | head -n1)
         if [ -n "$iprange6_cidr" ] && [ "$iprange6_cidr" != "null" ]; then
             echo "🌐 IPv6 IPRange: $iprange6_cidr"
-            base6="${iprange6_cidr%/*}"    # 比如 fd10:0:20:: 或 fd10:0:20::100
         else
-            base6="${subnet6_cidr%/*}"     # 比如 fd10:0:20::
+            echo "ℹ️ IPv6 未设置 IPRange；bridge 将回退使用 IPv6 Subnet。"
         fi
 
-        # bridge IPv6 用 IPv6 IPRange（缺省为 Subnet）的最后一个地址。
-        # host 仅路由 IPv4 IPRange 对应的 IPv6 /112 容器池，避免劫持 LAN ULA /64。
-        if [ -n "$iprange4_cidr" ]; then
-            base6_addr="${subnet6_cidr%/*}"
-            base6_prefix="${base6_addr%%::*}"
-            v4_third=$(echo "$iprange4_cidr" | cut -d'/' -f1 | cut -d'.' -f3)
-            route6_pref="${base6_prefix}::${v4_third}:0/112"
-        else
-            route6_pref="${iprange6_cidr:-$subnet6_cidr}"
-        fi
-
+        # IPv6 bridge 严格使用 Docker IPv6 IPRange（缺省为 Subnet）。
+        # 不从 IPv4 IPRange 推导，确保手动 IPv6 配置也在 Docker、bridge
+        # 地址和宿主机优先路由三处完全一致。
         bridge6_range="${iprange6_cidr:-$subnet6_cidr}"
+        route6_pref="$bridge6_range"
         bridge6="$(cidr_last_ipv6 "$bridge6_range")" || {
             echo "❌ 无法计算 IPv6 bridge 地址：$bridge6_range"
             return 1
