@@ -15,6 +15,7 @@ AUTO_PRUNE="${AUTO_PRUNE:-false}"
 DELAY_DAYS="${DELAY_DAYS:-0}"
 CHECK_MAC="${CHECK_MAC:-true}"
 HEARTBEAT_INTERVAL="${HEARTBEAT_INTERVAL:-15}"
+HEARTBEAT_SILENCE_SECONDS="${HEARTBEAT_SILENCE_SECONDS:-60}"
 DOCKCHECK_TIMEOUT="${DOCKCHECK_TIMEOUT:-1800}"
 DOCKCHECK_TIMEOUT_GRACE="${DOCKCHECK_TIMEOUT_GRACE:-30}"
 LOCK_WAIT_SECONDS="${LOCK_WAIT_SECONDS:-30}"
@@ -29,6 +30,10 @@ if ! [[ "$DOCKCHECK_TIMEOUT_GRACE" =~ ^[0-9]+$ ]]; then
 fi
 if ! [[ "$LOCK_WAIT_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
   echo "❌ LOCK_WAIT_SECONDS 必须是大于 0 的秒数：$LOCK_WAIT_SECONDS"
+  exit 2
+fi
+if ! [[ "$HEARTBEAT_SILENCE_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "❌ HEARTBEAT_SILENCE_SECONDS 必须是大于 0 的秒数：$HEARTBEAT_SILENCE_SECONDS"
   exit 2
 fi
 if [ ! -t 0 ] && ! command -v setsid >/dev/null 2>&1; then
@@ -148,9 +153,13 @@ cleanup_old_logs() {
 }
 
 run_with_heartbeat() {
-  local start now elapsed pid rc sleep_pid deadline isolated="false"
+  local start now elapsed pid rc sleep_pid deadline last_activity idle_seconds
+  local last_notice_activity="" activity_file isolated="false"
   start="$(date +%s)"
   rc=0
+  activity_file="$(mktemp "$BASE_DIR/.dockcheck-activity.XXXXXX")" || return 1
+  printf '%s\n' "$start" > "$activity_file"
+  export DOCKCHECK_ACTIVITY_FILE="$activity_file"
 
   # 交互式运行保留在当前终端进程组，Ctrl-C 可终止当前 Dockcheck。
   # systemd/timer 等非交互运行才隔离进程组，供超时处理整组清理。
@@ -170,7 +179,7 @@ run_with_heartbeat() {
     fi
   }
 
-  trap 'terminate_heartbeat_child; wait "$pid" 2>/dev/null || true; exit 130' INT TERM
+  trap 'terminate_heartbeat_child; wait "$pid" 2>/dev/null || true; rm -f "$activity_file"; exit 130' INT TERM
 
   while kill -0 "$pid" 2>/dev/null; do
     sleep "$HEARTBEAT_INTERVAL" &
@@ -196,14 +205,24 @@ run_with_heartbeat() {
         fi
         wait "$pid" 2>/dev/null || true
         trap - INT TERM
+        rm -f "$activity_file"
         return 124
       fi
-      echo "⏳ Dockcheck 仍在运行，已执行 ${elapsed}s ..."
+      last_activity="$(<"$activity_file")"
+      if ! [[ "$last_activity" =~ ^[0-9]+$ ]]; then
+        last_activity="$start"
+      fi
+      idle_seconds=$((now - last_activity))
+      if [ "$idle_seconds" -ge "$HEARTBEAT_SILENCE_SECONDS" ] && [ "$last_notice_activity" != "$last_activity" ]; then
+        echo "⏳ Dockcheck 已 ${idle_seconds}s 未输出进度，任务仍在运行..."
+        last_notice_activity="$last_activity"
+      fi
     fi
   done
 
   wait "$pid" || rc=$?
   trap - INT TERM
+  rm -f "$activity_file"
   return "$rc"
 }
 
@@ -216,6 +235,9 @@ stream_dockcheck_output() {
   "$@" 2>&1 | while IFS= read -r -n 1 char; do
     if [ -z "$char" ] || [ "$char" = $'\r' ]; then
       printf '\n'
+      if [ -n "${DOCKCHECK_ACTIVITY_FILE:-}" ]; then
+        printf '%s\n' "$(date +%s)" > "$DOCKCHECK_ACTIVITY_FILE"
+      fi
     else
       printf '%s' "$char"
     fi
@@ -373,7 +395,8 @@ done
   dockcheck_capture="$(mktemp "$BASE_DIR/.dockcheck-output.XXXXXX")" || exit 1
   trap 'rm -f "$RUN_INFO_FILE" "$dockcheck_capture"' EXIT
   set +e
-  run_with_heartbeat stream_dockcheck_output ./dockcheck.sh "${args[@]}" | tee "$dockcheck_capture"
+  export -f stream_dockcheck_output
+  run_with_heartbeat bash -o pipefail -c 'stream_dockcheck_output "$@"' _ ./dockcheck.sh "${args[@]}" | tee "$dockcheck_capture"
   dockcheck_rc=${PIPESTATUS[0]}
   set -e
   if [ "$dockcheck_rc" -ne 0 ]; then

@@ -10,6 +10,8 @@ DOCKCHECK_EXTRA_ARGS="-t 30"
 AUTO_PRUNE=__AUTO_PRUNE__
 # Delay new images by N days before update; 0 disables delay.
 DELAY_DAYS=__DELAY_DAYS__
+# Print one liveness notice only after this many seconds without Dockcheck output.
+HEARTBEAT_SILENCE_SECONDS=60
 # Check compose mac_address against actual Docker endpoint after run.
 CHECK_MAC=true
 # Maximum seconds for one Dockcheck run. Timeout also terminates child docker pull processes.
