@@ -5,7 +5,7 @@ LOG_DIR=__LOG_DIR__
 # Keep update logs by calendar date; 7 retains today plus the preceding 6 dates.
 LOG_RETENTION_DAYS=7
 # Extra dockcheck options. Keep automatic mode in wrapper; do not put -a/-n here.
-DOCKCHECK_EXTRA_ARGS="-m -t 30"
+DOCKCHECK_EXTRA_ARGS="-t 30"
 # Set to true to prune dangling images after successful updates.
 AUTO_PRUNE=__AUTO_PRUNE__
 # Delay new images by N days before update; 0 disables delay.

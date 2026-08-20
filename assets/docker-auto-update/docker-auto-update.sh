@@ -207,6 +207,21 @@ run_with_heartbeat() {
   return "$rc"
 }
 
+stream_dockcheck_output() {
+  local char
+
+  # Dockcheck uses carriage-return-only progress updates. Convert them to
+  # newline-delimited records so logs, systemd journal, and chat clients show
+  # actual registry-check progress instead of buffering it until completion.
+  "$@" 2>&1 | while IFS= read -r -n 1 char; do
+    if [ -z "$char" ] || [ "$char" = $'\r' ]; then
+      printf '\n'
+    else
+      printf '%s' "$char"
+    fi
+  done
+}
+
 recreate_compose_container() {
   local cname="$1" replace_conflict="${2:-false}"
   local project service workdir files file existing_project existing_workdir existing_service
@@ -329,7 +344,13 @@ done
   args=()
   # Split configured args intentionally; config is root-owned local file.
   extra=( $DOCKCHECK_EXTRA_ARGS )
-  args+=("${extra[@]}")
+  for arg in "${extra[@]}"; do
+    if [ "$arg" = "-m" ]; then
+      echo "ℹ️ 已忽略 Dockcheck 的 -m 选项，以显示实时检查进度。"
+      continue
+    fi
+    args+=("$arg")
+  done
   if [ "$DELAY_DAYS" != "0" ] && [ "$ignore_delay" != "true" ]; then
     args+=("-d" "$DELAY_DAYS")
   fi
@@ -352,7 +373,7 @@ done
   dockcheck_capture="$(mktemp "$BASE_DIR/.dockcheck-output.XXXXXX")" || exit 1
   trap 'rm -f "$RUN_INFO_FILE" "$dockcheck_capture"' EXIT
   set +e
-  run_with_heartbeat ./dockcheck.sh "${args[@]}" 2>&1 | tee "$dockcheck_capture"
+  run_with_heartbeat stream_dockcheck_output ./dockcheck.sh "${args[@]}" | tee "$dockcheck_capture"
   dockcheck_rc=${PIPESTATUS[0]}
   set -e
   if [ "$dockcheck_rc" -ne 0 ]; then
