@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.20.03"
+APP_VERSION="2026.08.20.04"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -433,7 +433,7 @@ select_macvlan_or_exit() {
 
     echo "可用的 macvlan 网络："
     for i in "${!macvlan_networks[@]}"; do
-        echo "  $i) ${macvlan_networks[$i]}"
+        echo "  $((i + 1))) ${macvlan_networks[$i]}"
     done
 
     read -r -p "请输入要使用的 macvlan 序号（回车退出安装）: " choice
@@ -441,12 +441,12 @@ select_macvlan_or_exit() {
         echo "✅ 已退出安装。"
         return 2
     fi
-    if [[ ! "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 0 ] || [ "$choice" -ge "${#macvlan_networks[@]}" ]; then
+    if [[ ! "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "${#macvlan_networks[@]}" ]; then
         echo "❌ 无效的序号：$choice"
         return 1
     fi
 
-    SELECTED_MACVLAN="${macvlan_networks[$choice]}"
+    SELECTED_MACVLAN="${macvlan_networks[$((choice - 1))]}"
     echo "📡 选中的 macvlan 网络: $SELECTED_MACVLAN"
     return 0
 }
@@ -1369,15 +1369,15 @@ create_macvlan_network() {
 
     macvlans="${MACVLAN_BY_PARENT[$iface]}"
     if [ -n "$macvlans" ]; then
-      echo "$i) $iface  IPv4: ${ip4:-无}  ULA: ${ip6:-无}"
+      echo "$((i + 1))) $iface  IPv4: ${ip4:-无}  ULA: ${ip6:-无}"
       echo "    ↳ 已存在 macvlan: $macvlans"
     else
-      echo "$i) $iface  IPv4: ${ip4:-无}  ULA: ${ip6:-无}"
+      echo "$((i + 1))) $iface  IPv4: ${ip4:-无}  ULA: ${ip6:-无}"
     fi
   done
 
   local netcard_index networkcard
-  read -r -p "输入网卡序号(直接回车退出): " netcard_index
+  read -r -p "输入网卡序号(1 起始，直接回车退出): " netcard_index
 
   # 直接回车：退出（不报错）
   if [ -z "$netcard_index" ]; then
@@ -1385,7 +1385,11 @@ create_macvlan_network() {
     return 0
   fi
 
-  networkcard="${interfaces[$netcard_index]}"
+  if [[ ! "$netcard_index" =~ ^[0-9]+$ ]] || [ "$netcard_index" -lt 1 ] || [ "$netcard_index" -gt "${#interfaces[@]}" ]; then
+    echo "❌ 网卡序号无效：$netcard_index"
+    return 1
+  fi
+  networkcard="${interfaces[$((netcard_index - 1))]}"
   [ -n "$networkcard" ] || { echo "❌ 未能获取网卡名称"; return 1; }
   echo "选择的 parent 接口: $networkcard"
 
@@ -1637,17 +1641,17 @@ create_macvlan_bridge() {
 
     echo "可用的 macvlan 网络："
     for i in "${!macvlan_networks[@]}"; do
-        echo "  $i) ${macvlan_networks[$i]}"
+        echo "  $((i + 1))) ${macvlan_networks[$i]}"
     done
 
-    read -p "请输入要配置 bridge 的 macvlan 序号(默认 0): " idx
-    idx=${idx:-0}
-    if ! [[ "$idx" =~ ^[0-9]+$ ]] || [ "$idx" -lt 0 ] || [ "$idx" -ge "${#macvlan_networks[@]}" ]; then
+    read -p "请输入要配置 bridge 的 macvlan 序号(1 起始，默认 1): " idx
+    idx=${idx:-1}
+    if ! [[ "$idx" =~ ^[0-9]+$ ]] || [ "$idx" -lt 1 ] || [ "$idx" -gt "${#macvlan_networks[@]}" ]; then
         echo "❌ 输入序号无效。"
         return 1
     fi
 
-    macvlan_name="${macvlan_networks[$idx]}"
+    macvlan_name="${macvlan_networks[$((idx - 1))]}"
     echo "📡 选中的 macvlan 网络: $macvlan_name"
 
     # 2. 获取网络配置
@@ -3023,14 +3027,14 @@ clean_macvlan_network() {
         net="${macvlan_networks[$i]}"
         containers=$(docker network inspect -f '{{range $id,$c := .Containers}}{{printf "%s " $c.Name}}{{end}}' "$net" 2>/dev/null)
         if [ -n "$containers" ]; then
-            echo "  $i) $net    (使用中的容器: $containers)"
+            echo "  $((i + 1))) $net    (使用中的容器: $containers)"
         else
-            echo "  $i) $net"
+            echo "  $((i + 1))) $net"
         fi
     done
 
     echo
-    echo "请输入要删除的网络序号，或输入 a 表示删除全部，回车取消："
+    echo "请输入要删除的网络序号（1 起始），或输入 a 表示删除全部，回车取消："
     read -p "你的选择: " choice
 
     if [ -z "$choice" ]; then
@@ -3041,11 +3045,11 @@ clean_macvlan_network() {
     local to_delete=()
 
     if [[ "$choice" =~ ^[0-9]+$ ]]; then
-        if [ "$choice" -lt 0 ] || [ "$choice" -ge "${#macvlan_networks[@]}" ]; then
+        if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#macvlan_networks[@]}" ]; then
             echo "❌ 无效的序号。"
             return 1
         fi
-        to_delete=("${macvlan_networks[$choice]}")
+        to_delete=("${macvlan_networks[$((choice - 1))]}")
     elif [[ "$choice" =~ ^[Aa]$ ]]; then
         to_delete=("${macvlan_networks[@]}")
     else
@@ -3170,16 +3174,20 @@ clean_macvlan_bridge() {
                         head -n1 | sed -E 's/.*add "([^"]+)".*/\1/')
         fi
 
-        echo "  $i) 服务: $svc_name   接口: ${bridge_if:-未知}   脚本: $setup_script"
+        echo "  $((i + 1))) 服务: $svc_name   接口: ${bridge_if:-未知}   脚本: $setup_script"
     done
 
     echo
-    read -p "请输入要删除的序号，或输入 a 表示删除全部，回车取消: " choice
+    read -p "请输入要删除的序号（1 起始），或输入 a 表示删除全部，回车取消: " choice
     [ -z "$choice" ] && { echo "⚠️ 已取消"; return 0; }
 
     local to_clean=()
     if [[ "$choice" =~ ^[0-9]+$ ]]; then
-        to_clean=("${svc_files[$choice]}")
+        if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#svc_files[@]}" ]; then
+            echo "❌ 无效序号：$choice"
+            return 1
+        fi
+        to_clean=("${svc_files[$((choice - 1))]}")
     elif [[ "$choice" =~ ^[Aa]$ ]]; then
         to_clean=("${svc_files[@]}")
     else
