@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.20.09"
+APP_VERSION="2026.08.20.10"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -471,24 +471,13 @@ ip_to_mac() {
   printf '02:%02x:%02x:%02x:%02x:86\n' "$ip1" "$ip2" "$ip3" "$ip4"
 }
 
-# 计算IPv4对应IPv6前缀
+# 将 IPv4 前三个 octet 映射为可读 ULA /64 前缀。
+# 例：10.86.8.x → fd00:10:86:8::/64。
 ipv4_to_ipv6_prefix() {
   local ip=$1
-  local first_octet=$(echo $ip | cut -d'.' -f1)
-  local second_octet=$(echo $ip | cut -d'.' -f2)
-  local third_octet=$(echo $ip | cut -d'.' -f3)
-
-  if [[ "$first_octet" == "10" ]]; then
-    prefix="fd10"
-  elif [[ "$first_octet" == "172" ]]; then
-    prefix="fd17"
-  elif [[ "$first_octet" == "192" ]]; then
-    prefix="fd19"
-  else
-    prefix="fd00"
-  fi
-
-  echo "${prefix}:${second_octet}:${third_octet}"
+  local first_octet second_octet third_octet
+  IFS='.' read -r first_octet second_octet third_octet _ <<< "$ip"
+  echo "fd00:${first_octet}:${second_octet}:${third_octet}"
 }
 
 # 返回 IPv4 CIDR 的最后一个可用单播地址（broadcast 前一位）。
@@ -2157,7 +2146,7 @@ install_adguardhome() {
     if [ -f "${WORK_DIR}/AdGuardHome.yaml" ]; then
         sed -i "s/10.0.1.119/${mosdns}/g" "${WORK_DIR}/AdGuardHome.yaml"
         if [ -n "$mosdns6" ]; then
-            sed -i "s/#\[fd10::1:119\]/[${mosdns6}]/g" "${WORK_DIR}/AdGuardHome.yaml"
+            sed -E -i "s|#\[[0-9A-Fa-f:]+:119\]|[${mosdns6}]|g" "${WORK_DIR}/AdGuardHome.yaml"
         fi
         if [ -n "$gateway" ] && [ "$gateway" != "null" ]; then
             sed -i "s/10.0.0.1/${gateway}/g" "${WORK_DIR}/AdGuardHome.yaml"
