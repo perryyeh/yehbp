@@ -11,24 +11,15 @@ INTERVAL=30
 RTADVD_PID=""
 RTADVD_IF=""
 
-# Optional stable ULA address for a router-side static-route fallback.
-# Leave empty unless your LAN has an allocated ULA /64 and you explicitly
-# want the Mac to own a stable next-hop address in that prefix.
-LAN_ULA_ADDR="${LAN_ULA_ADDR:-}"
+# Required: set the physical LAN interface that should send the RIO (for
+# example, en0). The helper refuses to run until this placeholder is replaced.
+LAN_IF="${LAN_IF:-__LAN_INTERFACE__}"
+
+# Optional stable ULA address for a router-side static-route fallback. Replace
+# with an unused address from your LAN ULA /64, or leave the placeholder as-is
+# to disable this optional alias.
+LAN_ULA_ADDR="${LAN_ULA_ADDR:-__LAN_ULA_ADDR__}"
 LAN_ULA_PLEN="${LAN_ULA_PLEN:-64}"
-
-primary_if() {
-  /sbin/route -n get default 2>/dev/null |
-    /usr/bin/awk '/interface:/{print $2; exit}'
-}
-
-fallback_if() {
-  /sbin/ifconfig | /usr/bin/awk '
-    /^[a-z0-9]+:/ {iface=$1; sub(":", "", iface); active=0}
-    /status: active/ {active=1}
-    active && iface ~ /^en/ {print iface; exit}
-  '
-}
 
 find_vif() {
   /sbin/route -n get -inet 198.18.0.2 2>/dev/null |
@@ -37,7 +28,9 @@ find_vif() {
 
 ensure_lan_ula() {
   IF="$1"
-  [ -n "$LAN_ULA_ADDR" ] || return 0
+  case "$LAN_ULA_ADDR" in
+    ""|__LAN_ULA_ADDR__) return 0 ;;
+  esac
   if /sbin/ifconfig "$IF" | /usr/bin/awk -v addr="$LAN_ULA_ADDR" '
     $1 == "inet6" && $2 == addr {found=1}
     END {exit !found}
@@ -81,11 +74,17 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+case "$LAN_IF" in
+  ""|__LAN_INTERFACE__)
+    echo "Set LAN_IF to the physical LAN interface before starting this helper." >&2
+    exit 2
+    ;;
+esac
+
 /usr/bin/pkill rtadvd 2>/dev/null || true
 
 while :; do
-  IF=$(primary_if)
-  [ -n "$IF" ] || IF=$(fallback_if)
+  IF="$LAN_IF"
 
   if [ -n "$IF" ]; then
     ensure_lan_ula "$IF"
