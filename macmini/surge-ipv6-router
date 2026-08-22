@@ -1,0 +1,104 @@
+#!/bin/sh
+# macOS Surge Fake IPv6 LAN RIO helper.
+# Requires Surge with ipv6-vif = always and a root LaunchDaemon.
+# This reference targets Surge 6.8+ Fake IPv6 addresses.
+set -eu
+
+FAKE_PREFIX="2001:2:0:6152::"
+FAKE_PLEN="64"
+CONF="/usr/local/etc/surge-fake-rtadvd.conf"
+INTERVAL=30
+RTADVD_PID=""
+RTADVD_IF=""
+
+# Optional stable ULA address for a router-side static-route fallback.
+# Leave empty unless your LAN has an allocated ULA /64 and you explicitly
+# want the Mac to own a stable next-hop address in that prefix.
+LAN_ULA_ADDR="${LAN_ULA_ADDR:-}"
+LAN_ULA_PLEN="${LAN_ULA_PLEN:-64}"
+
+primary_if() {
+  /sbin/route -n get default 2>/dev/null |
+    /usr/bin/awk '/interface:/{print $2; exit}'
+}
+
+fallback_if() {
+  /sbin/ifconfig | /usr/bin/awk '
+    /^[a-z0-9]+:/ {iface=$1; sub(":", "", iface); active=0}
+    /status: active/ {active=1}
+    active && iface ~ /^en/ {print iface; exit}
+  '
+}
+
+find_vif() {
+  /sbin/route -n get -inet 198.18.0.2 2>/dev/null |
+    /usr/bin/awk '/interface:/ && $2 ~ /^utun[0-9]+$/ {print $2; exit}'
+}
+
+ensure_lan_ula() {
+  IF="$1"
+  [ -n "$LAN_ULA_ADDR" ] || return 0
+  if /sbin/ifconfig "$IF" | /usr/bin/awk -v addr="$LAN_ULA_ADDR" '
+    $1 == "inet6" && $2 == addr {found=1}
+    END {exit !found}
+  '; then
+    return 0
+  fi
+  /sbin/ifconfig "$IF" inet6 "${LAN_ULA_ADDR}/${LAN_ULA_PLEN}" alias
+}
+
+fix_fake_route() {
+  VIF="$1"
+  /sbin/route -n delete -inet6 "${FAKE_PREFIX}/${FAKE_PLEN}" >/dev/null 2>&1 || true
+  /sbin/route -n add -inet6 "${FAKE_PREFIX}/${FAKE_PLEN}" -interface "$VIF" >/dev/null 2>&1 || true
+}
+
+write_conf() {
+  IF="$1"
+  /bin/cat > "$CONF" <<EOF
+${IF}:\\
+\t:rltime#0:mininterval#3:maxinterval#10:\\
+\t\t:addr="2001:db8:6152::":prefixlen#64:pinfoflags#0:vltime#0:pltime#0:\\
+\t:rtprefix="${FAKE_PREFIX}":rtplen#${FAKE_PLEN}:rtflags="":rtltime#180:
+EOF
+}
+
+start_rtadvd() {
+  IF="$1"
+  if [ -n "$RTADVD_PID" ] && /bin/kill -0 "$RTADVD_PID" 2>/dev/null && [ "$RTADVD_IF" = "$IF" ]; then
+    return 0
+  fi
+  [ -z "$RTADVD_PID" ] || /bin/kill "$RTADVD_PID" 2>/dev/null || true
+  /usr/bin/pkill rtadvd 2>/dev/null || true
+  write_conf "$IF"
+  /usr/sbin/rtadvd -d -s -c "$CONF" "$IF" >/dev/null 2>&1 &
+  RTADVD_PID=$!
+  RTADVD_IF="$IF"
+}
+
+cleanup() {
+  [ -z "$RTADVD_PID" ] || /bin/kill "$RTADVD_PID" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+/usr/bin/pkill rtadvd 2>/dev/null || true
+
+while :; do
+  IF=$(primary_if)
+  [ -n "$IF" ] || IF=$(fallback_if)
+
+  if [ -n "$IF" ]; then
+    ensure_lan_ula "$IF"
+    /usr/sbin/sysctl -w net.inet6.ip6.forwarding=1 >/dev/null
+    start_rtadvd "$IF"
+
+    VIF=$(find_vif)
+    if [ -n "$VIF" ]; then
+      fix_fake_route "$VIF"
+      /bin/sleep 2
+      fix_fake_route "$VIF"
+    fi
+  fi
+
+  /bin/sleep "$INTERVAL"
+done

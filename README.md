@@ -226,6 +226,18 @@ Surge 使用 VIF 承载 FakeIP，必须设置 `ipv6-vif = always`。Mac 须开�
 
 新版：mac进行ra宣告`2001:2:0:6152::/64` ，并把流量转发给surge所在的tun；
 
+###### macOS Surge RA reference
+
+脱敏参考实现位于 [`macmini/`](macmini/)，文件与 macOS 安装位置对应：
+
+| 仓库文件 | macOS 目标位置 | 职责 |
+|---|---|---|
+| `macmini/surge-ipv6-router` | `/usr/local/sbin/surge-ipv6-router` | 找到 Surge `utun`、将 Fake IPv6 `/64` 路由到 VIF、生成配置并管理 `rtadvd`。 |
+| `macmini/surge-fake-rtadvd.conf` | `/usr/local/etc/surge-fake-rtadvd.conf` | 参考模板；运行时由 helper 生成，向 LAN 发布 RIO。 |
+| `macmini/local.surge-ipv6-router.plist` | `/Library/LaunchDaemons/local.surge-ipv6-router.plist` | 以 launchd 在开机和异常退出后启动 helper。 |
+
+参考脚本不含特定家庭 LAN IP、ULA 或 MAC 地址；可选稳定 ULA 需由部署者显式设置。
+
 > [!WARNING]
 > 注意 Surge 版本区别：YehBP 当前代码只处理新版 Surge 的 `2001:2:0:6152` 地址体系。旧版 Surge 用户需按上表自行对照修改 VIF 路由、LAN RIO 与相关 Fake-IP 配置。
 
