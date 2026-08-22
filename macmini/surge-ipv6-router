@@ -1,102 +1,163 @@
 #!/bin/sh
 # macOS Surge Fake IPv6 LAN RIO helper.
-# Requires Surge with ipv6-vif = always and a root LaunchDaemon.
+# Requires Surge with ipv6-vif = always, Python 3, and a root LaunchDaemon.
 # This reference targets Surge 6.8+ Fake IPv6 addresses.
 set -eu
 
 FAKE_PREFIX="2001:2:0:6152::"
 FAKE_PLEN="64"
 CONF="/usr/local/etc/surge-fake-rtadvd.conf"
-INTERVAL=30
+INTERVAL=5
+ROUTE_REPAIR_TICKS=6 # 6 * 5s = 30s
 RTADVD_PID=""
 RTADVD_IF=""
+LAST_VIF=""
+ROUTE_TICKS="$ROUTE_REPAIR_TICKS"
 
-# Required: set the physical LAN interface that should send the RIO (for
-# example, en0). The helper refuses to run until this placeholder is replaced.
-LAN_IF="${LAN_IF:-__LAN_INTERFACE__}"
-
-# Optional stable ULA address for a router-side static-route fallback. Replace
-# with an unused address from your LAN ULA /64, or leave the placeholder as-is
-# to disable this optional alias.
+# Optional stable ULA for a router-side static-route fallback. Replace with an
+# unused address from your LAN ULA /64, or leave the placeholder as-is to
+# disable this optional alias.
 LAN_ULA_ADDR="${LAN_ULA_ADDR:-__LAN_ULA_ADDR__}"
 LAN_ULA_PLEN="${LAN_ULA_PLEN:-64}"
+
+# Choose the first active physical service in macOS ServiceOrder. Surge changes
+# the default route to utun, so the default route must not be used for this.
+select_lan_if() {
+  /usr/bin/python3 - <<'PY'
+import re
+import subprocess
+
+
+def show(key):
+    return subprocess.run(
+        ['/usr/sbin/scutil'],
+        input=f'show {key}\nquit\n', text=True, capture_output=True,
+    ).stdout
+
+
+def interface_is_active(device):
+    return 'status: active' in subprocess.run(
+        ['/sbin/ifconfig', device], text=True, capture_output=True,
+    ).stdout
+
+
+order = show('Setup:/Network/Global/IPv4')
+service_ids = re.findall(r'[0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12}', order)
+for service_id in service_ids:
+    interface = show(f'Setup:/Network/Service/{service_id}/Interface')
+    device = re.search(r'\bDeviceName\s*:\s*(\S+)', interface)
+    if not device:
+        continue
+    device = device.group(1)
+    if device.startswith(('utun', 'bridge', 'lo')):
+        continue
+    state = show(f'State:/Network/Service/{service_id}/IPv4')
+    active = re.search(r'\bInterfaceName\s*:\s*(\S+)', state)
+    router = re.search(r'\bRouter\s*:\s*(\S+)', state)
+    if active and router and active.group(1) == device and interface_is_active(device):
+        print(device)
+        break
+PY
+}
+
+has_ula() {
+  CHECK_IF="$1"
+  /sbin/ifconfig "$CHECK_IF" 2>/dev/null | /usr/bin/awk -v addr="$LAN_ULA_ADDR" '
+    $1 == "inet6" && $2 == addr {found=1}
+    END {exit !found}
+  '
+}
+
+move_lan_ula() {
+  TARGET_IF="$1"
+  case "$LAN_ULA_ADDR" in
+    ""|__LAN_ULA_ADDR__) return 0 ;;
+  esac
+
+  # Remove only this helper's exact static address from old physical interfaces.
+  for OLD_IF in $(/sbin/ifconfig -l); do
+    case "$OLD_IF" in
+      en*)
+        [ "$OLD_IF" = "$TARGET_IF" ] && continue
+        if has_ula "$OLD_IF"; then
+          /sbin/ifconfig "$OLD_IF" inet6 "$LAN_ULA_ADDR" -alias 2>/dev/null || true
+        fi
+        ;;
+    esac
+  done
+
+  has_ula "$TARGET_IF" || /sbin/ifconfig "$TARGET_IF" inet6 "${LAN_ULA_ADDR}/${LAN_ULA_PLEN}" alias
+}
+
+fix_fake_route() {
+  ROUTE_VIF="$1"
+  /sbin/route -n delete -inet6 "${FAKE_PREFIX}/${FAKE_PLEN}" >/dev/null 2>&1 || true
+  /sbin/route -n add -inet6 "${FAKE_PREFIX}/${FAKE_PLEN}" -interface "$ROUTE_VIF" >/dev/null 2>&1 || true
+}
 
 find_vif() {
   /sbin/route -n get -inet 198.18.0.2 2>/dev/null |
     /usr/bin/awk '/interface:/ && $2 ~ /^utun[0-9]+$/ {print $2; exit}'
 }
 
-ensure_lan_ula() {
-  IF="$1"
-  case "$LAN_ULA_ADDR" in
-    ""|__LAN_ULA_ADDR__) return 0 ;;
-  esac
-  if /sbin/ifconfig "$IF" | /usr/bin/awk -v addr="$LAN_ULA_ADDR" '
-    $1 == "inet6" && $2 == addr {found=1}
-    END {exit !found}
-  '; then
-    return 0
-  fi
-  /sbin/ifconfig "$IF" inet6 "${LAN_ULA_ADDR}/${LAN_ULA_PLEN}" alias
-}
-
-fix_fake_route() {
-  VIF="$1"
-  /sbin/route -n delete -inet6 "${FAKE_PREFIX}/${FAKE_PLEN}" >/dev/null 2>&1 || true
-  /sbin/route -n add -inet6 "${FAKE_PREFIX}/${FAKE_PLEN}" -interface "$VIF" >/dev/null 2>&1 || true
-}
-
 write_conf() {
-  IF="$1"
+  CONF_IF="$1"
   /bin/cat > "$CONF" <<EOF
-${IF}:\
+${CONF_IF}:\
 	:rltime#0:mininterval#3:maxinterval#10:\
 		:addr="2001:db8:6152::":prefixlen#64:pinfoflags#0:vltime#0:pltime#0:\
 	:rtprefix="${FAKE_PREFIX}":rtplen#${FAKE_PLEN}:rtflags="":rtltime#180:
 EOF
 }
 
-start_rtadvd() {
-  IF="$1"
-  if [ -n "$RTADVD_PID" ] && /bin/kill -0 "$RTADVD_PID" 2>/dev/null && [ "$RTADVD_IF" = "$IF" ]; then
-    return 0
-  fi
+stop_rtadvd() {
   [ -z "$RTADVD_PID" ] || /bin/kill "$RTADVD_PID" 2>/dev/null || true
   /usr/bin/pkill rtadvd 2>/dev/null || true
-  write_conf "$IF"
-  /usr/sbin/rtadvd -d -s -c "$CONF" "$IF" >/dev/null 2>&1 &
+  RTADVD_PID=""
+  RTADVD_IF=""
+}
+
+start_rtadvd() {
+  RA_IF="$1"
+  if [ -n "$RTADVD_PID" ] && /bin/kill -0 "$RTADVD_PID" 2>/dev/null && [ "$RTADVD_IF" = "$RA_IF" ]; then
+    return 0
+  fi
+  stop_rtadvd
+  write_conf "$RA_IF"
+  /usr/sbin/rtadvd -d -s -c "$CONF" "$RA_IF" >/dev/null 2>&1 &
   RTADVD_PID=$!
-  RTADVD_IF="$IF"
+  RTADVD_IF="$RA_IF"
 }
 
 cleanup() {
-  [ -z "$RTADVD_PID" ] || /bin/kill "$RTADVD_PID" 2>/dev/null || true
+  stop_rtadvd
 }
 trap cleanup EXIT INT TERM
-
-case "$LAN_IF" in
-  ""|__LAN_INTERFACE__)
-    echo "Set LAN_IF to the physical LAN interface before starting this helper." >&2
-    exit 2
-    ;;
-esac
 
 /usr/bin/pkill rtadvd 2>/dev/null || true
 
 while :; do
-  IF="$LAN_IF"
+  SELECTED_IF=$(select_lan_if)
 
-  if [ -n "$IF" ]; then
-    ensure_lan_ula "$IF"
+  if [ -n "$SELECTED_IF" ]; then
+    move_lan_ula "$SELECTED_IF"
     /usr/sbin/sysctl -w net.inet6.ip6.forwarding=1 >/dev/null
-    start_rtadvd "$IF"
+    start_rtadvd "$SELECTED_IF"
 
-    VIF=$(find_vif)
-    if [ -n "$VIF" ]; then
-      fix_fake_route "$VIF"
-      /bin/sleep 2
-      fix_fake_route "$VIF"
+    CURRENT_VIF=$(find_vif)
+    if [ -n "$CURRENT_VIF" ]; then
+      if [ "$CURRENT_VIF" != "$LAST_VIF" ] || [ "$ROUTE_TICKS" -ge "$ROUTE_REPAIR_TICKS" ]; then
+        fix_fake_route "$CURRENT_VIF"
+        /bin/sleep 2
+        fix_fake_route "$CURRENT_VIF"
+        LAST_VIF="$CURRENT_VIF"
+        ROUTE_TICKS=0
+      else
+        ROUTE_TICKS=$((ROUTE_TICKS + 1))
+      fi
     fi
+  else
+    stop_rtadvd
   fi
 
   /bin/sleep "$INTERVAL"

@@ -10,9 +10,6 @@
   </array>
   <key>EnvironmentVariables</key>
   <dict>
-    <!-- Required: replace with the physical LAN interface, for example en0. -->
-    <key>LAN_IF</key>
-    <string>__LAN_INTERFACE__</string>
     <!-- Optional: replace with a stable address from your LAN ULA /64, or leave unchanged. -->
     <key>LAN_ULA_ADDR</key>
     <string>__LAN_ULA_ADDR__</string>

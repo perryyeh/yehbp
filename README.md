@@ -236,12 +236,12 @@ Surge 使用 VIF 承载 FakeIP，必须设置 `ipv6-vif = always`。Mac 须开�
 | `macmini/surge-fake-rtadvd.conf` | `/usr/local/etc/surge-fake-rtadvd.conf` | 参考模板；运行时由 helper 生成，向 LAN 发布 RIO。 |
 | `macmini/local.surge-ipv6-router.plist` | `/Library/LaunchDaemons/local.surge-ipv6-router.plist` | 以 launchd 在开机和异常退出后启动 helper。 |
 
-参考脚本不含特定家庭 LAN IP、ULA 或 MAC 地址。部署前编辑 `macmini/local.surge-ipv6-router.plist`：
+参考脚本不含特定家庭 LAN IP、ULA 或 MAC 地址；需要 macOS 自带的 `scutil` 与 Python 3。部署前编辑 `macmini/local.surge-ipv6-router.plist`：
 
-- 必须把 `__LAN_INTERFACE__` 替换为要发布 RIO 的物理 LAN 接口（例如 `en0`）。不要以默认路由自动判断：Surge 可将默认路由接管到 `utun`。
-- `__LAN_ULA_ADDR__` 是可选稳定 ULA 下一跳；若需要路由器静态路由兜底，替换为该 LAN ULA `/64` 内一个未使用地址；否则保持占位符不变，helper 不会添加 ULA alias。
+- helper 每 5 秒读取 macOS SystemConfiguration 的 ServiceOrder，选择首个有 IPv4 Router 状态的非 VPN/bridge 物理服务；不要用 Surge 接管后的默认路由判断接口。
+- `__LAN_ULA_ADDR__` 是可选稳定 ULA 下一跳；若需要路由器静态路由兜底，替换为该 LAN ULA `/64` 内一个未使用地址；否则保持占位符不变，helper 不会添加 ULA alias。接口切换时，该 alias 会从旧物理接口迁移到当前承载接口。
 
-运行时 helper 用接口名生成 `surge-fake-rtadvd.conf`；仓库中的同名文件是带 `__LAN_INTERFACE__` 占位符的参考模板。
+运行时 helper 用当前选中的接口生成 `surge-fake-rtadvd.conf`；仓库中的同名文件是带 `__LAN_INTERFACE__` 占位符的参考模板。
 
 > [!WARNING]
 > 注意 Surge 版本区别：YehBP 当前代码只处理新版 Surge 的 `2001:2:0:6152` 地址体系。旧版 Surge 用户需按上表自行对照修改 VIF 路由、LAN RIO 与相关 Fake-IP 配置。
