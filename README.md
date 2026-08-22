@@ -241,7 +241,7 @@ Surge 使用 VIF 承载 FakeIP，必须设置 `ipv6-vif = always`。Mac 须开�
 - 必须把 `__LAN_INTERFACE__` 替换为要发布 RIO 的物理 LAN 接口（例如 `en0`）。不要以默认路由自动判断：Surge 可将默认路由接管到 `utun`。
 - `__LAN_ULA_ADDR__` 是可选稳定 ULA 下一跳；若需要路由器静态路由兜底，替换为该 LAN ULA `/64` 内一个未使用地址；否则保持占位符不变，helper 不会添加 ULA alias。
 
-运行时 helper 用接口名生成 `surge-fake-rtadvd.conf`；仓库中的同名文件是带 `<LAN_INTERFACE>` 占位符的参考模板。
+运行时 helper 用接口名生成 `surge-fake-rtadvd.conf`；仓库中的同名文件是带 `__LAN_INTERFACE__` 占位符的参考模板。
 
 > [!WARNING]
 > 注意 Surge 版本区别：YehBP 当前代码只处理新版 Surge 的 `2001:2:0:6152` 地址体系。旧版 Surge 用户需按上表自行对照修改 VIF 路由、LAN RIO 与相关 Fake-IP 配置。
