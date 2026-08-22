@@ -49,10 +49,10 @@ fix_fake_route() {
 write_conf() {
   IF="$1"
   /bin/cat > "$CONF" <<EOF
-${IF}:\\
-\t:rltime#0:mininterval#3:maxinterval#10:\\
-\t\t:addr="2001:db8:6152::":prefixlen#64:pinfoflags#0:vltime#0:pltime#0:\\
-\t:rtprefix="${FAKE_PREFIX}":rtplen#${FAKE_PLEN}:rtflags="":rtltime#180:
+${IF}:\
+	:rltime#0:mininterval#3:maxinterval#10:\
+		:addr="2001:db8:6152::":prefixlen#64:pinfoflags#0:vltime#0:pltime#0:\
+	:rtprefix="${FAKE_PREFIX}":rtplen#${FAKE_PLEN}:rtflags="":rtltime#180:
 EOF
 }
 
