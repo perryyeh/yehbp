@@ -7,9 +7,9 @@ set -eu
 FAKE_PREFIX="2001:2:0:6152::"
 FAKE_PLEN="64"
 CONF="/usr/local/etc/surge-fake-rtadvd.conf"
+PIDFILE="/var/run/surge-fake-rtadvd.pid"
 INTERVAL=5
 ROUTE_REPAIR_TICKS=6 # 6 * 5s = 30s
-RTADVD_PID=""
 RTADVD_IF=""
 LAST_VIF=""
 ROUTE_TICKS="$ROUTE_REPAIR_TICKS"
@@ -110,22 +110,38 @@ ${CONF_IF}:\
 EOF
 }
 
+rtadvd_running() {
+  [ -r "$PIDFILE" ] || return 1
+  RTADVD_PID=$(/bin/cat "$PIDFILE" 2>/dev/null || true)
+  case "$RTADVD_PID" in
+    ""|*[!0-9]*) return 1 ;;
+  esac
+  /bin/kill -0 "$RTADVD_PID" 2>/dev/null
+}
+
 stop_rtadvd() {
-  [ -z "$RTADVD_PID" ] || /bin/kill "$RTADVD_PID" 2>/dev/null || true
-  /usr/bin/pkill rtadvd 2>/dev/null || true
-  RTADVD_PID=""
+  if rtadvd_running; then
+    /bin/kill "$RTADVD_PID" 2>/dev/null || true
+  fi
+  /bin/rm -f "$PIDFILE"
   RTADVD_IF=""
 }
 
 start_rtadvd() {
   RA_IF="$1"
-  if [ -n "$RTADVD_PID" ] && /bin/kill -0 "$RTADVD_PID" 2>/dev/null && [ "$RTADVD_IF" = "$RA_IF" ]; then
+  if [ "$RTADVD_IF" = "$RA_IF" ] && rtadvd_running; then
     return 0
   fi
   stop_rtadvd
   write_conf "$RA_IF"
-  /usr/sbin/rtadvd -d -s -c "$CONF" "$RA_IF" >/dev/null 2>&1 &
-  RTADVD_PID=$!
+  /bin/rm -f "$PIDFILE"
+  /usr/sbin/rtadvd -d -s -p "$PIDFILE" -c "$CONF" "$RA_IF" >/dev/null 2>&1
+  # rtadvd daemonizes; wait briefly for its child to publish the PID.
+  for WAIT in 1 2 3 4 5; do
+    rtadvd_running && break
+    /bin/sleep 1
+  done
+  rtadvd_running
   RTADVD_IF="$RA_IF"
 }
 
