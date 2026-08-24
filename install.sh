@@ -2,11 +2,11 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.24.02"
+APP_VERSION="2026.08.24.03"
 REPO_URL="https://github.com/perryyeh/yehbp"
-RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
-RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
-RAW_ASSET_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main"
+RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/main/install.sh"
+RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/main/VERSION"
+RAW_ASSET_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 DOCKCHECK_URL="https://raw.githubusercontent.com/mag37/dockcheck/main/dockcheck.sh"
 INSTALL_BIN="/usr/local/bin/${APP_NAME}"
 PLATFORM=""
@@ -361,6 +361,10 @@ install_dependencies() {
     }
 
     if is_openwrt; then
+        # OpenWrt ships /bin/ipcalc.sh, whose CLI is not compatible with the
+        # ipcalc utility used by this script. CIDR fallback calculations use
+        # python3 on this platform instead.
+        deps=(curl jq tar python3)
         echo "📦 使用 OpenWrt opkg 安装依赖"
         local to_install=()
         for dep in "${deps[@]}"; do
@@ -599,21 +603,32 @@ get_subnet_v4() {
   )"
   
   if [ -z "$cidr" ]; then
-    local prefix_len=$(ip -4 addr show $iface | grep inet | awk '{print $2}' | cut -d'/' -f2)
-    local ipcalc_out
-    # 移除 -n 选项以提高兼容性（Busybox ipcalc 可能不支持，或者输出不同）
-    ipcalc_out=$(ipcalc "$ip/$prefix_len" 2>/dev/null)
+    local prefix_len
+    prefix_len=$(ip -4 addr show "$iface" | grep inet | awk '{print $2}' | cut -d'/' -f2)
 
-    # 1. 尝试 Debian 格式 (Network: 192.168.1.0/24)
-    cidr=$(echo "$ipcalc_out" | grep "Network:" | awk '{print $2}')
+    if [ -n "$prefix_len" ] && is_openwrt; then
+      cidr=$(python3 - "$ip/$prefix_len" <<'PY'
+import ipaddress
+import sys
+print(ipaddress.IPv4Interface(sys.argv[1]).network)
+PY
+)
+    else
+      local ipcalc_out
+      # 移除 -n 选项以提高兼容性（Busybox ipcalc 可能不支持，或者输出不同）
+      ipcalc_out=$(ipcalc "$ip/$prefix_len" 2>/dev/null)
 
-    # 2. 尝试 Busybox/Entware 格式 (NETWORK=192.168.1.0 + PREFIX=24)
-    if [ -z "$cidr" ]; then
-      local net_val prefix_val
-      net_val=$(echo "$ipcalc_out" | grep "NETWORK=" | cut -d= -f2)
-      prefix_val=$(echo "$ipcalc_out" | grep "PREFIX=" | cut -d= -f2)
-      if [ -n "$net_val" ] && [ -n "$prefix_val" ]; then
-        cidr="${net_val}/${prefix_val}"
+      # 1. 尝试 Debian 格式 (Network: 192.168.1.0/24)
+      cidr=$(echo "$ipcalc_out" | grep "Network:" | awk '{print $2}')
+
+      # 2. 尝试 Busybox/Entware 格式 (NETWORK=192.168.1.0 + PREFIX=24)
+      if [ -z "$cidr" ]; then
+        local net_val prefix_val
+        net_val=$(echo "$ipcalc_out" | grep "NETWORK=" | cut -d= -f2)
+        prefix_val=$(echo "$ipcalc_out" | grep "PREFIX=" | cut -d= -f2)
+        if [ -n "$net_val" ] && [ -n "$prefix_val" ]; then
+          cidr="${net_val}/${prefix_val}"
+        fi
       fi
     fi
   fi
