@@ -2,7 +2,10 @@
 
 自用一键旁路由交互式菜单脚本，提供从 DNS 缓存、域名分流、远程解析、代理接入，到在外回家入口的一整套网络方案。
 
-支持 IPv6，已在群晖 7.3+、飞牛 1.0+、Armbian（Linux 6.1+）上测试通过。
+支持 IPv6，已在群晖 7.3+、飞牛 1.0+、Armbian（Linux 6.1+）上测试通过；并新增 iStoreOS/OpenWrt 后端。
+
+> [!NOTE]
+> iStoreOS/OpenWrt 使用 `opkg`、`procd` 和 `logd`，不是 systemd。该平台支持 Docker 容器安装、macvlan、macvlan bridge 持久化及 Docker `data_root` 迁移；不提供脚本内格式化/挂载磁盘、Docker 安装、journald 优化或 systemd Dockcheck 定时任务。
 
 ## ✅ 适用场景与前置要求
 
@@ -66,6 +69,12 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh | sudo bash
+```
+
+在 iStoreOS/OpenWrt 中，SSH 登录用户通常已是 `root`，系统默认也没有 `sudo`，使用：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh | bash
 ```
 
 安装后直接运行：

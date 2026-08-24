@@ -1,0 +1,17 @@
+#!/bin/sh /etc/rc.common
+
+START=99
+STOP=10
+
+start() {
+    local script
+
+    for script in /usr/local/bin/yehbp-macvlan_*.sh; do
+        [ -x "$script" ] || continue
+        "$script" || logger -t yehbp-macvlan "failed to apply $script"
+    done
+}
+
+stop() {
+    return 0
+}

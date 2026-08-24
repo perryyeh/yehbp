@@ -2,13 +2,38 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.23.01"
+APP_VERSION="2026.08.24.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
 RAW_ASSET_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main"
 DOCKCHECK_URL="https://raw.githubusercontent.com/mag37/dockcheck/main/dockcheck.sh"
 INSTALL_BIN="/usr/local/bin/${APP_NAME}"
+PLATFORM=""
+
+# iStoreOS/OpenWrt runs scripts as root and does not ship sudo. Preserve existing
+# sudo-based calls for Debian/NAS systems while making them direct root calls here.
+if [ "${EUID:-$(id -u)}" -eq 0 ] && ! command -v sudo >/dev/null 2>&1; then
+    sudo() { "$@"; }
+fi
+
+detect_platform() {
+    if [ -r /etc/openwrt_release ] || [ -r /etc/openwrt_version ]; then
+        PLATFORM="openwrt"
+    elif command -v apt-get >/dev/null 2>&1; then
+        PLATFORM="debian"
+    elif [ -x /opt/bin/opkg ]; then
+        PLATFORM="entware"
+    else
+        PLATFORM="unknown"
+    fi
+}
+
+is_openwrt() {
+    [ "$PLATFORM" = "openwrt" ]
+}
+
+detect_platform
 
 download_yehbp_script() {
     local dst="$1"
@@ -322,14 +347,34 @@ check_yehbp_update
 # ========== 环境准备 ==========
 
 install_dependencies() {
-    echo "🔧 检查并安装依赖（自动适配系统）..."
+    echo "🔧 检查并安装依赖（自动适配系统：${PLATFORM}）..."
 
-    deps=(ipcalc curl jq tar)
+    deps=(ipcalc curl jq tar python3)
 
-    # 统一检测函数
     need_install() {
         ! command -v "$1" >/dev/null 2>&1
     }
+
+    if is_openwrt; then
+        echo "📦 使用 OpenWrt opkg 安装依赖"
+        local to_install=()
+        for dep in "${deps[@]}"; do
+            if need_install "$dep"; then
+                to_install+=("$dep")
+            else
+                echo "✅ $dep 已安装"
+            fi
+        done
+
+        if [ ${#to_install[@]} -gt 0 ]; then
+            echo "⬇️ 正在安装缺少的依赖: ${to_install[*]}"
+            opkg update && opkg install "${to_install[@]}" || {
+                echo "❌ OpenWrt 依赖安装失败：${to_install[*]}"
+                return 1
+            }
+        fi
+        return 0
+    fi
 
     # === 1️⃣ Debian / Ubuntu / Armbian ===
     if command -v apt-get >/dev/null 2>&1; then
@@ -364,7 +409,7 @@ install_dependencies() {
                 echo "✅ $dep 已安装"
             fi
         done
-        
+
         if [ ${#to_install[@]} -gt 0 ]; then
              echo "⬇️ 正在安装缺少的依赖: ${to_install[*]}"
             /opt/bin/opkg update
@@ -374,7 +419,6 @@ install_dependencies() {
         return 0
     fi
 
-    # === 3️⃣ 兜底 ===
     echo "❌ 未识别的系统，无法自动安装依赖"
     echo "👉 请手动安装：${deps[*]}"
     return 1
@@ -389,6 +433,7 @@ function show_menu() {
     echo "============================"
     echo "${APP_TITLE}"
     echo "版本：${APP_VERSION}"
+    echo "平台：${PLATFORM}"
     echo "本脚本提供以下功能："
     echo "----------------------------"
     echo "0）显示菜单"
@@ -396,8 +441,10 @@ function show_menu() {
     echo "2）显示网卡信息"
     echo "3）显示磁盘信息"
     echo "4）显示docker信息"
-    echo "5）格式化磁盘并挂载"
-    echo "7）安装docker"
+    if ! is_openwrt; then
+        echo "5）格式化磁盘并挂载"
+        echo "7）安装docker"
+    fi
     echo "8）创建macvlan（包括ipv4+ipv6）"
     echo "9）删除macvlan"
     echo "10）安装portainer面板"
@@ -408,12 +455,16 @@ function show_menu() {
     echo "21）安装ddns-go"
     echo "22）安装lucky"
     echo "70) 迁移docker目录"
-    echo "71) 优化docker日志"
-    echo "72) 优化journald日志"
+    if ! is_openwrt; then
+        echo "71) 优化docker日志"
+        echo "72) 优化journald日志"
+    fi
     echo "90）创建macvlan bridge"
     echo "91）删除macvlan bridge"
-    echo "97）Dockcheck 安装/删除/管理"
-    echo "98）Dockcheck 检查/更新镜像"
+    if ! is_openwrt; then
+        echo "97）Dockcheck 安装/删除/管理"
+        echo "98）Dockcheck 检查/更新镜像"
+    fi
     echo "99）退出（也可输入 exit / quit / q）"
     echo "999）删除 ${APP_NAME}（也可输入 del / delete / uninstall / remove / rm）"
     echo "============================"
@@ -1647,7 +1698,18 @@ create_macvlan_network() {
   echo "✅ macvlan 网络创建完成：$network_name"
 }
 
-# ========== 2. 配置 macvlan bridge 与 systemd ==========
+install_openwrt_macvlan_persistence() {
+    local init_script="/etc/init.d/yehbp-macvlan-bridge"
+    local hotplug_script="/etc/hotplug.d/iface/99-yehbp-macvlan-bridge"
+
+    mkdir -p /etc/init.d /etc/hotplug.d/iface
+    download_yehbp_asset "assets/openwrt/yehbp-macvlan-bridge.init" "$init_script" || return 1
+    download_yehbp_asset "assets/openwrt/99-yehbp-macvlan-bridge" "$hotplug_script" || return 1
+    chmod 0755 "$init_script" "$hotplug_script"
+    "$init_script" enable
+}
+
+# ========== 2. 配置 macvlan bridge 与持久化服务 ==========
 create_macvlan_bridge() {
     echo "🔧 开始创建/更新 macvlan bridge（宿主机 <-> macvlan 网络互通）"
 
@@ -1831,12 +1893,20 @@ create_macvlan_bridge() {
         fi
     fi
 
-    setup_script="/usr/local/bin/${safe_name}.sh"
+    if is_openwrt; then
+        setup_script="/usr/local/bin/yehbp-${safe_name}.sh"
+    else
+        setup_script="/usr/local/bin/${safe_name}.sh"
+    fi
     service_name="${safe_name}.service"
 
     echo "🧩 bridge 接口: $bridge_if"
     echo "🧩 配置脚本: $setup_script"
-    echo "🧩 systemd 服务: $service_name"
+    if is_openwrt; then
+        echo "🧩 持久化服务: /etc/init.d/yehbp-macvlan-bridge + hotplug"
+    else
+        echo "🧩 systemd 服务: $service_name"
+    fi
 
     # —— 在写脚本之前：检测是否安装了 mihomo；若有则询问，否则询问是否指向其他 IP ——
     mihomo_ip=""
@@ -1965,8 +2035,15 @@ EOF
 
     sudo chmod +x "$setup_script"
 
-    # 5. 写入 systemd 服务
-    sudo bash -c "cat > /etc/systemd/system/$service_name" <<EOF
+    if is_openwrt; then
+        install_openwrt_macvlan_persistence || return 1
+        /etc/init.d/yehbp-macvlan-bridge restart || {
+            echo "❌ macvlan bridge 持久化服务启动失败。"
+            return 1
+        }
+    else
+        # 写入 systemd 服务
+        sudo bash -c "cat > /etc/systemd/system/$service_name" <<EOF
 [Unit]
 Description=macvlan bridge for $macvlan_name ($bridge_if)
 After=network-online.target
@@ -1981,14 +2058,14 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 EOF
 
-    # 6. 启用并立即执行
-    sudo systemctl daemon-reload 2>/dev/null || true
-    sudo systemctl enable "$service_name" 2>/dev/null || true
+        sudo systemctl daemon-reload 2>/dev/null || true
+        sudo systemctl enable "$service_name" 2>/dev/null || true
 
-    # 群晖 systemctl 可能无法 start，兜底直接执行一次脚本
-    if ! sudo systemctl start "$service_name" 2>/dev/null; then
-        echo "⚠️ systemctl start 不可用，直接执行 bridge 脚本"
-        sudo "$setup_script" || return 1
+        # 群晖 systemctl 可能无法 start，兜底直接执行一次脚本
+        if ! sudo systemctl start "$service_name" 2>/dev/null; then
+            echo "⚠️ systemctl start 不可用，直接执行 bridge 脚本"
+            sudo "$setup_script" || return 1
+        fi
     fi
 
     echo "✅ 已为 macvlan 网络 $macvlan_name 创建/更新 bridge 接口: $bridge_if"
@@ -3162,7 +3239,56 @@ clean_macvlan_network() {
 }
 
 # ========== 删除 docker macvlan bridge ==========
+clean_macvlan_bridge_openwrt() {
+    local scripts=() script bridge_if choice to_clean=()
+
+    for script in /usr/local/bin/yehbp-macvlan_*.sh; do
+        [ -f "$script" ] && scripts+=("$script")
+    done
+    if [ ${#scripts[@]} -eq 0 ]; then
+        echo "ℹ️ 未发现 OpenWrt macvlan bridge 脚本。"
+        return 0
+    fi
+
+    echo "检测到以下 OpenWrt macvlan bridge 脚本："
+    local i
+    for i in "${!scripts[@]}"; do
+        script="${scripts[$i]}"
+        bridge_if="$(grep -E 'ip link add "[^"]+"' "$script" | head -n1 | sed -E 's/.*add "([^"]+)".*/\1/')"
+        echo "  $((i + 1))) 接口: ${bridge_if:-未知}   脚本: $script"
+    done
+
+    read -r -p "请输入要删除的序号，或输入 a 表示删除全部；0/回车/其他输入取消: " choice
+    [ -z "$choice" ] && { echo "⚠️ 已取消"; return 0; }
+    if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#scripts[@]}" ]; then
+        to_clean=("${scripts[$((choice - 1))]}")
+    elif [[ "$choice" =~ ^[Aa]$ ]]; then
+        to_clean=("${scripts[@]}")
+    else
+        echo "⚠️ 已取消"
+        return 0
+    fi
+
+    for script in "${to_clean[@]}"; do
+        bridge_if="$(grep -E 'ip link add "[^"]+"' "$script" | head -n1 | sed -E 's/.*add "([^"]+)".*/\1/')"
+        echo "🧻 删除: $script（接口：${bridge_if:-未知}）"
+        [ -n "$bridge_if" ] && ip link del "$bridge_if" 2>/dev/null || true
+        rm -f "$script"
+    done
+
+    if ! compgen -G "/usr/local/bin/yehbp-macvlan_*.sh" >/dev/null; then
+        /etc/init.d/yehbp-macvlan-bridge disable 2>/dev/null || true
+        rm -f /etc/init.d/yehbp-macvlan-bridge /etc/hotplug.d/iface/99-yehbp-macvlan-bridge
+    fi
+    echo "✅ 删除完成。"
+}
+
 clean_macvlan_bridge() {
+    if is_openwrt; then
+        clean_macvlan_bridge_openwrt
+        return $?
+    fi
+
     echo "🧹 删除 macvlan bridge（支持多个）"
 
     # 找 macvlan_* 的 systemd 服务
@@ -3686,7 +3812,102 @@ run_dockcheck_auto_update_once() {
 # =====================
 #  功能 70：迁移 Docker 目录
 # =====================
+migrate_docker_datadir_openwrt() {
+    local current_root new_root old_uci_root old_backup config_backup confirm root_dir
+
+    command -v uci >/dev/null 2>&1 || {
+        echo "❌ 未检测到 UCI，无法按 OpenWrt 方式迁移 Docker 数据目录。"
+        return 1
+    }
+
+    current_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+    old_uci_root="$(uci -q get dockerd.globals.data_root || true)"
+    [ -n "$current_root" ] || current_root="$old_uci_root"
+    [ -n "$current_root" ] || current_root="/opt/docker"
+
+    echo "📌 OpenWrt Docker 当前目录：$current_root"
+    read -r -p "请输入迁移目标目录（例如 /data/docker；回车退出不迁移）: " new_root
+    [ -n "$new_root" ] || { echo "✅ 未输入路径，已退出迁移。"; return 0; }
+    new_root="${new_root%/}"
+
+    case "$new_root" in
+        /|"$current_root"|"$current_root"/*)
+            echo "❌ 目标目录不能是当前 Docker 根目录或其子目录：$new_root"
+            return 1
+            ;;
+    esac
+
+    if [ ! -d "$(dirname "$new_root")" ]; then
+        echo "❌ 目标父目录不存在：$(dirname "$new_root")"
+        return 1
+    fi
+    if [ -e "$new_root" ] && [ ! -d "$new_root" ]; then
+        echo "❌ 目标不是目录：$new_root"
+        return 1
+    fi
+
+    read -r -p "将停止 dockerd、复制数据并更新 /etc/config/dockerd；确认继续？[y/N]: " confirm
+    [[ "$confirm" =~ ^[Yy]$ ]] || { echo "ℹ️ 已取消迁移。"; return 0; }
+
+    /etc/init.d/dockerd stop || {
+        echo "❌ 停止 dockerd 失败，未修改数据。"
+        return 1
+    }
+
+    mkdir -p "$new_root" || { /etc/init.d/dockerd start; return 1; }
+    if [ -d "$current_root" ] && [ -n "$(ls -A "$current_root" 2>/dev/null || true)" ]; then
+        cp -a "$current_root"/. "$new_root"/ || {
+            echo "❌ 数据复制失败，尝试恢复 dockerd。"
+            /etc/init.d/dockerd start
+            return 1
+        }
+    fi
+
+    old_backup=""
+    if [ -d "$current_root" ]; then
+        old_backup="${current_root}.bak-$(date +%Y%m%d-%H%M%S)"
+        mv "$current_root" "$old_backup" || {
+            echo "❌ 无法保留旧 Docker 目录，未修改 UCI 配置。"
+            /etc/init.d/dockerd start
+            return 1
+        }
+    fi
+
+    config_backup="/etc/config/dockerd.bak-$(date +%Y%m%d-%H%M%S)"
+    cp -a /etc/config/dockerd "$config_backup" || {
+        [ -n "$old_backup" ] && mv "$old_backup" "$current_root"
+        /etc/init.d/dockerd start
+        return 1
+    }
+
+    uci set dockerd.globals.data_root="$new_root"
+    uci commit dockerd
+    /etc/init.d/dockerd start || true
+
+    root_dir="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+    if [ "$root_dir" = "$new_root" ]; then
+        echo "✅ 迁移成功：Docker Root Dir = $root_dir"
+        echo "🧩 旧目录备份：${old_backup:-无}"
+        echo "🧩 dockerd 配置备份：$config_backup"
+        return 0
+    fi
+
+    echo "❌ 迁移校验失败：Docker Root Dir = ${root_dir:-未知}；正在回滚。"
+    /etc/init.d/dockerd stop >/dev/null 2>&1 || true
+    cp -a "$config_backup" /etc/config/dockerd
+    uci commit dockerd
+    rm -rf -- "$current_root"
+    [ -n "$old_backup" ] && [ -d "$old_backup" ] && mv "$old_backup" "$current_root"
+    /etc/init.d/dockerd start >/dev/null 2>&1 || true
+    return 1
+}
+
 migrate_docker_datadir() {
+    if is_openwrt; then
+        migrate_docker_datadir_openwrt
+        return $?
+    fi
+
     # 前置校验
     if [ -z "${BASH_VERSION:-}" ]; then exec /usr/bin/env bash "$0" "$@"; fi
     if [ "${EUID:-$(id -u)}" -ne 0 ]; then echo "请以 root 权限运行（sudo bash $0）"; return 1; fi
@@ -4067,8 +4288,8 @@ while true; do
         2) nic_info ;;
         3) disk_info ;;
         4) docker_info ;;
-        5) format_disk ;;
-        7) install_docker ;;
+        5) if is_openwrt; then echo "ℹ️ iStoreOS 请使用系统存储管理格式化和挂载磁盘。"; else format_disk; fi ;;
+        7) if is_openwrt; then echo "ℹ️ iStoreOS 请使用系统 dockerd 软件包；当前已检测到 Docker 时无需安装。"; else install_docker; fi ;;
         8) create_macvlan_network ;;
         9) clean_macvlan_network ;;
         10) install_portainer ;;
@@ -4079,12 +4300,11 @@ while true; do
         21) install_ddnsgo ;;
         22) install_lucky ;;
         70) migrate_docker_datadir ;;
-        71) optimize_docker_logs ;;
-        72) optimize_journald_to_volatile ;;
+        71) if is_openwrt; then echo "ℹ️ OpenWrt dockerd 日志配置不使用 daemon.json；该功能当前不适用。"; else optimize_docker_logs; fi ;;
+        72) if is_openwrt; then echo "ℹ️ OpenWrt 使用 logd/logread，不使用 journald；该功能不适用。"; else optimize_journald_to_volatile; fi ;;
         90) create_macvlan_bridge ;;
         91) clean_macvlan_bridge ;;
-        97) manage_dockcheck_auto_update ;;
-        98) run_dockcheck_auto_update_once ;;
+        97|98) if is_openwrt; then echo "ℹ️ Dockcheck 自动更新依赖 systemd timer，当前 OpenWrt 后端未提供该功能。"; else case $choice in 97) manage_dockcheck_auto_update ;; 98) run_dockcheck_auto_update_once ;; esac; fi ;;
         99|exit|quit|q) echo "退出脚本。"; exit 0 ;;
         999|del|delete|uninstall|remove|rm) uninstall_yehbp_cli ;;
         *) echo "无效选项，请重新输入。" ;;
