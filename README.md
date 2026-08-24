@@ -68,13 +68,13 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 ### 1. 安装 yehbp
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/perryyeh/yehbp/main/install.sh | sudo bash
+curl -fsSL -H 'Accept: application/vnd.github.raw+json' https://api.github.com/repos/perryyeh/yehbp/contents/install.sh?ref=main | sudo bash
 ```
 
 在 iStoreOS/OpenWrt 中，SSH 登录用户通常已是 `root`，系统默认也没有 `sudo`，使用：
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/perryyeh/yehbp/main/install.sh | bash
+curl -fsSL -H 'Accept: application/vnd.github.raw+json' https://api.github.com/repos/perryyeh/yehbp/contents/install.sh?ref=main | bash
 ```
 
 安装后直接运行：
