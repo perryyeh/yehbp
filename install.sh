@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.24.01"
+APP_VERSION="2026.08.24.02"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/install.sh"
 RAW_VERSION_URL="https://raw.githubusercontent.com/perryyeh/yehbp/refs/heads/main/VERSION"
@@ -194,7 +194,12 @@ install_yehbp_from_file() {
         fi
     fi
 
-    install -m 0755 "$src" "$INSTALL_BIN" || return 1
+    if command -v install >/dev/null 2>&1; then
+        install -m 0755 "$src" "$INSTALL_BIN" || return 1
+    else
+        cp "$src" "$INSTALL_BIN" || return 1
+        chmod 0755 "$INSTALL_BIN" || return 1
+    fi
 }
 
 install_yehbp_cli() {
