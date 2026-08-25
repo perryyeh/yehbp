@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.25.02"
+APP_VERSION="2026.08.25.03"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -531,36 +531,6 @@ ip_to_mac() {
   fi
 
   printf '02:%02x:%02x:%02x:%02x:86\n' "$ip1" "$ip2" "$ip3" "$ip4"
-}
-
-# 将 IPv4 前三个 octet 映射为可读 ULA /64 前缀。
-# 例：10.86.8.x → fd00:10:86:8::/64。
-ipv4_to_ipv6_prefix() {
-  local ip=$1
-  local first_octet second_octet third_octet
-  IFS='.' read -r first_octet second_octet third_octet _ <<< "$ip"
-  echo "fd00:${first_octet}:${second_octet}:${third_octet}"
-}
-
-# 自动 ULA 模式下，将 IPv4 IPRange 的第三段映射为容器 IPv6 池标记。
-# 保留现有 ::<IPv4第三段>:<IPv4最后段> 静态地址约定，固定使用 /112。
-# 例：10.86.9.0/24 + fd00:10:86:8::/64 → fd00:10:86:8::9:0/112。
-derive_ipv6_iprange_from_ipv4() {
-  local ipv4_range="$1" ipv6_cidr="$2"
-  local ipv4_addr first_octet second_octet third_octet fourth_octet base6
-
-  ipv4_addr="${ipv4_range%/*}"
-  IFS='.' read -r first_octet second_octet third_octet fourth_octet <<< "$ipv4_addr"
-  if [[ ! "$third_octet" =~ ^[0-9]+$ ]] || (( third_octet < 0 || third_octet > 255 )); then
-    return 1
-  fi
-
-  base6="${ipv6_cidr%/*}"
-  if [[ "$base6" == *"::" ]]; then
-    echo "${base6}${third_octet}:0/112"
-  else
-    echo "${base6}::${third_octet}:0/112"
-  fi
 }
 
 # 返回 IPv4 CIDR 的最后一个可用单播地址（broadcast 前一位）。
