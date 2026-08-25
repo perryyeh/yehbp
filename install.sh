@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.25.01"
+APP_VERSION="2026.08.25.02"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -585,6 +585,30 @@ import sys
 network = ipaddress.IPv6Network(sys.argv[1], strict=False)
 print(network[-1])
 PY
+}
+
+# 返回 OpenWrt DHCP 接口的路由器地址，包括 defaultroute=0 时由 netifd
+# 放在 inactive.route 中的 DHCP 默认路由。
+get_openwrt_iface_gateway_v4() {
+  local device="$1" section section_device gateway
+
+  is_openwrt || return 1
+  command -v uci >/dev/null 2>&1 || return 1
+  command -v ifstatus >/dev/null 2>&1 || return 1
+  command -v jq >/dev/null 2>&1 || return 1
+
+  while IFS= read -r section; do
+    section_device="$(uci -q get "network.${section}.device" || true)"
+    [ "$section_device" = "$device" ] || continue
+    gateway="$(ifstatus "$section" 2>/dev/null | jq -r '
+      (.route[]?, .inactive.route[]?)
+      | select(.target == "0.0.0.0" and .mask == 0 and (.nexthop // "") != "")
+      | .nexthop
+    ' | head -n1)"
+    [ -n "$gateway" ] && { printf '%s\n' "$gateway"; return 0; }
+  done < <(uci show network | awk -F'[.=]' '$3 == "interface" {print $2}')
+
+  return 1
 }
 
 # 获取网卡子网
@@ -1515,8 +1539,10 @@ create_macvlan_network() {
     # 接口本身有 IP：建议用该接口的前缀长度；网关优先取该接口路由到默认的下一跳
     local cidr_from_iface gw_from_iface
     cidr_from_iface="$(get_subnet_v4 "$ip" "$networkcard")"
-    gw_from_iface="$(ip -4 route show default 2>/dev/null | awk -v dev="$networkcard" '$0 ~ (" dev "dev" ") {print $3; exit}')"
-    [ -z "$gw_from_iface" ] && gw_from_iface="$(ip -4 route show default 2>/dev/null | awk '{print $3; exit}')"
+    gw_from_iface="$(ip -4 route show default dev "$networkcard" 2>/dev/null | awk '{print $3; exit}')"
+    if [ -z "$gw_from_iface" ] && is_openwrt; then
+      gw_from_iface="$(get_openwrt_iface_gateway_v4 "$networkcard" || true)"
+    fi
     suggest_gateway="$gw_from_iface"
     suggest_prefixlen="${cidr_from_iface#*/}"
   else
@@ -1595,46 +1621,38 @@ create_macvlan_network() {
     fi
   fi
 
-  local interface_ipv6_available=0 derived_gateway6="" derived_cidr6="" ipv6_mode=""
-  if [ -n "$iface6_addr" ] && [ -n "$iface6_gateway" ] && [ -n "$iface6_cidr" ]; then
+  local interface_ipv6_available=0 ipv6_mode=""
+  if [ -n "$iface6_addr" ] && [ -n "$iface6_cidr" ]; then
     interface_ipv6_available=1
   fi
 
-  local prefix6
-  prefix6="$(ipv4_to_ipv6_prefix "$gateway")"
-  derived_gateway6="${prefix6}::1"
-  derived_cidr6="${prefix6}::/64"
-
   echo "请选择 macvlan IPv6 配置："
   if [ "$interface_ipv6_available" -eq 1 ]; then
-    echo "  1) 使用接口 $ipv6_info_iface：网关 $iface6_gateway，子网 $iface6_cidr"
+    echo "  1) 使用接口 $ipv6_info_iface 的 IPv6 子网 $iface6_cidr（需手动输入该网段内、非 fe80:: 的网关）"
+    echo "     检测到 RA 路由器：${iface6_gateway:-未检测到}"
   else
-    echo "  1) 使用接口 IPv6 信息（不可用：未读取到完整 IPv6 地址、默认网关和 CIDR）"
+    echo "  1) 使用接口 IPv6 信息（不可用：未读取到 IPv6 地址或 CIDR）"
   fi
-  echo "  2) 按 IPv4 网关推导 ULA：网关 $derived_gateway6，子网 $derived_cidr6"
-  echo "  3) 手动输入 IPv6 网关、CIDR 与 range"
-  echo "  4) 不启用 macvlan IPv6"
-  read -r -p "请输入选择（回车默认 2，n 等同于 4）: " ipv6_mode
+  echo "  2) 手动输入 IPv6 网关、CIDR 与 range"
+  echo "  3) 不启用 macvlan IPv6（默认；IPv6 网关未知时请选择此项）"
+  read -r -p "请输入选择（回车默认 3，n 等同于 3）: " ipv6_mode
   case "$ipv6_mode" in
-    ""|2)
-      gateway6="$derived_gateway6"
-      cidr6="$derived_cidr6"
-      ;;
     1)
       if [ "$interface_ipv6_available" -ne 1 ]; then
-        echo "❌ 未读取到完整接口 IPv6 信息，不能选择 1；请使用 2、3 或 4。"
+        echo "❌ 未读取到接口 IPv6 地址/CIDR，不能选择 1；请使用 2 或 3。"
         return 1
       fi
-      gateway6="$iface6_gateway"
+      read -r -p "请输入 IPv6 网关（必须属于 $iface6_cidr，不能是 fe80:: 链路本地地址）: " gateway6
+      [ -n "$gateway6" ] && [[ "$gateway6" != fe80:* ]] || { echo "❌ IPv6 网关无效。"; return 1; }
       cidr6="$iface6_cidr"
       ;;
-    3)
+    2)
       read -r -p "请输入 IPv6 网关: " gateway6
-      [ -n "$gateway6" ] || { echo "❌ IPv6 网关不能为空。"; return 1; }
+      [ -n "$gateway6" ] && [[ "$gateway6" != fe80:* ]] || { echo "❌ IPv6 网关无效。"; return 1; }
       read -r -p "请输入 IPv6 子网CIDR: " cidr6
       [ -n "$cidr6" ] || { echo "❌ IPv6 子网CIDR不能为空。"; return 1; }
       ;;
-    4|n|N)
+    ""|3|n|N)
       gateway6=""
       cidr6=""
       ;;
@@ -1648,13 +1666,6 @@ create_macvlan_network() {
     cidr6=""; iprange6=""; subnet6=""; iprangev6_prefix=""
   else
     iprange6_default="$cidr6"
-    if [[ "$ipv6_mode" == "" || "$ipv6_mode" == "2" ]]; then
-      iprange6_default="$(derive_ipv6_iprange_from_ipv4 "$iprange" "$cidr6")" || {
-        echo "❌ 无法根据 IPv4 IPRange 推导 IPv6 IPRange：$iprange"
-        return 1
-      }
-      echo "👉 根据 IPv4 IPRange $iprange 推导 IPv6 IPRange：$iprange6_default"
-    fi
     echo "👉 IPv6 网关：$gateway6"
     echo "👉 IPv6 子网CIDR：$cidr6"
     echo "⚠️ 提示：IPv6 IPRange 将同时作为 Docker 分配范围、bridge IPv6 地址范围和宿主机 bridge 路由范围。"
