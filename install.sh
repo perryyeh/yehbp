@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.25.04"
+APP_VERSION="2026.08.25.05"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -719,7 +719,7 @@ macvlan_ipv6_enabled() {
   # 用法：macvlan_ipv6_enabled "macvlan_name"  ; 返回 0=启用且有IPv6子网，1=否则
   local net="$1"
   docker network inspect "$net" 2>/dev/null | jq -e \
-    '.[0].EnableIPv6==true and (.[0].IPAM.Config[]?.Subnet | test(":"))' \
+    '.[0].EnableIPv6==true and (.[0].IPAM.Config[]?.Subnet | contains(":"))' \
     >/dev/null 2>&1
 }
 
@@ -843,9 +843,9 @@ calculate_ip_mac() {
 
   # 2) IPv4：优先 IPRange，否则 Subnet
   local iprange subnet gateway
-  iprange=$(echo "$network_info" | jq -r '.[0].IPAM.Config[] | select(.Subnet | test(":") | not) | (.IPRange // empty)' | head -n1)
-  subnet=$(echo  "$network_info" | jq -r '.[0].IPAM.Config[] | select(.Subnet | test(":") | not) | .Subnet' | head -n1)
-  gateway=$(echo "$network_info" | jq -r '.[0].IPAM.Config[] | select(.Subnet | test(":") | not) | (.Gateway // empty)' | head -n1)
+  iprange=$(echo "$network_info" | jq -r '.[0].IPAM.Config[] | select(.Subnet | contains(":") | not) | (.IPRange // empty)' | head -n1)
+  subnet=$(echo  "$network_info" | jq -r '.[0].IPAM.Config[] | select(.Subnet | contains(":") | not) | .Subnet' | head -n1)
+  gateway=$(echo "$network_info" | jq -r '.[0].IPAM.Config[] | select(.Subnet | contains(":") | not) | (.Gateway // empty)' | head -n1)
 
   local base4
   if [ -n "$iprange" ] && [ "$iprange" != "null" ]; then
@@ -863,8 +863,8 @@ calculate_ip_mac() {
   # 3) IPv6：仅当 EnableIPv6=true 且存在 IPv6 Subnet 才生成 ip6（避免 RA-only 网关坑）
   local enable_ipv6 subnet6 gateway6 ip6_prefix ip6
   enable_ipv6=$(echo "$network_info" | jq -r '.[0].EnableIPv6 // false')
-  subnet6=$(echo "$network_info" | jq -r '.[0].IPAM.Config[] | select(.Subnet | test(":")) | .Subnet' | head -n1)
-  gateway6=$(echo "$network_info" | jq -r '.[0].IPAM.Config[] | select(.Subnet | test(":")) | (.Gateway // empty)' | head -n1)
+  subnet6=$(echo "$network_info" | jq -r '.[0].IPAM.Config[] | select(.Subnet | contains(":")) | .Subnet' | head -n1)
+  gateway6=$(echo "$network_info" | jq -r '.[0].IPAM.Config[] | select(.Subnet | contains(":")) | (.Gateway // empty)' | head -n1)
 
   ip6=""
   if [ "$enable_ipv6" = "true" ] && [ -n "$subnet6" ] && [ "$subnet6" != "null" ]; then
@@ -935,7 +935,7 @@ detect_mihomo_ip() {
 
   # 4) 回退到 macvlan 的 IPv4 网关
   local gw4
-  gw4=$(echo "$_netinfo" | jq -r '.[0].IPAM.Config[] | select(.Subnet | test(":") | not) | .Gateway // empty' | head -n1)
+  gw4=$(echo "$_netinfo" | jq -r '.[0].IPAM.Config[] | select(.Subnet | contains(":") | not) | .Gateway // empty' | head -n1)
   [ -n "$gw4" ] && { echo "$gw4"; return; }
 
   # 5) 无可用
@@ -1799,7 +1799,7 @@ create_macvlan_bridge() {
     echo "🔗 发现 parent 接口: $parent_if"
 
     # === IPv4 部分：Subnet + IPRange 组合使用 ===
-    subnet4_cidr=$(echo "$network_info" | jq -r '.[0].IPAM.Config[] | select(.Subnet | test(":") | not) | .Subnet // empty' | head -n1)
+    subnet4_cidr=$(echo "$network_info" | jq -r '.[0].IPAM.Config[] | select(.Subnet | contains(":") | not) | .Subnet // empty' | head -n1)
     if [ -z "$subnet4_cidr" ] || [ "$subnet4_cidr" = "null" ]; then
         echo "❌ 无法从 $macvlan_name 中解析 IPv4 Subnet，请确认该网络配置了 IPv4。"
         return 1
@@ -1838,7 +1838,7 @@ create_macvlan_bridge() {
     echo "🧷 计划固定 bridge MAC: $bridge_mac"
 
     # === IPv6 部分：IPRange 优先，没有则用 Subnet；bridge 使用范围最后一个地址 ===
-    subnet6_cidr=$(echo "$network_info" | jq -r '.[0].IPAM.Config[] | select(.Subnet | test(":")) | .Subnet // empty' | head -n1)
+    subnet6_cidr=$(echo "$network_info" | jq -r '.[0].IPAM.Config[] | select(.Subnet | contains(":")) | .Subnet // empty' | head -n1)
     bridge6_cidr=""
     route6_pref=""
 
@@ -2418,7 +2418,7 @@ install_mosdns() {
 
     # 是否启用 IPv6（逻辑跟 mihomo 一致：EnableIPv6=true 且存在 IPv6 Subnet）
     local USE_IPV6=0
-    if docker network inspect "$SELECTED_MACVLAN" | jq -e '.[0].EnableIPv6==true and (.[0].IPAM.Config[]?.Subnet|test(":"))' >/dev/null 2>&1; then
+    if docker network inspect "$SELECTED_MACVLAN" | jq -e '.[0].EnableIPv6==true and (.[0].IPAM.Config[]?.Subnet|contains(":"))' >/dev/null 2>&1; then
         USE_IPV6=1
     fi
 
