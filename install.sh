@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.25.06"
+APP_VERSION="2026.08.25.07"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -1181,6 +1181,12 @@ compose_deploy_with_repo_switch() {
   # A) 先在 WORK_DIR 做 config 校验（不碰容器）
   cd "$WORK_DIR" || { echo "❌ 进入目录失败：$WORK_DIR"; return 1; }
 
+  # 按宿主机内核能力处理 compose endpoint sysctl；不能把不支持的
+  # sysctl 传给 runc，否则容器在进程启动前即失败。
+  for f in "${files[@]}"; do
+    remove_unsupported_compose_endpoint_sysctls "$f"
+  done
+
   echo "🔎 [$name] docker compose config 校验..."
   if ! "${COMPOSE[@]}" "${pargs[@]}" "${fargs[@]}" config >/tmp/"$name".compose.check 2>/tmp/"$name".compose.err; then
     echo "❌ [$name] compose 校验失败："
@@ -2215,7 +2221,6 @@ EOF
     if [ -z "$librespeed6" ]; then
         remove_compose_ipv6_fields docker-compose.yml
     fi
-    remove_unsupported_compose_endpoint_sysctls docker-compose.yml
 
     # 9) 一步部署：校验 -> 停旧备份 -> 起新 -> next->正式 -> 正式再up -> 失败回滚
     compose_deploy_with_repo_switch "librespeed" "$CONTAINER_NAME" "docker-compose.yml" || return 1
