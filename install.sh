@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.25.05"
+APP_VERSION="2026.08.25.06"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -985,6 +985,28 @@ env_require_vars() {
     [ "$missing" -eq 0 ]
 }
 
+remove_compose_endpoint_ra_sysctl() {
+  local compose_file="${1:-docker-compose.yml}"
+  [ -f "$compose_file" ] || return 0
+
+  sed -i '/driver_opts:/{
+    N
+    /com\.docker\.network\.endpoint\.sysctls: net\.ipv6\.conf\.IFNAME\.accept_ra_rt_info_max_plen=128/d
+  }' "$compose_file"
+}
+
+remove_unsupported_compose_endpoint_sysctls() {
+  local compose_file="${1:-docker-compose.yml}"
+
+  # Some kernels, including current OpenWrt 6.6 builds, do not expose this
+  # namespace sysctl. Passing it through Docker makes runc fail before the
+  # container process starts.
+  if ! sysctl -n net.ipv6.conf.default.accept_ra_rt_info_max_plen >/dev/null 2>&1; then
+    remove_compose_endpoint_ra_sysctl "$compose_file"
+    echo "ℹ️ 宿主机不支持 accept_ra_rt_info_max_plen，已移除该 endpoint sysctl。"
+  fi
+}
+
 remove_compose_ipv6_fields() {
   local compose_file="${1:-docker-compose.yml}"
   [ -f "$compose_file" ] || return 0
@@ -993,10 +1015,7 @@ remove_compose_ipv6_fields() {
   sed -i "/ipv6_address: \${ipv6}/d" "$compose_file"
 
   # 同时删除仅用于 IPv6 RA 路由学习的 endpoint sysctl；IPv4-only macvlan 不需要它。
-  sed -i '/driver_opts:/{
-    N
-    /com\.docker\.network\.endpoint\.sysctls: net\.ipv6\.conf\.IFNAME\.accept_ra_rt_info_max_plen=128/d
-  }' "$compose_file"
+  remove_compose_endpoint_ra_sysctl "$compose_file"
 
   # 删除 IPv6 转发 sysctl；内核禁用 IPv6 时该项会让容器创建失败。保留 IPv4 转发。
   sed -i '/net\.ipv6\.conf\.all\.forwarding=1/d' "$compose_file"
@@ -2196,6 +2215,7 @@ EOF
     if [ -z "$librespeed6" ]; then
         remove_compose_ipv6_fields docker-compose.yml
     fi
+    remove_unsupported_compose_endpoint_sysctls docker-compose.yml
 
     # 9) 一步部署：校验 -> 停旧备份 -> 起新 -> next->正式 -> 正式再up -> 失败回滚
     compose_deploy_with_repo_switch "librespeed" "$CONTAINER_NAME" "docker-compose.yml" || return 1
