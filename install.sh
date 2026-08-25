@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.24.04"
+APP_VERSION="2026.08.25.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -3905,15 +3905,21 @@ migrate_docker_datadir_openwrt() {
     uci commit dockerd
     /etc/init.d/dockerd start || true
 
-    root_dir="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
-    if [ "$root_dir" = "$new_root" ]; then
-        echo "✅ 迁移成功：Docker Root Dir = $root_dir"
-        echo "🧩 旧目录备份：${old_backup:-无}"
-        echo "🧩 dockerd 配置备份：$config_backup"
-        return 0
-    fi
+    local attempt=0
+    root_dir=""
+    while [ "$attempt" -lt 15 ]; do
+        root_dir="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+        if [ "$root_dir" = "$new_root" ]; then
+            echo "✅ 迁移成功：Docker Root Dir = $root_dir"
+            echo "🧩 旧目录备份：${old_backup:-无}"
+            echo "🧩 dockerd 配置备份：$config_backup"
+            return 0
+        fi
+        attempt=$((attempt + 1))
+        sleep 1
+    done
 
-    echo "❌ 迁移校验失败：Docker Root Dir = ${root_dir:-未知}；正在回滚。"
+    echo "❌ 迁移校验失败（等待 ${attempt}s）：Docker Root Dir = ${root_dir:-未知}；正在回滚。"
     /etc/init.d/dockerd stop >/dev/null 2>&1 || true
     cp -a "$config_backup" /etc/config/dockerd
     uci commit dockerd
