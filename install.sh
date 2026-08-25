@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.25.07"
+APP_VERSION="2026.08.25.08"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -1007,6 +1007,19 @@ remove_unsupported_compose_endpoint_sysctls() {
   fi
 }
 
+remove_incompatible_host_time_mounts() {
+  local compose_file="${1:-docker-compose.yml}"
+  [ -f "$compose_file" ] || return 0
+
+  # Containers expect these bind sources to be regular files. Some OpenWrt
+  # systems expose /etc/timezone as a directory or a non-bindable localtime
+  # symlink; templates already provide TZ, so omit invalid optional mounts.
+  if [ ! -f /etc/localtime ] || [ ! -f /etc/timezone ]; then
+    sed -i '\|/etc/localtime:/etc/localtime:ro|d; \|/etc/timezone:/etc/timezone:ro|d' "$compose_file"
+    echo "ℹ️ 宿主机时区路径不是普通文件，已移除可选 time bind mount。"
+  fi
+}
+
 remove_compose_ipv6_fields() {
   local compose_file="${1:-docker-compose.yml}"
   [ -f "$compose_file" ] || return 0
@@ -1185,6 +1198,7 @@ compose_deploy_with_repo_switch() {
   # sysctl 传给 runc，否则容器在进程启动前即失败。
   for f in "${files[@]}"; do
     remove_unsupported_compose_endpoint_sysctls "$f"
+    remove_incompatible_host_time_mounts "$f"
   done
 
   echo "🔎 [$name] docker compose config 校验..."
