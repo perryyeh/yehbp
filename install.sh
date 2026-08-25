@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.25.03"
+APP_VERSION="2026.08.25.04"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -531,6 +531,35 @@ ip_to_mac() {
   fi
 
   printf '02:%02x:%02x:%02x:%02x:86\n' "$ip1" "$ip2" "$ip3" "$ip4"
+}
+
+# 将 IPv4 前三个 octet 映射为确定性的 Docker ULA /64 前缀。
+# 例：10.86.8.x → fd00:10:86:8::/64。
+ipv4_to_ipv6_prefix() {
+  local ip=$1
+  local first_octet second_octet third_octet
+  IFS='.' read -r first_octet second_octet third_octet _ <<< "$ip"
+  echo "fd00:${first_octet}:${second_octet}:${third_octet}"
+}
+
+# 将 IPv4 IPRange 的第三段映射到 Docker ULA 的容器地址池，固定使用 /112。
+# 例：10.86.9.0/24 + fd00:10:86:8::/64 → fd00:10:86:8::9:0/112。
+derive_ipv6_iprange_from_ipv4() {
+  local ipv4_range="$1" ipv6_cidr="$2"
+  local ipv4_addr first_octet second_octet third_octet fourth_octet base6
+
+  ipv4_addr="${ipv4_range%/*}"
+  IFS='.' read -r first_octet second_octet third_octet fourth_octet <<< "$ipv4_addr"
+  if [[ ! "$third_octet" =~ ^[0-9]+$ ]] || (( third_octet < 0 || third_octet > 255 )); then
+    return 1
+  fi
+
+  base6="${ipv6_cidr%/*}"
+  if [[ "$base6" == *"::" ]]; then
+    echo "${base6}${third_octet}:0/112"
+  else
+    echo "${base6}::${third_octet}:0/112"
+  fi
 }
 
 # 返回 IPv4 CIDR 的最后一个可用单播地址（broadcast 前一位）。
@@ -1591,38 +1620,48 @@ create_macvlan_network() {
     fi
   fi
 
-  local interface_ipv6_available=0 ipv6_mode=""
-  if [ -n "$iface6_addr" ] && [ -n "$iface6_cidr" ]; then
+  local interface_ipv6_available=0 derived_gateway6="" derived_cidr6="" ipv6_mode=""
+  # Docker IPAM gateway must be an address inside the configured subnet; an RA
+  # link-local next hop cannot be passed as --gateway.
+  if [ -n "$iface6_addr" ] && [ -n "$iface6_cidr" ] && [ -n "$iface6_gateway" ] && [[ "$iface6_gateway" != fe80:* ]]; then
     interface_ipv6_available=1
   fi
 
+  local prefix6
+  prefix6="$(ipv4_to_ipv6_prefix "$gateway")"
+  derived_gateway6="${prefix6}::1"
+  derived_cidr6="${prefix6}::/64"
+
   echo "请选择 macvlan IPv6 配置："
   if [ "$interface_ipv6_available" -eq 1 ]; then
-    echo "  1) 使用接口 $ipv6_info_iface 的 IPv6 子网 $iface6_cidr（需手动输入该网段内、非 fe80:: 的网关）"
-    echo "     检测到 RA 路由器：${iface6_gateway:-未检测到}"
+    echo "  1) 使用接口 $ipv6_info_iface：网关 $iface6_gateway，子网 $iface6_cidr"
   else
-    echo "  1) 使用接口 IPv6 信息（不可用：未读取到 IPv6 地址或 CIDR）"
+    echo "  1) 使用接口 IPv6 信息（不可用：未读取到可供 Docker IPAM 使用的非 fe80:: 网关）"
   fi
-  echo "  2) 手动输入 IPv6 网关、CIDR 与 range"
-  echo "  3) 不启用 macvlan IPv6（默认；IPv6 网关未知时请选择此项）"
-  read -r -p "请输入选择（回车默认 3，n 等同于 3）: " ipv6_mode
+  echo "  2) 按 IPv4 网关推导 Docker ULA：网关 $derived_gateway6，子网 $derived_cidr6"
+  echo "  3) 手动输入 IPv6 网关、CIDR 与 range"
+  echo "  4) 不启用 macvlan IPv6"
+  read -r -p "请输入选择（回车默认 2，n 等同于 4）: " ipv6_mode
   case "$ipv6_mode" in
+    ""|2)
+      gateway6="$derived_gateway6"
+      cidr6="$derived_cidr6"
+      ;;
     1)
       if [ "$interface_ipv6_available" -ne 1 ]; then
-        echo "❌ 未读取到接口 IPv6 地址/CIDR，不能选择 1；请使用 2 或 3。"
+        echo "❌ 未读取到可供 Docker IPAM 使用的接口 IPv6 网关；请使用 2、3 或 4。"
         return 1
       fi
-      read -r -p "请输入 IPv6 网关（必须属于 $iface6_cidr，不能是 fe80:: 链路本地地址）: " gateway6
-      [ -n "$gateway6" ] && [[ "$gateway6" != fe80:* ]] || { echo "❌ IPv6 网关无效。"; return 1; }
+      gateway6="$iface6_gateway"
       cidr6="$iface6_cidr"
       ;;
-    2)
+    3)
       read -r -p "请输入 IPv6 网关: " gateway6
       [ -n "$gateway6" ] && [[ "$gateway6" != fe80:* ]] || { echo "❌ IPv6 网关无效。"; return 1; }
       read -r -p "请输入 IPv6 子网CIDR: " cidr6
       [ -n "$cidr6" ] || { echo "❌ IPv6 子网CIDR不能为空。"; return 1; }
       ;;
-    ""|3|n|N)
+    4|n|N)
       gateway6=""
       cidr6=""
       ;;
@@ -1636,6 +1675,13 @@ create_macvlan_network() {
     cidr6=""; iprange6=""; subnet6=""; iprangev6_prefix=""
   else
     iprange6_default="$cidr6"
+    if [[ "$ipv6_mode" == "" || "$ipv6_mode" == "2" ]]; then
+      iprange6_default="$(derive_ipv6_iprange_from_ipv4 "$iprange" "$cidr6")" || {
+        echo "❌ 无法根据 IPv4 IPRange 推导 IPv6 IPRange：$iprange"
+        return 1
+      }
+      echo "👉 根据 IPv4 IPRange $iprange 推导 IPv6 IPRange：$iprange6_default"
+    fi
     echo "👉 IPv6 网关：$gateway6"
     echo "👉 IPv6 子网CIDR：$cidr6"
     echo "⚠️ 提示：IPv6 IPRange 将同时作为 Docker 分配范围、bridge IPv6 地址范围和宿主机 bridge 路由范围。"
