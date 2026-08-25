@@ -31,6 +31,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 - 创建 Docker macvlan 网络
 - 创建宿主机 `macvlan-bridge` 接口用于互通
 - 写入并启用 Systemd 服务，确保开机自启
+- 安装、升级、删除 `rtp2httpd`，将 IPTV RTP 组播转为 HTTP 单播
 - 预定义多个容器 IP：librespeed（.111） AdGuardhome（.114）、MosDNS（.119）、Mihomo（.120）
 
 
@@ -56,12 +57,26 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 70 | 迁移docker目录                  |
 | 71 | 优化docker日志                  |
 | 72 | 优化journald日志                |
+| 80 | rtp2httpd IPTV 组播转 HTTP 单播 |
 | 90 | 创建macvlan bridge            |
 | 91 | 删除macvlan bridge            |
 | 97 | Dockcheck 安装/删除/管理          |
 | 98 | Dockcheck 检查/更新镜像           |
 | 99 / exit / quit / q | 退出脚本           |
 | 999 / del / delete / uninstall / remove / rm | 删除 `yehbp` |
+
+### rtp2httpd（菜单 80）
+
+此功能面向使用 **NetworkManager + systemd** 的 Linux/NAS 主机，不支持 OpenWrt。它会：
+
+1. 选择承载 IPTV 的父网卡；
+2. 分别输入组播 VLAN ID 与 FCC/DHCP VLAN ID；
+3. 输入一个已经配置在本机的 IPv4 监听地址及端口（默认 `5140`）；
+4. 创建两个 YehBP 管理的 VLAN profile：组播 VLAN 禁用 IPv4，FCC/DHCP VLAN 使用 DHCP 且不接管默认路由；
+5. 从 `stackia/rtp2httpd` 官方 release 下载与本机架构匹配的二进制，并校验 GitHub 发布的 SHA-256 digest；
+6. 写入 `dockerapps/rtp2httpd/` 下的配置、状态文件和二进制，并启用 `yehbp-rtp2httpd.service`。
+
+安装状态文件记录了 YehBP 创建的 profile UUID。删除功能仅删除这两个 UUID 对应的 profile，不会按 VLAN ID 猜测或删除既有网络配置。升级仅替换官方二进制并重启该 service；不改动 VLAN、监听地址或 `rtp2httpd.conf`。
 
 ## 🚀 使用方法
 

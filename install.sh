@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.25.08"
+APP_VERSION="2026.08.26.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -465,6 +465,7 @@ function show_menu() {
     echo "21）安装ddns-go"
     echo "22）安装lucky"
     echo "70) 迁移docker目录"
+    echo "80）rtp2httpd IPTV 组播转 HTTP 单播"
     if ! is_openwrt; then
         echo "71) 优化docker日志"
         echo "72) 优化journald日志"
@@ -4364,6 +4365,22 @@ EOF
     fi
 }
 
+# ========== IPTV rtp2httpd ==========
+
+manage_rtp2httpd_menu() {
+    local asset
+    asset="$(mktemp /tmp/yehbp-rtp2httpd.XXXXXX)" || return 1
+    if ! download_yehbp_asset "assets/iptv/rtp2httpd.sh" "$asset" || ! bash -n "$asset"; then
+        echo "❌ rtp2httpd 功能脚本下载或语法检查失败。"
+        rm -f "$asset"
+        return 1
+    fi
+    # shellcheck disable=SC1090
+    . "$asset"
+    rm -f "$asset"
+    manage_rtp2httpd
+}
+
 # ========== 主循环 ==========
 
 install_dependencies
@@ -4395,6 +4412,7 @@ while true; do
         70) migrate_docker_datadir ;;
         71) if is_openwrt; then echo "ℹ️ OpenWrt dockerd 日志配置不使用 daemon.json；该功能当前不适用。"; else optimize_docker_logs; fi ;;
         72) if is_openwrt; then echo "ℹ️ OpenWrt 使用 logd/logread，不使用 journald；该功能不适用。"; else optimize_journald_to_volatile; fi ;;
+        80) manage_rtp2httpd_menu ;;
         90) create_macvlan_bridge ;;
         91) clean_macvlan_bridge ;;
         97|98) if is_openwrt; then echo "ℹ️ Dockcheck 自动更新依赖 systemd timer，当前 OpenWrt 后端未提供该功能。"; else case $choice in 97) manage_dockcheck_auto_update ;; 98) run_dockcheck_auto_update_once ;; esac; fi ;;
