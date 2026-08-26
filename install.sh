@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.26.23"
+APP_VERSION="2026.08.26.24"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -602,7 +602,7 @@ select_macvlan_or_exit() {
 
     echo "可用的 macvlan 网络："
     for i in "${!macvlan_networks[@]}"; do
-        echo "  $((i + 1))) ${macvlan_networks[$i]}"
+        echo "  $((i + 1))）${macvlan_networks[$i]}"
     done
 
     read -r -p "请输入 macvlan 序号（0/回车/其他输入退出）: " choice
@@ -889,7 +889,7 @@ select_dockerapps_dir() {
       if [ ${#dockerapps_dirs[@]} -gt 0 ]; then
         echo "发现以下 dockerapps 目录："
         for i in "${!dockerapps_dirs[@]}"; do
-          echo "  $((i + 1))) ${dockerapps_dirs[$i]}"
+          echo "  $((i + 1))）${dockerapps_dirs[$i]}"
         done
 
         while true; do
@@ -3318,9 +3318,9 @@ clean_macvlan_network() {
         net="${macvlan_networks[$i]}"
         containers=$(docker network inspect -f '{{range $id,$c := .Containers}}{{printf "%s " $c.Name}}{{end}}' "$net" 2>/dev/null)
         if [ -n "$containers" ]; then
-            echo "  $((i + 1))) $net    (使用中的容器: $containers)"
+            echo "  $((i + 1))）$net    (使用中的容器: $containers)"
         else
-            echo "  $((i + 1))) $net"
+            echo "  $((i + 1))）$net"
         fi
     done
     echo "  0）返回"
@@ -3444,7 +3444,7 @@ clean_macvlan_bridge_openwrt() {
     for i in "${!scripts[@]}"; do
         script="${scripts[$i]}"
         bridge_if="$(grep -E 'ip link add "[^"]+"' "$script" | head -n1 | sed -E 's/.*add "([^"]+)".*/\1/')"
-        echo "  $((i + 1))) 接口: ${bridge_if:-未知}   脚本: $script"
+        echo "  $((i + 1))）接口: ${bridge_if:-未知}   脚本: $script"
     done
     echo "  0）返回"
     echo "  a）全部"
@@ -3509,7 +3509,7 @@ clean_macvlan_bridge() {
                         head -n1 | sed -E 's/.*add "([^"]+)".*/\1/')
         fi
 
-        echo "  $((i + 1))) 服务: $svc_name   接口: ${bridge_if:-未知}   脚本: $setup_script"
+        echo "  $((i + 1))）服务: $svc_name   接口: ${bridge_if:-未知}   脚本: $setup_script"
     done
     echo "  0）返回"
     echo "  a）全部"
