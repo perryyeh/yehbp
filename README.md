@@ -194,9 +194,9 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbpproxy.conf /usr/local/bin/ye
 
 升级 Dockcheck 时会先显示本地与上游版本；仅上游版本严格更高时才替换 Dockcheck 本体。无论 Dockcheck 是否有新版本，都会同步 YehBP 的 wrapper、MAC 检查脚本和模板。升级不会修改 `auto-update.conf`，也不会执行 Dockcheck、更新容器或重启 timer。
 
-菜单 `98` 提供镜像检查和更新操作：
+菜单 `88` 提供镜像检查和更新操作：
 
-- 检查并更新 compose 容器。
+- 检查并更新 docker compose 容器。
 - 只检查全部容器，不更新。
 - 检查/拉取非 compose 容器镜像；不会重建该类容器。
 - 若已有 Dockcheck 任务，交互运行可选择强制终止旧任务后继续，或取消返回菜单；非交互任务不会终止已有任务。

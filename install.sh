@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.26.15"
+APP_VERSION="2026.08.26.16"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -3947,9 +3947,9 @@ run_dockcheck_auto_update_once() {
     fi
 
     echo "安装目录：$base_dir"
-    echo "1）Dockcheck 检查并更新 compose 容器"
+    echo "1）检查并更新docker compose 容器"
     echo "2）只检查全部容器，不更新"
-    echo "3）Dockcheck 检查/拉取非 compose 容器镜像（不重建容器）"
+    echo "3）检查/拉取非 compose 容器镜像（不重建容器）"
     read -r -p "请选择 [1/2/3；0/回车/其他输入取消]: " mode
     case "$mode" in
         1)
