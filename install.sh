@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.26.27"
+APP_VERSION="2026.08.26.28"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -896,7 +896,7 @@ select_dockerapps_dir() {
         echo "  m）手工输入"
 
         while true; do
-          read -r -p "请输入要操作的序号（输入m 开始手工输入）: " choice
+          read -r -p "请输入要操作的序号: " choice
           if [ -z "$choice" ]; then
             return 2
           fi
