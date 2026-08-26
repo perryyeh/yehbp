@@ -1,0 +1,33 @@
+{
+  "version": "3.16.0",
+  "assets": [
+    {
+      "architecture": "aarch64",
+      "file": "rtp2httpd-3.16.0-aarch64",
+      "sha256": "ea8b3e2e74428635c78f8672edf6e0e8f6aca86b468c32d3c338a003feaf41b1",
+      "size": 853800,
+      "source": "https://github.com/stackia/rtp2httpd/releases/download/v3.16.0/rtp2httpd-3.16.0-aarch64"
+    },
+    {
+      "architecture": "arm-eabihf",
+      "file": "rtp2httpd-3.16.0-arm-eabihf",
+      "sha256": "0fb529657314ad4a4b5aa396ce5a6568055fd57769bd8e0e25d94501fb215e39",
+      "size": 759080,
+      "source": "https://github.com/stackia/rtp2httpd/releases/download/v3.16.0/rtp2httpd-3.16.0-arm-eabihf"
+    },
+    {
+      "architecture": "armv7-eabihf",
+      "file": "rtp2httpd-3.16.0-armv7-eabihf",
+      "sha256": "7d1471f56ccac90cfe2bed04779aa02680d5279dafd737f098911c78770dc631",
+      "size": 791852,
+      "source": "https://github.com/stackia/rtp2httpd/releases/download/v3.16.0/rtp2httpd-3.16.0-armv7-eabihf"
+    },
+    {
+      "architecture": "x86_64",
+      "file": "rtp2httpd-3.16.0-x86_64",
+      "sha256": "e20740ca41cb810acca8cbab4ff0000454057d74fc247c3ebb7950c95cae1c41",
+      "size": 812896,
+      "source": "https://github.com/stackia/rtp2httpd/releases/download/v3.16.0/rtp2httpd-3.16.0-x86_64"
+    }
+  ]
+}
