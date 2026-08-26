@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.26.22"
+APP_VERSION="2026.08.26.23"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -3324,7 +3324,7 @@ clean_macvlan_network() {
         fi
     done
     echo "  0）返回"
-    echo "  a）删除全部"
+    echo "  a）全部"
 
     read -r -p "请输入要操作的序号: " choice
     [ -n "$choice" ] || return 0
@@ -3447,7 +3447,7 @@ clean_macvlan_bridge_openwrt() {
         echo "  $((i + 1))) 接口: ${bridge_if:-未知}   脚本: $script"
     done
     echo "  0）返回"
-    echo "  a）删除全部"
+    echo "  a）全部"
 
     read -r -p "请输入要操作的序号: " choice
     [ -n "$choice" ] || return 0
@@ -3512,7 +3512,7 @@ clean_macvlan_bridge() {
         echo "  $((i + 1))) 服务: $svc_name   接口: ${bridge_if:-未知}   脚本: $setup_script"
     done
     echo "  0）返回"
-    echo "  a）删除全部"
+    echo "  a）全部"
 
     read -r -p "请输入要操作的序号: " choice
     [ -n "$choice" ] || return 0

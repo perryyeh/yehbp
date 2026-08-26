@@ -456,7 +456,7 @@ rtp2httpd_delete() {
         printf '  %d）%s（%s）\n' "$((i + 1))" "${instance:-默认}" "$service"
     done
     echo "  0）返回"
-    echo "  a）删除全部"
+    echo "  a）全部"
     read -r -p "请输入要操作的序号: " choice
     if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#RTP2HTTPD_LIST_SERVICES[@]}" ]; then
         selected_services=("${RTP2HTTPD_LIST_SERVICES[$((choice - 1))]}")
