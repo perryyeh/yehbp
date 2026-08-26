@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.26.17"
+APP_VERSION="2026.08.26.18"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -3322,6 +3322,7 @@ clean_macvlan_network() {
             echo "  $((i + 1))) $net"
         fi
     done
+    echo "  0）返回"
     echo "  a）删除全部"
 
     read -r -p "请输入要操作的序号: " choice
@@ -3444,6 +3445,7 @@ clean_macvlan_bridge_openwrt() {
         bridge_if="$(grep -E 'ip link add "[^"]+"' "$script" | head -n1 | sed -E 's/.*add "([^"]+)".*/\1/')"
         echo "  $((i + 1))) 接口: ${bridge_if:-未知}   脚本: $script"
     done
+    echo "  0）返回"
     echo "  a）删除全部"
 
     read -r -p "请输入要操作的序号: " choice
@@ -3508,6 +3510,7 @@ clean_macvlan_bridge() {
 
         echo "  $((i + 1))) 服务: $svc_name   接口: ${bridge_if:-未知}   脚本: $setup_script"
     done
+    echo "  0）返回"
     echo "  a）删除全部"
 
     read -r -p "请输入要操作的序号: " choice
@@ -3896,6 +3899,7 @@ manage_dockcheck_auto_update() {
     echo "2）安装 Dockcheck"
     echo "3）删除 Dockcheck"
     echo "4）升级 Dockcheck"
+    echo "0）返回"
     read -r -p "请输入要操作的序号: " choice
     case "$choice" in
         1) show_dockcheck_auto_update_status ;;
@@ -3940,6 +3944,7 @@ run_dockcheck_auto_update_once() {
     echo "1）检查并更新docker compose 容器"
     echo "2）只检查全部容器，不更新"
     echo "3）检查/拉取非 compose 容器镜像（不重建容器）"
+    echo "0）返回"
     read -r -p "请输入要操作的序号: " mode
     case "$mode" in
         1)
@@ -4475,6 +4480,7 @@ manage_rtp2httpd_menu() {
     echo "1）安装 / 替换配置"
     echo "2）仅升级 rtp2httpd 二进制"
     echo "3）删除配置"
+    echo "0）返回"
     read -r -p "请输入要操作的序号: " choice
     case "$choice" in
         1) load_rtp2httpd_asset && rtp2httpd_install ;;

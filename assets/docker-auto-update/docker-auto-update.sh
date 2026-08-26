@@ -99,7 +99,7 @@ if ! flock -n 9; then
 
   echo "⚠️ Dockcheck 已有任务运行中（PID $owner_pid）。"
   echo "1）强制终止旧任务及其子进程，再继续本次任务"
-  echo "2）取消，返回 YehBP 菜单"
+  echo "0）返回"
   read -r -p "请输入要操作的序号: " replace_choice
   if [ "$replace_choice" != "1" ]; then
     echo "ℹ️ 已取消，本次未执行。"

@@ -455,6 +455,7 @@ rtp2httpd_delete() {
         instance="${instance#_}"
         printf '  %d）%s（%s）\n' "$((i + 1))" "${instance:-默认}" "$service"
     done
+    echo "  0）返回"
     echo "  a）删除全部"
     read -r -p "请输入要操作的序号: " choice
     if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#RTP2HTTPD_LIST_SERVICES[@]}" ]; then
@@ -493,6 +494,7 @@ manage_rtp2httpd() {
     echo "1）安装 / 替换配置"
     echo "2）仅升级 rtp2httpd 二进制"
     echo "3）删除配置"
+    echo "0）返回"
     read -r -p "请输入要操作的序号: " choice
     case "$choice" in
         1) rtp2httpd_install ;;
