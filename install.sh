@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.26.02"
+APP_VERSION="2026.08.26.03"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -569,9 +569,9 @@ function show_menu() {
     echo "20）安装mihomo"
     echo "21）安装ddns-go"
     echo "22）安装lucky"
-    echo "23）添加/管理 SOCKS5 代理"
+    echo "95）添加/管理 SOCKS5 代理"
     echo "70) 迁移docker目录"
-    echo "80）rtp2httpd IPTV 组播转 HTTP 单播"
+    echo "80）安装IPTV(rtp2httpd)"
     if ! is_openwrt; then
         echo "71) 优化docker日志"
         echo "72) 优化journald日志"
@@ -4515,7 +4515,7 @@ while true; do
         20) install_mihomo ;;
         21) install_ddnsgo ;;
         22) install_lucky ;;
-        23) manage_socks5_proxy ;;
+        95) manage_socks5_proxy ;;
         70) migrate_docker_datadir ;;
         71) if is_openwrt; then echo "ℹ️ OpenWrt dockerd 日志配置不使用 daemon.json；该功能当前不适用。"; else optimize_docker_logs; fi ;;
         72) if is_openwrt; then echo "ℹ️ OpenWrt 使用 logd/logread，不使用 journald；该功能不适用。"; else optimize_journald_to_volatile; fi ;;

@@ -54,11 +54,11 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 20 | 安装 mihomo                   |
 | 21 | 安装 ddnsgo                   |
 | 22 | 安装 lucky                    |
-| 23 | 添加/管理 SOCKS5 代理          |
+| 95 | 添加/管理 SOCKS5 代理          |
 | 70 | 迁移docker目录                  |
 | 71 | 优化docker日志                  |
 | 72 | 优化journald日志                |
-| 80 | rtp2httpd IPTV 组播转 HTTP 单播 |
+| 80 | 安装IPTV(rtp2httpd)            |
 | 90 | 创建macvlan bridge            |
 | 91 | 删除macvlan bridge            |
 | 97 | Dockcheck 安装/删除/管理          |
@@ -66,7 +66,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 99 / exit / quit / q | 退出脚本           |
 | 999 / del / delete / uninstall / remove / rm | 删除 `yehbp` |
 
-### rtp2httpd（菜单 80）
+### 安装IPTV(rtp2httpd)（菜单 80）
 
 此功能面向使用 **NetworkManager + systemd** 的 Linux/NAS 主机，不支持 OpenWrt。它会：
 
@@ -129,9 +129,9 @@ sudo yehbp
 sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbpproxy.conf /usr/local/bin/yehbp.bak-*
 ```
 
-### SOCKS5 下载代理（菜单 23）
+### SOCKS5 下载代理（菜单 95）
 
-菜单 `23` 可保存一个无认证 SOCKS5 代理。输入格式为 `IP或域名:端口`，也可带 `socks5://` 前缀；有效端口为 `1–65535`。配置保存到与 `yehbp` 命令同目录的 `/usr/local/bin/yehbpproxy.conf`，再次添加会直接替换该单一值，删除操作会删除该文件。
+菜单 `95` 可保存一个无认证 SOCKS5 代理。输入格式为 `IP或域名:端口`，也可带 `socks5://` 前缀；有效端口为 `1–65535`。配置保存到与 `yehbp` 命令同目录的 `/usr/local/bin/yehbpproxy.conf`，再次添加会直接替换该单一值，删除操作会删除该文件。
 
 有效配置会用于 YehBP 的版本检查、升级及功能下载，并通过 `socks5h` 让代理端解析下载域名。配置文件不存在或内容无效时，YehBP 不使用代理；已配置有效代理但系统未安装 `curl` 时，为避免绕过代理，下载会取消而非退回直连。
 
