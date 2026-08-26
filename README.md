@@ -74,11 +74,10 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 2. 输入配置名，例如 `tel` 会创建 `rtp2httpd_tel.conf`、状态文件 `rtp2httpd_tel.env` 和开机启动服务 `rtp2httpd_tel.service`；留空时自动使用最小未占用编号 `_1`、`_2`。
 3. 分别输入组播 VLAN ID 与 FCC/DHCP VLAN ID，以及一个已经配置在本机的 IPv4 监听地址及端口（默认 `5140`）。
 4. 创建两个 YehBP 管理的 VLAN profile：组播 VLAN 禁用 IPv4；FCC/DHCP VLAN 使用 DHCP，并将 DHCP 下发的路由放入实例专用路由表。rtp2httpd 的 FCC socket 绑定该 VLAN 接口，按 `oif` 规则仅使用该专用表，不改变主机其他流量的默认路由。
-5. 首次安装时优先从 `stackia/rtp2httpd` 官方 release 下载与本机架构匹配的二进制，并校验 GitHub 发布的 SHA-256 digest；官方 release 不可用或校验失败时，回退到 YehBP 内置的 `v3.16.0` 二进制并再次校验 SHA-256。
+5. 首次安装时从 `stackia/rtp2httpd` 官方 release 下载与本机架构匹配的二进制，并校验 GitHub 发布的 SHA-256 digest。
 
 同名配置已存在时，菜单 `80` 会询问是否替换对应配置和 service。仅升级操作从已安装 service 的 `ExecStart` 定位共享二进制，只下载并校验官方二进制，不改 VLAN、配置或 service 内容；会重启引用该二进制且当前运行中的实例使升级生效。父口列表只显示实际物理网卡，不显示 Docker bridge、veth、macvlan 或已有 VLAN 子接口。删除操作会枚举 `rtp2httpd.service` 和 `rtp2httpd_*.service`；前者对应 `rtp2httpd.conf`，确认后按状态文件记录的 UUID 删除两个 VLAN profile，并回读确认。profile 未完全删除时会保留 service、配置和状态文件以便修复后重试；共享二进制始终保留，不会按 VLAN ID 猜测或删除既有网络配置。
 
-YehBP 内置回退二进制位于 `assets/iptv/rtp2httpd/3.16.0/`，文件名保留版本与 CPU 架构。当前包含 `x86_64`、`aarch64`、`armv7-eabihf` 和 `arm-eabihf`；`manifest.json` 记录官方 release URL、文件大小和 SHA-256。
 
 ## 🚀 使用方法
 

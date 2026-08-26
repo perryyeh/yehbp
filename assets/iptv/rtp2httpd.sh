@@ -117,36 +117,6 @@ rtp2httpd_arch_asset() {
     esac
 }
 
-RTP2HTTPD_BUNDLED_VERSION="3.16.0"
-
-rtp2httpd_install_verified_binary() {
-    local src="$1" app_dir="$2" version="$3"
-    install -m 0755 "$src" "${app_dir}/.rtp2httpd.verified" || return 1
-    mv -f "${app_dir}/.rtp2httpd.verified" "${app_dir}/rtp2httpd" || return 1
-    printf '%s\n' "$version" > "${app_dir}/VERSION"
-}
-
-rtp2httpd_download_bundled_binary() {
-    local app_dir="$1" suffix="$2" tmp_bin expected src actual
-    tmp_bin="${app_dir}/.rtp2httpd.download"
-    case "$suffix" in
-        x86_64) expected="e20740ca41cb810acca8cbab4ff0000454057d74fc247c3ebb7950c95cae1c41" ;;
-        aarch64) expected="ea8b3e2e74428635c78f8672edf6e0e8f6aca86b468c32d3c338a003feaf41b1" ;;
-        armv7-eabihf) expected="7d1471f56ccac90cfe2bed04779aa02680d5279dafd737f098911c78770dc631" ;;
-        arm-eabihf) expected="0fb529657314ad4a4b5aa396ce5a6568055fd57769bd8e0e25d94501fb215e39" ;;
-        *) echo "❌ YehBP 未内置 CPU 架构 ${suffix} 的 rtp2httpd 回退二进制。"; return 1 ;;
-    esac
-    src="assets/iptv/rtp2httpd/${RTP2HTTPD_BUNDLED_VERSION}/rtp2httpd-${RTP2HTTPD_BUNDLED_VERSION}-${suffix}"
-    download_yehbp_asset "$src" "$tmp_bin" || return 1
-    actual="$(sha256sum "$tmp_bin" | awk '{print $1}')"
-    if [ "$actual" != "$expected" ]; then
-        rm -f "$tmp_bin"
-        echo "❌ YehBP 内置 rtp2httpd SHA-256 不匹配，已拒绝安装。"
-        return 1
-    fi
-    rtp2httpd_install_verified_binary "$tmp_bin" "$app_dir" "v${RTP2HTTPD_BUNDLED_VERSION} (yehbp bundled fallback)"
-}
-
 rtp2httpd_download_binary() {
     local app_dir="$1" tmp_json tmp_bin suffix release_tag url digest expected actual
     suffix="$(rtp2httpd_arch_asset)" || return 1
@@ -154,8 +124,11 @@ rtp2httpd_download_binary() {
     tmp_bin="${app_dir}/.rtp2httpd.download"
     trap 'rm -f "$tmp_json" "$tmp_bin"' RETURN
 
-    if rtp2httpd_curl --connect-timeout 10 --max-time 60 -fsSL "$RTP2HTTPD_RELEASE_API" -o "$tmp_json"; then
-        read -r release_tag url digest < <(python3 - "$tmp_json" "$suffix" <<'PY'
+    rtp2httpd_curl --connect-timeout 10 --max-time 60 -fsSL "$RTP2HTTPD_RELEASE_API" -o "$tmp_json" || {
+        echo "❌ 无法读取 rtp2httpd 官方 release 信息。"
+        return 1
+    }
+    read -r release_tag url digest < <(python3 - "$tmp_json" "$suffix" <<'PY'
 import json
 import re
 import sys
@@ -168,22 +141,23 @@ for item in release.get("assets", []):
         break
 PY
 )
-        expected="${digest#sha256:}"
-        if [ -n "$url" ] && [[ "$expected" =~ ^[0-9a-fA-F]{64}$ ]] && \
-            rtp2httpd_curl --connect-timeout 10 --max-time 120 -fL "$url" -o "$tmp_bin"; then
-            actual="$(sha256sum "$tmp_bin" | awk '{print $1}')"
-            if [ "$actual" = "$expected" ]; then
-                rtp2httpd_install_verified_binary "$tmp_bin" "$app_dir" "${release_tag:-unknown}"
-                return $?
-            fi
-            echo "⚠️ 官方 rtp2httpd 二进制 SHA-256 不匹配，改用 YehBP 内置副本。"
-        else
-            echo "⚠️ 官方 release 未提供可校验的 Linux ${suffix} 二进制，改用 YehBP 内置副本。"
-        fi
-    else
-        echo "⚠️ 无法读取 rtp2httpd 官方 release 信息，改用 YehBP 内置副本。"
+    expected="${digest#sha256:}"
+    if [ -z "$url" ] || [[ ! "$expected" =~ ^[0-9a-fA-F]{64}$ ]]; then
+        echo "❌ 官方 release 未提供 Linux ${suffix} 二进制或 SHA-256 digest，已拒绝下载。"
+        return 1
     fi
-    rtp2httpd_download_bundled_binary "$app_dir" "$suffix"
+    rtp2httpd_curl --connect-timeout 10 --max-time 120 -fL "$url" -o "$tmp_bin" || {
+        echo "❌ rtp2httpd 二进制下载失败。"
+        return 1
+    }
+    actual="$(sha256sum "$tmp_bin" | awk '{print $1}')"
+    if [ "$actual" != "$expected" ]; then
+        echo "❌ 二进制 SHA-256 不匹配，已拒绝安装。"
+        return 1
+    fi
+    install -m 0755 "$tmp_bin" "${app_dir}/.rtp2httpd.verified"
+    mv -f "${app_dir}/.rtp2httpd.verified" "${app_dir}/rtp2httpd"
+    printf '%s\n' "${release_tag:-unknown}" > "${app_dir}/VERSION"
 }
 
 rtp2httpd_render_template() {
