@@ -65,9 +65,10 @@ rtp2httpd_select_parent() {
     [ ${#interfaces[@]} -gt 0 ] || { echo "❌ 未找到可用网卡。"; return 1; }
     echo "请选择承载 IPTV VLAN 的父网卡："
     for i in "${!interfaces[@]}"; do
-        printf '  %d) %s\n' "$((i + 1))" "${interfaces[$i]}"
+        printf '  %d）%s\n' "$((i + 1))" "${interfaces[$i]}"
     done
-    read -r -p "网卡序号（回车退出）: " choice
+    echo "  0）返回"
+    read -r -p "请输入要操作的序号: " choice
     [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#interfaces[@]}" ] || return 2
     RTP2HTTPD_PARENT_IF="${interfaces[$((choice - 1))]}"
 }
@@ -413,9 +414,10 @@ rtp2httpd_upgrade() {
     else
         echo "检测到多个 rtp2httpd 共享二进制目录："
         for i in "${!app_dirs[@]}"; do
-            printf '  %d) %s\n' "$((i + 1))" "${app_dirs[$i]}"
+            printf '  %d）%s\n' "$((i + 1))" "${app_dirs[$i]}"
         done
-        read -r -p "请选择要升级的目录（回车退出）: " choice
+        echo "  0）返回"
+        read -r -p "请输入要操作的序号: " choice
         [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#app_dirs[@]}" ] || return 0
         selected="${app_dirs[$((choice - 1))]}"
     fi

@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.26.25"
+APP_VERSION="2026.08.26.27"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -604,8 +604,9 @@ select_macvlan_or_exit() {
     for i in "${!macvlan_networks[@]}"; do
         echo "  $((i + 1))）${macvlan_networks[$i]}"
     done
+    echo "  0）返回"
 
-    read -r -p "请输入 macvlan 序号（0/回车/其他输入退出）: " choice
+    read -r -p "请输入要操作的序号: " choice
     if [ -z "$choice" ]; then
         echo "✅ 已退出安装。"
         return 2
@@ -891,13 +892,18 @@ select_dockerapps_dir() {
         for i in "${!dockerapps_dirs[@]}"; do
           echo "  $((i + 1))）${dockerapps_dirs[$i]}"
         done
+        echo "  0）返回"
+        echo "  m）手工输入"
 
         while true; do
-          read -r -p "请选择目录序号（m 手工输入；0/回车/其他输入退出）: " choice
+          read -r -p "请输入要操作的序号（输入m 开始手工输入）: " choice
           if [ -z "$choice" ]; then
             return 2
           fi
           case "$choice" in
+            0)
+              return 2
+              ;;
             "m"|"M")
               break
               ;;
@@ -1781,14 +1787,15 @@ create_macvlan_network() {
 
   echo "请选择 macvlan IPv6 配置："
   if [ "$interface_ipv6_available" -eq 1 ]; then
-    echo "  1) 使用接口 $ipv6_info_iface：网关 $iface6_gateway，子网 $iface6_cidr"
+    echo "  1）使用接口 $ipv6_info_iface：网关 $iface6_gateway，子网 $iface6_cidr"
   else
-    echo "  1) 使用接口 IPv6 信息（不可用：未读取到可供 Docker IPAM 使用的非 fe80:: 网关）"
+    echo "  1）使用接口 IPv6 信息（不可用：未读取到可供 Docker IPAM 使用的非 fe80:: 网关）"
   fi
-  echo "  2) 按 IPv4 网关推导 Docker ULA：网关 $derived_gateway6，子网 $derived_cidr6"
-  echo "  3) 手动输入 IPv6 网关、CIDR 与 range"
-  echo "  4) 不启用 macvlan IPv6"
-  read -r -p "请输入选择（回车默认 2，n 等同于 4）: " ipv6_mode
+  echo "  2）按 IPv4 网关推导 Docker ULA：网关 $derived_gateway6，子网 $derived_cidr6"
+  echo "  3）手动输入 IPv6 网关、CIDR 与 range"
+  echo "  4）不启用 macvlan IPv6"
+  echo "  0）返回"
+  read -r -p "请输入要操作的序号（回车默认 2）: " ipv6_mode
   case "$ipv6_mode" in
     ""|2)
       gateway6="$derived_gateway6"
@@ -1811,6 +1818,9 @@ create_macvlan_network() {
     4|n|N)
       gateway6=""
       cidr6=""
+      ;;
+    0)
+      return 0
       ;;
     *)
       echo "❌ 无效的 IPv6 选择：$ipv6_mode"
@@ -2741,9 +2751,10 @@ install_mihomo() {
     # 0) 选择网络模式
     local MIHOMO_NETWORK_MODE network_choice
     echo "请选择 mihomo 网络模式："
-    echo "  1) host（使用宿主机网络，适合在外回家）"
-    echo "  2) macvlan（独立 LAN IP/MAC，适合旁路由）"
-    read -r -p "请输入选择（回车默认 macvlan）: " network_choice
+    echo "  1）host（使用宿主机网络，适合在外回家）"
+    echo "  2）macvlan（独立 LAN IP/MAC，适合旁路由）"
+    echo "  0）返回"
+    read -r -p "请输入要操作的序号（回车默认 macvlan）: " network_choice
     case "$network_choice" in
         ""|"2"|"macvlan"|"MACVLAN")
             MIHOMO_NETWORK_MODE="macvlan"
@@ -2751,6 +2762,7 @@ install_mihomo() {
         "1"|"host"|"HOST")
             MIHOMO_NETWORK_MODE="host"
             ;;
+        "0") return 0 ;;
         *)
             echo "❌ 无效选择：$network_choice"
             return 1
@@ -2917,9 +2929,10 @@ install_ddnsgo() {
     # 0) 选择网络模式
     local DDNSGO_NETWORK_MODE network_choice
     echo "请选择 ddns-go 网络模式："
-    echo "  1) host（使用宿主机网络，适合有 IPv4 + IPv6 的环境）"
-    echo "  2) macvlan（独立 LAN IP/MAC，适合只有 IPv4 的环境）"
-    read -r -p "请输入选择（回车默认 host）: " network_choice
+    echo "  1）host（使用宿主机网络，适合有 IPv4 + IPv6 的环境）"
+    echo "  2）macvlan（独立 LAN IP/MAC，适合只有 IPv4 的环境）"
+    echo "  0）返回"
+    read -r -p "请输入要操作的序号（回车默认 host）: " network_choice
     case "$network_choice" in
         ""|"1"|"host"|"HOST")
             DDNSGO_NETWORK_MODE="host"
@@ -2927,6 +2940,7 @@ install_ddnsgo() {
         "2"|"macvlan"|"MACVLAN")
             DDNSGO_NETWORK_MODE="macvlan"
             ;;
+        "0") return 0 ;;
         *)
             echo "❌ 无效选择：$network_choice"
             return 1
@@ -3078,9 +3092,10 @@ install_lucky() {
     # 0) 选择网络模式
     local LUCKY_NETWORK_MODE network_choice
     echo "请选择 Lucky 网络模式："
-    echo "  1) host（使用宿主机网络，适合有 IPv4 + IPv6 的环境）"
-    echo "  2) macvlan（独立 LAN IP/MAC，适合只有 IPv4 的环境）"
-    read -r -p "请输入选择（回车默认 host）: " network_choice
+    echo "  1）host（使用宿主机网络，适合有 IPv4 + IPv6 的环境）"
+    echo "  2）macvlan（独立 LAN IP/MAC，适合只有 IPv4 的环境）"
+    echo "  0）返回"
+    read -r -p "请输入要操作的序号（回车默认 host）: " network_choice
     case "$network_choice" in
         ""|"1"|"host"|"HOST")
             LUCKY_NETWORK_MODE="host"
@@ -3088,6 +3103,7 @@ install_lucky() {
         "2"|"macvlan"|"MACVLAN")
             LUCKY_NETWORK_MODE="macvlan"
             ;;
+        "0") return 0 ;;
         *)
             echo "❌ 无效选择：$network_choice"
             return 1
