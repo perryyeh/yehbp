@@ -385,6 +385,59 @@ rtp2httpd_list_instances() {
     shopt -u nullglob
 }
 
+rtp2httpd_service_binary_path() {
+    local service="$1"
+    awk -F' -c ' '/^ExecStart=/ {sub(/^ExecStart=/, "", $1); print $1; exit}' "/etc/systemd/system/${service}"
+}
+
+rtp2httpd_upgrade() {
+    local -a app_dirs=() services=()
+    local service binary app_dir choice i selected restarted=0
+
+    rtp2httpd_require_commands || return 1
+    rtp2httpd_list_instances
+    for service in "${RTP2HTTPD_LIST_SERVICES[@]}"; do
+        binary="$(rtp2httpd_service_binary_path "$service")"
+        [ -x "$binary" ] || continue
+        app_dir="$(dirname "$binary")"
+        if [[ " ${app_dirs[*]} " != *" ${app_dir} "* ]]; then
+            app_dirs+=("$app_dir")
+        fi
+    done
+    if [ ${#app_dirs[@]} -eq 0 ]; then
+        echo "❌ 未从 rtp2httpd service 找到可升级的共享二进制。"
+        return 1
+    fi
+    if [ ${#app_dirs[@]} -eq 1 ]; then
+        selected="${app_dirs[0]}"
+    else
+        echo "检测到多个 rtp2httpd 共享二进制目录："
+        for i in "${!app_dirs[@]}"; do
+            printf '  %d) %s\n' "$((i + 1))" "${app_dirs[$i]}"
+        done
+        read -r -p "请选择要升级的目录（回车退出）: " choice
+        [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#app_dirs[@]}" ] || return 0
+        selected="${app_dirs[$((choice - 1))]}"
+    fi
+
+    echo "⬇️ 正在升级共享二进制：${selected}/rtp2httpd"
+    rtp2httpd_download_binary "$selected" || return 1
+    for service in "${RTP2HTTPD_LIST_SERVICES[@]}"; do
+        binary="$(rtp2httpd_service_binary_path "$service")"
+        [ "$binary" = "${selected}/rtp2httpd" ] || continue
+        services+=("$service")
+        if systemctl is-active --quiet "$service"; then
+            systemctl restart "$service" || {
+                echo "❌ ${service} 重启失败；请检查：journalctl -u ${service}"
+                return 1
+            }
+            restarted=$((restarted + 1))
+        fi
+    done
+    echo "✅ rtp2httpd 二进制已升级；重启 ${restarted} 个运行中的实例。"
+    [ ${#services[@]} -gt 0 ] || echo "ℹ️ 当前没有引用该二进制的 YehBP 命名 service。"
+}
+
 rtp2httpd_delete() {
     local choice service instance config state answer display_name
     rtp2httpd_require_delete_commands || return 1
@@ -419,4 +472,21 @@ rtp2httpd_delete() {
     [[ "$answer" =~ ^[yY]([eE][sS])?$ ]] || return 0
     rtp2httpd_remove_instance "$service" "$config" "$state" || return 1
     echo "✅ 已删除 rtp2httpd 配置 ${display_name}、关联 service 和 YehBP 创建的 VLAN profile；共享二进制已保留。"
+}
+
+manage_rtp2httpd() {
+    local choice
+    echo "\n=== 安装/删除/升级 IPTV（rtp2httpd） ==="
+    echo "1) 安装 / 替换配置"
+    echo "2) 仅升级 rtp2httpd 二进制"
+    echo "3) 删除配置"
+    echo "0) 返回"
+    read -r -p "请选择: " choice
+    case "$choice" in
+        1) rtp2httpd_install ;;
+        2) rtp2httpd_upgrade ;;
+        3) rtp2httpd_delete ;;
+        0|"") return 0 ;;
+        *) echo "❌ 无效选择。"; return 1 ;;
+    esac
 }

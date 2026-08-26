@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.26.07"
+APP_VERSION="2026.08.26.08"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -574,8 +574,7 @@ function show_menu() {
         echo "71) 优化docker日志"
         echo "72) 优化journald日志"
     fi
-    echo "80）安装IPTV(rtp2httpd)"
-    echo "81）删除IPTV(rtp2httpd)"
+    echo "80）安装/删除/升级 IPTV（rtp2httpd）"
     echo "90）创建macvlan bridge"
     echo "91）删除macvlan bridge"
     echo "95）添加/管理 SOCKS5 代理"
@@ -4474,8 +4473,7 @@ EOF
 
 # ========== IPTV rtp2httpd ==========
 
-run_rtp2httpd_action() {
-    local action="$1"
+manage_rtp2httpd_menu() {
     local asset
     asset="$(mktemp /tmp/yehbp-rtp2httpd.XXXXXX)" || return 1
     if ! download_yehbp_asset "assets/iptv/rtp2httpd.sh" "$asset" || ! bash -n "$asset"; then
@@ -4486,11 +4484,7 @@ run_rtp2httpd_action() {
     # shellcheck disable=SC1090
     . "$asset"
     rm -f "$asset"
-    case "$action" in
-        install) rtp2httpd_install ;;
-        delete) rtp2httpd_delete ;;
-        *) echo "❌ 未知 rtp2httpd 操作：$action"; return 1 ;;
-    esac
+    manage_rtp2httpd
 }
 
 # ========== 主循环 ==========
@@ -4525,8 +4519,7 @@ while true; do
         70) migrate_docker_datadir ;;
         71) if is_openwrt; then echo "ℹ️ OpenWrt dockerd 日志配置不使用 daemon.json；该功能当前不适用。"; else optimize_docker_logs; fi ;;
         72) if is_openwrt; then echo "ℹ️ OpenWrt 使用 logd/logread，不使用 journald；该功能不适用。"; else optimize_journald_to_volatile; fi ;;
-        80) run_rtp2httpd_action install ;;
-        81) run_rtp2httpd_action delete ;;
+        80) manage_rtp2httpd_menu ;;
         90) create_macvlan_bridge ;;
         91) clean_macvlan_bridge ;;
         97|98) if is_openwrt; then echo "ℹ️ Dockcheck 自动更新依赖 systemd timer，当前 OpenWrt 后端未提供该功能。"; else case $choice in 97) manage_dockcheck_auto_update ;; 98) run_dockcheck_auto_update_once ;; esac; fi ;;
