@@ -2,7 +2,7 @@
 # Loaded by YehBP menus 80/81. Requires the parent script's download_yehbp_asset
 # and select_dockerapps_dir helpers.
 
-RTP2HTTPD_SERVICE_PREFIX="yehbp-rtp2httpd_"
+RTP2HTTPD_SERVICE_BASE="rtp2httpd"
 RTP2HTTPD_RELEASE_API="https://api.github.com/repos/stackia/rtp2httpd/releases/latest"
 
 rtp2httpd_require_commands() {
@@ -172,7 +172,7 @@ PY
 rtp2httpd_instance_paths() {
     RTP2HTTPD_CONFIG_PATH="${RTP2HTTPD_APP_DIR}/rtp2httpd_${RTP2HTTPD_INSTANCE}.conf"
     RTP2HTTPD_STATE_PATH="${RTP2HTTPD_APP_DIR}/rtp2httpd_${RTP2HTTPD_INSTANCE}.env"
-    RTP2HTTPD_SERVICE="${RTP2HTTPD_SERVICE_PREFIX}${RTP2HTTPD_INSTANCE}.service"
+    RTP2HTTPD_SERVICE="${RTP2HTTPD_SERVICE_BASE}_${RTP2HTTPD_INSTANCE}.service"
     RTP2HTTPD_SERVICE_PATH="/etc/systemd/system/${RTP2HTTPD_SERVICE}"
 }
 
@@ -317,48 +317,58 @@ rtp2httpd_install() {
 }
 
 rtp2httpd_list_instances() {
-    local service_path base instance
+    local service_path base suffix instance
     RTP2HTTPD_LIST_SERVICES=()
     shopt -s nullglob
-    for service_path in /etc/systemd/system/${RTP2HTTPD_SERVICE_PREFIX}*.service; do
+    for service_path in \
+        "/etc/systemd/system/${RTP2HTTPD_SERVICE_BASE}.service" \
+        /etc/systemd/system/${RTP2HTTPD_SERVICE_BASE}_*.service; do
+        [ -e "$service_path" ] || continue
         base="${service_path##*/}"
-        instance="${base#${RTP2HTTPD_SERVICE_PREFIX}}"
-        instance="${instance%.service}"
-        [ -n "$instance" ] || continue
+        suffix="${base#${RTP2HTTPD_SERVICE_BASE}}"
+        suffix="${suffix%.service}"
+        case "$suffix" in
+            "") instance="" ;;
+            _*) instance="${suffix#_}" ;;
+            *) continue ;;
+        esac
         RTP2HTTPD_LIST_SERVICES+=("$base")
     done
     shopt -u nullglob
 }
 
 rtp2httpd_delete() {
-    local choice service instance config state answer
+    local choice service instance config state answer display_name
     rtp2httpd_require_delete_commands || return 1
     rtp2httpd_list_instances
     if [ ${#RTP2HTTPD_LIST_SERVICES[@]} -eq 0 ]; then
-        echo "ℹ️ 未找到 YehBP 命名的 rtp2httpd 开机启动服务（${RTP2HTTPD_SERVICE_PREFIX}*.service）。"
+        echo "ℹ️ 未找到 rtp2httpd 开机启动服务（rtp2httpd.service 或 rtp2httpd_*.service）。"
         return 0
     fi
     echo "可删除的 rtp2httpd 配置："
     for i in "${!RTP2HTTPD_LIST_SERVICES[@]}"; do
         service="${RTP2HTTPD_LIST_SERVICES[$i]}"
-        instance="${service#${RTP2HTTPD_SERVICE_PREFIX}}"
+        instance="${service#${RTP2HTTPD_SERVICE_BASE}}"
         instance="${instance%.service}"
-        printf '  %d) %s（%s）\n' "$((i + 1))" "$instance" "$service"
+        instance="${instance#_}"
+        printf '  %d) %s（%s）\n' "$((i + 1))" "${instance:-默认}" "$service"
     done
     read -r -p "请输入要删除的配置序号（回车退出）: " choice
     [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#RTP2HTTPD_LIST_SERVICES[@]}" ] || return 0
     service="${RTP2HTTPD_LIST_SERVICES[$((choice - 1))]}"
-    instance="${service#${RTP2HTTPD_SERVICE_PREFIX}}"
+    instance="${service#${RTP2HTTPD_SERVICE_BASE}}"
     instance="${instance%.service}"
+    instance="${instance#_}"
 
     config="$(awk -F' -c ' '/^ExecStart=/ {print $2; exit}' "/etc/systemd/system/${service}")"
-    if [ -z "$config" ] || [[ "$config" != */rtp2httpd_*.conf ]]; then
+    if [ -z "$config" ] || { [[ "$config" != */rtp2httpd.conf ]] && [[ "$config" != */rtp2httpd_*.conf ]]; }; then
         echo "❌ ${service} 的配置路径不符合 YehBP 命名规则，拒绝删除配置文件。"
         return 1
     fi
     state="${config%.conf}.env"
+    display_name="${instance:-默认}"
     read -r -p "将停止 ${service}、删除 ${config}、状态文件和 YehBP 创建的 VLAN profile。继续？[y/N]: " answer
     [[ "$answer" =~ ^[yY]([eE][sS])?$ ]] || return 0
     rtp2httpd_remove_instance "$service" "$config" "$state"
-    echo "✅ 已删除 rtp2httpd 配置 ${instance}、关联 service 和 YehBP 创建的 VLAN profile；共享二进制已保留。"
+    echo "✅ 已删除 rtp2httpd 配置 ${display_name}、关联 service 和 YehBP 创建的 VLAN profile；共享二进制已保留。"
 }

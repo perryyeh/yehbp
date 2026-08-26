@@ -72,12 +72,12 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 此功能面向使用 **NetworkManager + systemd** 的 Linux/NAS 主机，不支持 OpenWrt。它会：
 
 1. 菜单 `80` 先搜索并选择 `dockerapps` 安装目录；共享二进制固定安装在 `<dockerapps>/rtp2httpd/rtp2httpd`，不会为每个配置重复下载。
-2. 输入配置名，例如 `tel` 会创建 `rtp2httpd_tel.conf`、状态文件 `rtp2httpd_tel.env` 和开机启动服务 `yehbp-rtp2httpd_tel.service`；留空时自动使用最小未占用编号 `_1`、`_2`。
+2. 输入配置名，例如 `tel` 会创建 `rtp2httpd_tel.conf`、状态文件 `rtp2httpd_tel.env` 和开机启动服务 `rtp2httpd_tel.service`；留空时自动使用最小未占用编号 `_1`、`_2`。
 3. 分别输入组播 VLAN ID 与 FCC/DHCP VLAN ID，以及一个已经配置在本机的 IPv4 监听地址及端口（默认 `5140`）。
 4. 创建两个 YehBP 管理的 VLAN profile：组播 VLAN 禁用 IPv4，FCC/DHCP VLAN 使用 DHCP 且不接管默认路由。
 5. 首次安装时从 `stackia/rtp2httpd` 官方 release 下载与本机架构匹配的二进制，并校验 GitHub 发布的 SHA-256 digest。
 
-同名配置已存在时，菜单 `80` 会询问是否替换对应配置和 service。菜单 `81` 会枚举 `yehbp-rtp2httpd_*.service`，确认后删除选定 service、对应 `.conf`/`.env` 及该实例状态文件中记录的两个 VLAN profile；共享二进制保留，不会按 VLAN ID 猜测或删除既有网络配置。
+同名配置已存在时，菜单 `80` 会询问是否替换对应配置和 service。菜单 `81` 会枚举 `rtp2httpd.service` 和 `rtp2httpd_*.service`；前者对应 `rtp2httpd.conf`，确认后删除选定 service、对应 `.conf`/`.env` 及该实例状态文件中记录的两个 VLAN profile；共享二进制保留，不会按 VLAN ID 猜测或删除既有网络配置。
 
 ## 🚀 使用方法
 
