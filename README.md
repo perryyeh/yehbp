@@ -54,31 +54,31 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 20 | 安装 mihomo                   |
 | 21 | 安装 ddnsgo                   |
 | 22 | 安装 lucky                    |
+| 30 | 安装/删除/升级 IPTV（rtp2httpd） |
 | 70 | 迁移docker目录                  |
 | 71 | 优化docker日志                  |
 | 72 | 优化journald日志                |
-| 80 | 安装/删除/升级 IPTV（rtp2httpd） |
+| 80 | 安装/管理 SOCKS5 代理          |
+| 81 | 安装/删除/升级 Dockcheck       |
+| 88 | 检查/更新docker镜像            |
 | 90 | 创建macvlan bridge            |
 | 91 | 删除macvlan bridge            |
-| 95 | 添加/管理 SOCKS5 代理          |
-| 97 | 安装/删除/升级 Dockcheck          |
-| 98 | 检查/更新docker镜像               |
 | 99 / exit / quit / q | 退出脚本           |
 | 999 / del / delete / uninstall / remove / rm | 删除 `yehbp` |
 
-### 安装/删除/升级 IPTV（rtp2httpd）（菜单 80）
+### 安装/删除/升级 IPTV（rtp2httpd）（菜单 30）
 
 此功能面向使用 **NetworkManager + systemd** 的 Linux/NAS 主机，不支持 OpenWrt。它会：
 
 官方项目：[stackia/rtp2httpd](https://github.com/stackia/rtp2httpd)。
 
-1. 菜单 `80` 提供安装/替换配置、仅升级共享二进制和删除配置。安装时先搜索并选择 `dockerapps` 目录；共享二进制固定安装在 `<dockerapps>/rtp2httpd/rtp2httpd`，不会为每个配置重复下载。
+1. 菜单 `30` 提供安装/替换配置、仅升级共享二进制和删除配置。安装时先搜索并选择 `dockerapps` 目录；共享二进制固定安装在 `<dockerapps>/rtp2httpd/rtp2httpd`，不会为每个配置重复下载。
 2. 输入配置名，例如 `tel` 会创建 `rtp2httpd_tel.conf`、状态文件 `rtp2httpd_tel.env` 和开机启动服务 `rtp2httpd_tel.service`；留空时自动使用最小未占用编号 `_1`、`_2`。
 3. 分别输入组播 VLAN ID 与 FCC/DHCP VLAN ID，以及一个已经配置在本机的 IPv4 监听地址及端口（默认 `5140`）。
 4. 创建两个 YehBP 管理的 VLAN profile：组播 VLAN 禁用 IPv4；FCC/DHCP VLAN 使用 DHCP，并将 DHCP 下发的路由放入实例专用路由表。rtp2httpd 的 FCC socket 绑定该 VLAN 接口，按 `oif` 规则仅使用该专用表，不改变主机其他流量的默认路由。
 5. 首次安装时从 `stackia/rtp2httpd` 官方 release 下载与本机架构匹配的二进制，并校验 GitHub 发布的 SHA-256 digest。
 
-同名配置已存在时，菜单 `80` 会询问是否替换对应配置和 service。仅升级操作从已安装 service 的 `ExecStart` 定位共享二进制，只下载并校验官方二进制，不改 VLAN、配置或 service 内容；会重启引用该二进制且当前运行中的实例使升级生效。父口列表只显示实际物理网卡，不显示 Docker bridge、veth、macvlan 或已有 VLAN 子接口。删除操作会枚举 `rtp2httpd.service` 和 `rtp2httpd_*.service`；前者对应 `rtp2httpd.conf`，确认后按状态文件记录的 UUID 删除两个 VLAN profile，并回读确认。profile 未完全删除时会保留 service、配置和状态文件以便修复后重试；共享二进制始终保留，不会按 VLAN ID 猜测或删除既有网络配置。
+同名配置已存在时，菜单 `30` 会询问是否替换对应配置和 service。仅升级操作从已安装 service 的 `ExecStart` 定位共享二进制，只下载并校验官方二进制，不改 VLAN、配置或 service 内容；会重启引用该二进制且当前运行中的实例使升级生效。父口列表只显示实际物理网卡，不显示 Docker bridge、veth、macvlan 或已有 VLAN 子接口。删除操作会枚举 `rtp2httpd.service` 和 `rtp2httpd_*.service`；前者对应 `rtp2httpd.conf`，确认后按状态文件记录的 UUID 删除两个 VLAN profile，并回读确认。profile 未完全删除时会保留 service、配置和状态文件以便修复后重试；共享二进制始终保留，不会按 VLAN ID 猜测或删除既有网络配置。
 
 
 ## 🚀 使用方法
@@ -131,9 +131,9 @@ sudo yehbp
 sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbpproxy.conf /usr/local/bin/yehbp.bak-*
 ```
 
-### SOCKS5 下载代理（菜单 95）
+### SOCKS5 下载代理（菜单 80）
 
-菜单 `95` 可保存一个无认证 SOCKS5 代理。输入格式为 `IP或域名:端口`，也可带 `socks5://` 前缀；有效端口为 `1–65535`。配置保存到与 `yehbp` 命令同目录的 `/usr/local/bin/yehbpproxy.conf`，再次添加会直接替换该单一值，删除操作会删除该文件。
+菜单 `80` 可保存一个无认证 SOCKS5 代理。输入格式为 `IP或域名:端口`，也可带 `socks5://` 前缀；有效端口为 `1–65535`。配置保存到与 `yehbp` 命令同目录的 `/usr/local/bin/yehbpproxy.conf`，再次添加会直接替换该单一值，删除操作会删除该文件。
 
 有效配置会用于 YehBP 的版本检查、升级及功能下载，并通过 `socks5h` 让代理端解析下载域名。配置文件不存在或内容无效时，YehBP 不使用代理；已配置有效代理但系统未安装 `curl` 时，为避免绕过代理，下载会取消而非退回直连。
 

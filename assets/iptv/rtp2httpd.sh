@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Loaded by YehBP menus 80/81. Requires the parent script's download_yehbp_asset
+# Loaded by YehBP menu 30. Requires the parent script's download_yehbp_asset
 # and select_dockerapps_dir helpers.
 
 RTP2HTTPD_SERVICE_BASE="rtp2httpd"

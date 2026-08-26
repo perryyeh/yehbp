@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.26.13"
+APP_VERSION="2026.08.26.14"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -569,19 +569,19 @@ function show_menu() {
     echo "20）安装mihomo"
     echo "21）安装ddns-go"
     echo "22）安装lucky"
+    echo "30）安装/删除/升级 IPTV（rtp2httpd）"
     echo "70) 迁移docker目录"
     if ! is_openwrt; then
         echo "71) 优化docker日志"
         echo "72) 优化journald日志"
     fi
-    echo "80）安装/删除/升级 IPTV（rtp2httpd）"
+    echo "80）安装/管理 SOCKS5 代理"
+    if ! is_openwrt; then
+        echo "81）安装/删除/升级 Dockcheck"
+        echo "88）检查/更新docker镜像"
+    fi
     echo "90）创建macvlan bridge"
     echo "91）删除macvlan bridge"
-    echo "95）添加/管理 SOCKS5 代理"
-    if ! is_openwrt; then
-        echo "97）安装/删除/升级 Dockcheck"
-        echo "98）检查/更新docker镜像"
-    fi
     echo "99）退出（也可输入 exit / quit / q）"
     echo "999）删除 ${APP_NAME}（也可输入 del / delete / uninstall / remove / rm）"
     echo "============================"
@@ -4531,14 +4531,14 @@ while true; do
         20) install_mihomo ;;
         21) install_ddnsgo ;;
         22) install_lucky ;;
-        95) manage_socks5_proxy ;;
+        80) manage_socks5_proxy ;;
         70) migrate_docker_datadir ;;
         71) if is_openwrt; then echo "ℹ️ OpenWrt dockerd 日志配置不使用 daemon.json；该功能当前不适用。"; else optimize_docker_logs; fi ;;
         72) if is_openwrt; then echo "ℹ️ OpenWrt 使用 logd/logread，不使用 journald；该功能不适用。"; else optimize_journald_to_volatile; fi ;;
-        80) manage_rtp2httpd_menu ;;
+        30) manage_rtp2httpd_menu ;;
         90) create_macvlan_bridge ;;
         91) clean_macvlan_bridge ;;
-        97|98) if is_openwrt; then echo "ℹ️ Dockcheck 自动更新依赖 systemd timer，当前 OpenWrt 后端未提供该功能。"; else case $choice in 97) manage_dockcheck_auto_update ;; 98) run_dockcheck_auto_update_once ;; esac; fi ;;
+        81|88) if is_openwrt; then echo "ℹ️ Dockcheck 自动更新依赖 systemd timer，当前 OpenWrt 后端未提供该功能。"; else case $choice in 81) manage_dockcheck_auto_update ;; 88) run_dockcheck_auto_update_once ;; esac; fi ;;
         99|exit|quit|q) echo "退出脚本。"; exit 0 ;;
         999|del|delete|uninstall|remove|rm) uninstall_yehbp_cli ;;
         *) echo "无效选项，请重新输入。" ;;
