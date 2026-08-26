@@ -55,14 +55,14 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 21 | 安装 ddnsgo                   |
 | 22 | 安装 lucky                    |
 | 30 | 安装/删除/升级 IPTV（rtp2httpd） |
-| 70 | 迁移docker目录                  |
-| 71 | 优化docker日志                  |
-| 72 | 优化journald日志                |
 | 80 | 安装/管理 SOCKS5 代理          |
 | 81 | 安装/删除/升级 Dockcheck       |
 | 88 | 检查/更新docker镜像            |
 | 90 | 创建macvlan bridge            |
 | 91 | 删除macvlan bridge            |
+| 92 | 迁移docker目录                 |
+| 93 | 优化docker日志                 |
+| 94 | 优化journald日志               |
 | 99 / exit / quit / q | 退出脚本           |
 | 999 / del / delete / uninstall / remove / rm | 删除 `yehbp` |
 
