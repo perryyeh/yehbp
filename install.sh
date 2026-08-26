@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.26.24"
+APP_VERSION="2026.08.26.25"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -105,7 +105,7 @@ manage_socks5_proxy() {
     echo "1）添加/替换 SOCKS5 代理"
     echo "2）删除 SOCKS5 代理"
     echo "0）返回"
-    read -r -p "请输入选项: " ans
+    read -r -p "请输入要操作的序号: " ans
     case "$ans" in
         1)
             read -r -p "请输入 SOCKS5 地址（例如 127.0.0.1:1080 或 socks5://proxy.example:1080）: " input
@@ -4497,7 +4497,7 @@ install_dependencies
 show_menu
 
 while true; do
-    if ! read -r -p "请输入选项: " choice; then
+    if ! read -r -p "请输入要操作的序号: " choice; then
         echo
         echo "退出脚本。"
         exit 0
