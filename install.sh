@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.26.16"
+APP_VERSION="2026.08.26.17"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -3322,28 +3322,21 @@ clean_macvlan_network() {
             echo "  $((i + 1))) $net"
         fi
     done
+    echo "  a）删除全部"
 
-    echo
-    echo "请输入要删除的网络序号，或输入 a 表示删除全部；0/回车/其他输入取消："
-    read -p "你的选择: " choice
-
-    if [ -z "$choice" ]; then
-        echo "⚠️ 已取消删除 macvlan 网络。"
-        return 0
-    fi
+    read -r -p "请输入要操作的序号: " choice
+    [ -n "$choice" ] || return 0
 
     local to_delete=()
 
     if [[ "$choice" =~ ^[0-9]+$ ]]; then
         if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#macvlan_networks[@]}" ]; then
-            echo "⚠️ 已取消删除 macvlan 网络。"
             return 0
         fi
         to_delete=("${macvlan_networks[$((choice - 1))]}")
     elif [[ "$choice" =~ ^[Aa]$ ]]; then
         to_delete=("${macvlan_networks[@]}")
     else
-        echo "⚠️ 已取消删除 macvlan 网络。"
         return 0
     fi
 
@@ -3451,15 +3444,15 @@ clean_macvlan_bridge_openwrt() {
         bridge_if="$(grep -E 'ip link add "[^"]+"' "$script" | head -n1 | sed -E 's/.*add "([^"]+)".*/\1/')"
         echo "  $((i + 1))) 接口: ${bridge_if:-未知}   脚本: $script"
     done
+    echo "  a）删除全部"
 
-    read -r -p "请输入要删除的序号，或输入 a 表示删除全部；0/回车/其他输入取消: " choice
-    [ -z "$choice" ] && { echo "⚠️ 已取消"; return 0; }
+    read -r -p "请输入要操作的序号: " choice
+    [ -n "$choice" ] || return 0
     if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#scripts[@]}" ]; then
         to_clean=("${scripts[$((choice - 1))]}")
     elif [[ "$choice" =~ ^[Aa]$ ]]; then
         to_clean=("${scripts[@]}")
     else
-        echo "⚠️ 已取消"
         return 0
     fi
 
@@ -3515,22 +3508,20 @@ clean_macvlan_bridge() {
 
         echo "  $((i + 1))) 服务: $svc_name   接口: ${bridge_if:-未知}   脚本: $setup_script"
     done
+    echo "  a）删除全部"
 
-    echo
-    read -p "请输入要删除的序号，或输入 a 表示删除全部；0/回车/其他输入取消: " choice
-    [ -z "$choice" ] && { echo "⚠️ 已取消"; return 0; }
+    read -r -p "请输入要操作的序号: " choice
+    [ -n "$choice" ] || return 0
 
     local to_clean=()
     if [[ "$choice" =~ ^[0-9]+$ ]]; then
         if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#svc_files[@]}" ]; then
-            echo "⚠️ 已取消"
             return 0
         fi
         to_clean=("${svc_files[$((choice - 1))]}")
     elif [[ "$choice" =~ ^[Aa]$ ]]; then
         to_clean=("${svc_files[@]}")
     else
-        echo "⚠️ 已取消"
         return 0
     fi
 
@@ -3798,7 +3789,7 @@ sync_dockcheck_auto_update_components() {
     fi
     if ! base_dir="$(find_dockcheck_auto_update_base)"; then
         echo "❌ 未找到 Dockcheck 自动更新组件。"
-        echo "👉 请先执行 97 → 2 安装 Dockcheck 自动更新。"
+        echo "👉 请先执行 81 → 2 安装 Dockcheck 自动更新。"
         return 1
     fi
 
@@ -3905,14 +3896,13 @@ manage_dockcheck_auto_update() {
     echo "2）安装 Dockcheck"
     echo "3）删除 Dockcheck"
     echo "4）升级 Dockcheck"
-    read -r -p "请选择 [1/2/3/4；0/回车/其他输入取消]: " choice
+    read -r -p "请输入要操作的序号: " choice
     case "$choice" in
         1) show_dockcheck_auto_update_status ;;
         2) install_dockcheck_auto_update ;;
         3) cleanup_dockcheck_auto_update ;;
         4) sync_dockcheck_auto_update_components ;;
-        "") echo "ℹ️ 已取消。" ;;
-        *) echo "ℹ️ 已取消。"; return 0 ;;
+        *) return 0 ;;
     esac
 }
 
@@ -3942,7 +3932,7 @@ run_dockcheck_auto_update_once() {
     local base_dir mode confirm label non_compose_names name names_csv
     if ! base_dir="$(find_dockcheck_auto_update_base)"; then
         echo "❌ 未找到 Dockcheck 自动更新组件。"
-        echo "👉 请先执行 97 → 2 安装 Dockcheck 自动更新。"
+        echo "👉 请先执行 81 → 2 安装 Dockcheck 自动更新。"
         return 1
     fi
 
@@ -3950,7 +3940,7 @@ run_dockcheck_auto_update_once() {
     echo "1）检查并更新docker compose 容器"
     echo "2）只检查全部容器，不更新"
     echo "3）检查/拉取非 compose 容器镜像（不重建容器）"
-    read -r -p "请选择 [1/2/3；0/回车/其他输入取消]: " mode
+    read -r -p "请输入要操作的序号: " mode
     case "$mode" in
         1)
             echo "⚠️ 更新会拉取新镜像并重建相关 compose 容器；对应服务网络可能短暂中断。"
@@ -3991,19 +3981,12 @@ run_dockcheck_auto_update_once() {
             names_csv="$(printf '%s' "$non_compose_names" | paste -sd, -)"
             run_dockcheck_manual_action "$base_dir" --ignore-delay --docker-run --fix-mac-interactive "$names_csv"
             ;;
-        "")
-            echo "ℹ️ 已取消。"
-            return 0
-            ;;
-        *)
-            echo "ℹ️ 已取消。"
-            return 0
-            ;;
+        *) return 0 ;;
     esac
 }
 
 # =====================
-#  功能 70：迁移 Docker 目录
+#  功能 92：迁移 Docker 目录
 # =====================
 migrate_docker_datadir_openwrt() {
     local current_root new_root old_uci_root old_backup config_backup confirm root_dir
@@ -4488,18 +4471,16 @@ load_rtp2httpd_asset() {
 manage_rtp2httpd_menu() {
     local choice
 
-    printf '\n=== 安装/删除/升级 IPTV（rtp2httpd） ===\n'
-    echo "1) 安装 / 替换配置"
-    echo "2) 仅升级 rtp2httpd 二进制"
-    echo "3) 删除配置"
-    echo "0) 返回"
-    read -r -p "请选择: " choice
+    printf '\n=== IPTV（rtp2httpd） ===\n'
+    echo "1）安装 / 替换配置"
+    echo "2）仅升级 rtp2httpd 二进制"
+    echo "3）删除配置"
+    read -r -p "请输入要操作的序号: " choice
     case "$choice" in
         1) load_rtp2httpd_asset && rtp2httpd_install ;;
         2) load_rtp2httpd_asset && rtp2httpd_upgrade ;;
         3) load_rtp2httpd_asset && rtp2httpd_delete ;;
-        0|"") return 0 ;;
-        *) echo "❌ 无效选择。"; return 1 ;;
+        *) return 0 ;;
     esac
 }
 

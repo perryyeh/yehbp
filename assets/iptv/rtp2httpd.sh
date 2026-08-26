@@ -439,7 +439,8 @@ rtp2httpd_upgrade() {
 }
 
 rtp2httpd_delete() {
-    local choice service instance config state answer display_name
+    local choice service instance config state answer display_name i
+    local -a selected_services=()
     rtp2httpd_require_delete_commands || return 1
     rtp2httpd_list_instances
     if [ ${#RTP2HTTPD_LIST_SERVICES[@]} -eq 0 ]; then
@@ -452,41 +453,51 @@ rtp2httpd_delete() {
         instance="${service#${RTP2HTTPD_SERVICE_BASE}}"
         instance="${instance%.service}"
         instance="${instance#_}"
-        printf '  %d) %s（%s）\n' "$((i + 1))" "${instance:-默认}" "$service"
+        printf '  %d）%s（%s）\n' "$((i + 1))" "${instance:-默认}" "$service"
     done
-    read -r -p "请输入要删除的配置序号（回车退出）: " choice
-    [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#RTP2HTTPD_LIST_SERVICES[@]}" ] || return 0
-    service="${RTP2HTTPD_LIST_SERVICES[$((choice - 1))]}"
-    instance="${service#${RTP2HTTPD_SERVICE_BASE}}"
-    instance="${instance%.service}"
-    instance="${instance#_}"
-
-    config="$(awk -F' -c ' '/^ExecStart=/ {print $2; exit}' "/etc/systemd/system/${service}")"
-    if [ -z "$config" ] || { [[ "$config" != */rtp2httpd.conf ]] && [[ "$config" != */rtp2httpd_*.conf ]]; }; then
-        echo "❌ ${service} 的配置路径不符合 YehBP 命名规则，拒绝删除配置文件。"
-        return 1
+    echo "  a）删除全部"
+    read -r -p "请输入要操作的序号: " choice
+    if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#RTP2HTTPD_LIST_SERVICES[@]}" ]; then
+        selected_services=("${RTP2HTTPD_LIST_SERVICES[$((choice - 1))]}")
+    elif [[ "$choice" =~ ^[Aa]$ ]]; then
+        selected_services=("${RTP2HTTPD_LIST_SERVICES[@]}")
+    else
+        return 0
     fi
-    state="${config%.conf}.env"
-    display_name="${instance:-默认}"
-    read -r -p "将停止 ${service}、删除 ${config}、状态文件和 YehBP 创建的 VLAN profile。继续？[y/N]: " answer
+
+    for service in "${selected_services[@]}"; do
+        config="$(awk -F' -c ' '/^ExecStart=/ {print $2; exit}' "/etc/systemd/system/${service}")"
+        if [ -z "$config" ] || { [[ "$config" != */rtp2httpd.conf ]] && [[ "$config" != */rtp2httpd_*.conf ]]; }; then
+            echo "❌ ${service} 的配置路径不符合 YehBP 命名规则，拒绝删除配置文件。"
+            return 1
+        fi
+    done
+    read -r -p "将停止并删除所选 rtp2httpd 配置、service 和 YehBP 创建的 VLAN profile。继续？[y/N]: " answer
     [[ "$answer" =~ ^[yY]([eE][sS])?$ ]] || return 0
-    rtp2httpd_remove_instance "$service" "$config" "$state" || return 1
-    echo "✅ 已删除 rtp2httpd 配置 ${display_name}、关联 service 和 YehBP 创建的 VLAN profile；共享二进制已保留。"
+
+    for service in "${selected_services[@]}"; do
+        instance="${service#${RTP2HTTPD_SERVICE_BASE}}"
+        instance="${instance%.service}"
+        instance="${instance#_}"
+        config="$(awk -F' -c ' '/^ExecStart=/ {print $2; exit}' "/etc/systemd/system/${service}")"
+        state="${config%.conf}.env"
+        display_name="${instance:-默认}"
+        rtp2httpd_remove_instance "$service" "$config" "$state" || return 1
+        echo "✅ 已删除 rtp2httpd 配置 ${display_name}、关联 service 和 YehBP 创建的 VLAN profile；共享二进制已保留。"
+    done
 }
 
 manage_rtp2httpd() {
     local choice
-    printf '\n=== 安装/删除/升级 IPTV（rtp2httpd） ===\n'
-    echo "1) 安装 / 替换配置"
-    echo "2) 仅升级 rtp2httpd 二进制"
-    echo "3) 删除配置"
-    echo "0) 返回"
-    read -r -p "请选择: " choice
+    printf '\n=== IPTV（rtp2httpd） ===\n'
+    echo "1）安装 / 替换配置"
+    echo "2）仅升级 rtp2httpd 二进制"
+    echo "3）删除配置"
+    read -r -p "请输入要操作的序号: " choice
     case "$choice" in
         1) rtp2httpd_install ;;
         2) rtp2httpd_upgrade ;;
         3) rtp2httpd_delete ;;
-        0|"") return 0 ;;
-        *) echo "❌ 无效选择。"; return 1 ;;
+        *) return 0 ;;
     esac
 }

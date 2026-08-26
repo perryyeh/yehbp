@@ -175,7 +175,7 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbpproxy.conf /usr/local/bin/ye
 
 ### 4. Docker 镜像自动更新
 
-菜单 `97` 提供 Dockcheck 管理：
+菜单 `81` 提供 Dockcheck 管理：
 
 - 查看 Dockcheck 状态/版本。
 - 安装 Dockcheck。

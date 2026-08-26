@@ -100,7 +100,7 @@ if ! flock -n 9; then
   echo "⚠️ Dockcheck 已有任务运行中（PID $owner_pid）。"
   echo "1）强制终止旧任务及其子进程，再继续本次任务"
   echo "2）取消，返回 YehBP 菜单"
-  read -r -p "请选择 [1/2，回车取消]: " replace_choice
+  read -r -p "请输入要操作的序号: " replace_choice
   if [ "$replace_choice" != "1" ]; then
     echo "ℹ️ 已取消，本次未执行。"
     exit 0
@@ -359,7 +359,7 @@ done
   cd "$BASE_DIR"
   if [ ! -x ./dockcheck.sh ]; then
     echo "❌ 未找到可执行的 Dockcheck 脚本：$BASE_DIR/dockcheck.sh"
-    echo "👉 请重新执行 97 安装 Dockcheck 自动更新。"
+    echo "👉 请重新执行 81 安装 Dockcheck 自动更新。"
     exit 1
   fi
 
