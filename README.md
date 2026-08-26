@@ -61,8 +61,8 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 90 | 创建macvlan bridge            |
 | 91 | 删除macvlan bridge            |
 | 95 | 添加/管理 SOCKS5 代理          |
-| 97 | Dockcheck 安装/删除/管理          |
-| 98 | Dockcheck 检查/更新镜像           |
+| 97 | 安装/删除/升级 Dockcheck          |
+| 98 | 检查/更新docker镜像               |
 | 99 / exit / quit / q | 退出脚本           |
 | 999 / del / delete / uninstall / remove / rm | 删除 `yehbp` |
 

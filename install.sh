@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.26.12"
+APP_VERSION="2026.08.26.13"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -579,8 +579,8 @@ function show_menu() {
     echo "91）删除macvlan bridge"
     echo "95）添加/管理 SOCKS5 代理"
     if ! is_openwrt; then
-        echo "97）Dockcheck 安装/删除/管理"
-        echo "98）Dockcheck 检查/更新镜像"
+        echo "97）安装/删除/升级 Dockcheck"
+        echo "98）检查/更新docker镜像"
     fi
     echo "99）退出（也可输入 exit / quit / q）"
     echo "999）删除 ${APP_NAME}（也可输入 del / delete / uninstall / remove / rm）"
@@ -3900,7 +3900,7 @@ show_dockcheck_auto_update_status() {
 manage_dockcheck_auto_update() {
     local choice
 
-    echo "🛠️ Dockcheck 安装/删除/管理"
+    echo "🛠️ 安装/删除/升级 Dockcheck"
     echo "1）查看 Dockcheck 状态/版本"
     echo "2）安装 Dockcheck"
     echo "3）删除 Dockcheck"
@@ -3932,7 +3932,7 @@ run_dockcheck_manual_action() {
 }
 
 run_dockcheck_auto_update_once() {
-    echo "🚀 Dockcheck 检查/更新镜像"
+    echo "🚀 检查/更新docker镜像"
 
     if [ "${EUID:-$(id -u)}" -ne 0 ]; then
         echo "❌ 需要 root 权限，请使用 sudo 运行。"
