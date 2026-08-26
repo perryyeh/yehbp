@@ -17,6 +17,14 @@ rtp2httpd_require_commands() {
     fi
 }
 
+rtp2httpd_curl() {
+    if declare -F yehbp_curl >/dev/null 2>&1; then
+        yehbp_curl "$@"
+    else
+        curl "$@"
+    fi
+}
+
 rtp2httpd_is_ipv4() {
     local ip="$1" a b c d
     IFS=. read -r a b c d <<< "$ip"
@@ -99,7 +107,7 @@ rtp2httpd_download_binary() {
     tmp_bin="${app_dir}/.rtp2httpd.download"
     trap 'rm -f "$tmp_json" "$tmp_bin"' RETURN
 
-    curl --connect-timeout 10 --max-time 60 -fsSL "$RTP2HTTPD_RELEASE_API" -o "$tmp_json" || {
+    rtp2httpd_curl --connect-timeout 10 --max-time 60 -fsSL "$RTP2HTTPD_RELEASE_API" -o "$tmp_json" || {
         echo "❌ 无法读取 rtp2httpd 官方 release 信息。"
         return 1
     }
@@ -121,7 +129,7 @@ PY
         echo "❌ 官方 release 未提供 Linux ${suffix} 二进制或 SHA-256 digest，已拒绝下载。"
         return 1
     fi
-    curl --connect-timeout 10 --max-time 120 -fL "$url" -o "$tmp_bin" || {
+    rtp2httpd_curl --connect-timeout 10 --max-time 120 -fL "$url" -o "$tmp_bin" || {
         echo "❌ rtp2httpd 二进制下载失败。"
         return 1
     }

@@ -54,6 +54,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 20 | 安装 mihomo                   |
 | 21 | 安装 ddnsgo                   |
 | 22 | 安装 lucky                    |
+| 23 | 添加/管理 SOCKS5 代理          |
 | 70 | 迁移docker目录                  |
 | 71 | 优化docker日志                  |
 | 72 | 优化journald日志                |
@@ -120,13 +121,19 @@ sudo yehbp
 999 / del / delete / uninstall / remove / rm
 ```
 
-脚本会二次确认后删除 `/usr/local/bin/yehbp` 和历史备份 `/usr/local/bin/yehbp.bak-*`，不会删除已安装的 Docker 容器、配置目录、macvlan、systemd 服务等。
+脚本会二次确认后删除 `/usr/local/bin/yehbp`、同目录 SOCKS5 配置 `/usr/local/bin/yehbpproxy.conf` 和历史备份 `/usr/local/bin/yehbp.bak-*`，不会删除已安装的 Docker 容器、配置目录、macvlan、systemd 服务等。
 
 也可以手动删除：
 
 ```bash
-sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbp.bak-*
+sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbpproxy.conf /usr/local/bin/yehbp.bak-*
 ```
+
+### SOCKS5 下载代理（菜单 23）
+
+菜单 `23` 可保存一个无认证 SOCKS5 代理。输入格式为 `IP或域名:端口`，也可带 `socks5://` 前缀；有效端口为 `1–65535`。配置保存到与 `yehbp` 命令同目录的 `/usr/local/bin/yehbpproxy.conf`，再次添加会直接替换该单一值，删除操作会删除该文件。
+
+有效配置会用于 YehBP 的版本检查、升级及功能下载，并通过 `socks5h` 让代理端解析下载域名。配置文件不存在或内容无效时，YehBP 不使用代理；已配置有效代理但系统未安装 `curl` 时，为避免绕过代理，下载会取消而非退回直连。
 
 ### 3. 设置旁路由步骤
 

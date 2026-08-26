@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.26.01"
+APP_VERSION="2026.08.26.02"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -10,6 +10,7 @@ RAW_VERSION_URL="${GITHUB_CONTENTS_BASE}/VERSION?ref=main"
 RAW_ASSET_BASE="${GITHUB_CONTENTS_BASE}"
 DOCKCHECK_URL="https://raw.githubusercontent.com/mag37/dockcheck/main/dockcheck.sh"
 INSTALL_BIN="/usr/local/bin/${APP_NAME}"
+SOCKS5_PROXY_CONFIG="$(dirname "$INSTALL_BIN")/${APP_NAME}proxy.conf"
 PLATFORM=""
 
 # iStoreOS/OpenWrt runs scripts as root and does not ship sudo. Preserve existing
@@ -36,14 +37,109 @@ is_openwrt() {
 
 detect_platform
 
+# 配置文件仅接受一个无认证 SOCKS5 端点：host:port、IPv4:port，或
+# socks5://host:port。使用 socks5h 让代理端解析下载域名。
+normalize_socks5_proxy() {
+    local value="$1" endpoint host port a b c d
+
+    value="$(printf '%s' "$value" | tr -d '\r')"
+    [[ "$value" != *$'\n'* ]] || return 1
+    [ -n "$value" ] && [[ "$value" != *[[:space:]]* ]] || return 1
+    case "$value" in
+        socks5://*) endpoint="${value#socks5://}" ;;
+        socks5h://*) endpoint="${value#socks5h://}" ;;
+        *://*) return 1 ;;
+        *) endpoint="$value" ;;
+    esac
+
+    [[ "$endpoint" =~ ^([^:]+):([0-9]+)$ ]] || return 1
+    host="${BASH_REMATCH[1]}"
+    port="${BASH_REMATCH[2]}"
+    ((10#$port >= 1 && 10#$port <= 65535)) || return 1
+
+    if [[ "$host" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        IFS=. read -r a b c d <<< "$host"
+        ((10#$a <= 255 && 10#$b <= 255 && 10#$c <= 255 && 10#$d <= 255)) || return 1
+    elif [[ "$host" =~ ^([[:alnum:]]([[:alnum:]-]{0,61}[[:alnum:]])?\.)*[[:alnum:]]([[:alnum:]-]{0,61}[[:alnum:]])?$ ]]; then
+        :
+    else
+        return 1
+    fi
+
+    printf 'socks5h://%s:%s\n' "$host" "$port"
+}
+
+configured_socks5_proxy() {
+    [ -r "$SOCKS5_PROXY_CONFIG" ] || return 1
+    normalize_socks5_proxy "$(<"$SOCKS5_PROXY_CONFIG")"
+}
+
+yehbp_curl() {
+    local proxy
+    proxy="$(configured_socks5_proxy)" || {
+        command curl "$@"
+        return
+    }
+    command curl --proxy "$proxy" "$@"
+}
+
+require_curl_for_configured_proxy() {
+    if configured_socks5_proxy >/dev/null && ! command -v curl >/dev/null 2>&1; then
+        echo "❌ 已配置 SOCKS5 代理，但未找到 curl；为避免绕过代理，已取消下载。"
+        return 1
+    fi
+}
+
+manage_socks5_proxy() {
+    local current input normalized ans
+
+    current="$(configured_socks5_proxy 2>/dev/null || true)"
+    echo "📡 SOCKS5 代理配置：${SOCKS5_PROXY_CONFIG}"
+    if [ -n "$current" ]; then
+        echo "当前代理：$current"
+    elif [ -e "$SOCKS5_PROXY_CONFIG" ]; then
+        echo "当前文件内容无法识别为有效的 IP/域名+端口，将不使用代理。"
+    else
+        echo "当前未配置代理。"
+    fi
+    echo "1）添加/替换 SOCKS5 代理"
+    echo "2）删除 SOCKS5 代理"
+    echo "0）返回"
+    read -r -p "请输入选项: " ans
+    case "$ans" in
+        1)
+            read -r -p "请输入 SOCKS5 地址（例如 127.0.0.1:1080 或 socks5://proxy.example:1080）: " input
+            normalized="$(normalize_socks5_proxy "$input" 2>/dev/null || true)"
+            if [ -z "$normalized" ]; then
+                echo "❌ 地址无效；仅支持无认证的 IP/域名+端口，端口范围为 1-65535。"
+                return 1
+            fi
+            printf '%s\n' "$input" > "$SOCKS5_PROXY_CONFIG" || return 1
+            echo "✅ 已保存 SOCKS5 代理：$normalized"
+            ;;
+        2)
+            if [ -e "$SOCKS5_PROXY_CONFIG" ]; then
+                rm -f "$SOCKS5_PROXY_CONFIG" || return 1
+                echo "✅ 已删除 SOCKS5 代理配置。"
+            else
+                echo "ℹ️ 未找到 SOCKS5 代理配置。"
+            fi
+            ;;
+        0|"") ;;
+        *) echo "❌ 无效选项。"; return 1 ;;
+    esac
+}
+
 download_yehbp_script() {
     local dst="$1"
     local url="${RAW_INSTALL_URL}"
 
     echo "ℹ️ 下载超时限制 60s，超时则本次不更新。"
 
-    if command -v curl >/dev/null 2>&1; then
-        curl --connect-timeout 10 --max-time 60 -H 'Accept: application/vnd.github.raw+json' -fsSL "$url" -o "$dst" || {
+    if ! require_curl_for_configured_proxy; then
+        return 1
+    elif command -v curl >/dev/null 2>&1; then
+        yehbp_curl --connect-timeout 10 --max-time 60 -H 'Accept: application/vnd.github.raw+json' -fsSL "$url" -o "$dst" || {
             echo "❌ 下载失败，本次不更新。"
             return 1
         }
@@ -69,7 +165,8 @@ download_yehbp_asset() {
     local url="${RAW_ASSET_BASE}/${src}?ref=main"
 
     mkdir -p "$(dirname "$dst")" || return 1
-    curl --connect-timeout 10 --max-time 60 -H 'Accept: application/vnd.github.raw+json' -fsSL "$url" -o "$dst" || {
+    require_curl_for_configured_proxy || return 1
+    yehbp_curl --connect-timeout 10 --max-time 60 -H 'Accept: application/vnd.github.raw+json' -fsSL "$url" -o "$dst" || {
         rm -f "$dst"
         echo "❌ 下载失败（60s 超时或网络错误）：$src；请重试。"
         return 1
@@ -104,8 +201,10 @@ PY
 fetch_remote_yehbp_version() {
     local url="${RAW_VERSION_URL}"
 
-    if command -v curl >/dev/null 2>&1; then
-        curl --connect-timeout 10 --max-time 10 -H 'Accept: application/vnd.github.raw+json' -fsSL "$url" 2>/dev/null | tr -d '[:space:]'
+    if ! require_curl_for_configured_proxy; then
+        return 1
+    elif command -v curl >/dev/null 2>&1; then
+        yehbp_curl --connect-timeout 10 --max-time 10 -H 'Accept: application/vnd.github.raw+json' -fsSL "$url" 2>/dev/null | tr -d '[:space:]'
     elif command -v wget >/dev/null 2>&1; then
         wget --header='Accept: application/vnd.github.raw+json' --timeout=10 -qO- "$url" 2>/dev/null | tr -d '[:space:]'
     else
@@ -148,7 +247,8 @@ read_dockcheck_version() {
 fetch_remote_dockcheck_version() {
     # VERSION is at the top of the upstream script. Fetch only that prefix for
     # the check; download the complete script only after a newer version exists.
-    curl --connect-timeout 10 --max-time 60 -fsSL --range 0-1023 "$DOCKCHECK_URL" 2>/dev/null | \
+    require_curl_for_configured_proxy || return 1
+    yehbp_curl --connect-timeout 10 --max-time 60 -fsSL --range 0-1023 "$DOCKCHECK_URL" 2>/dev/null | \
         sed -nE 's/^VERSION="([^"[:space:]]+)".*/\1/p' | head -n1
 }
 
@@ -266,6 +366,11 @@ uninstall_yehbp_cli() {
     if compgen -G "${INSTALL_BIN}.bak-*" >/dev/null; then
         rm -f ${INSTALL_BIN}.bak-* || return 1
         echo "✅ 已删除旧备份：${INSTALL_BIN}.bak-*"
+    fi
+
+    if [ -e "$SOCKS5_PROXY_CONFIG" ]; then
+        rm -f "$SOCKS5_PROXY_CONFIG" || return 1
+        echo "✅ 已删除 SOCKS5 代理配置：${SOCKS5_PROXY_CONFIG}"
     fi
 }
 
@@ -464,6 +569,7 @@ function show_menu() {
     echo "20）安装mihomo"
     echo "21）安装ddns-go"
     echo "22）安装lucky"
+    echo "23）添加/管理 SOCKS5 代理"
     echo "70) 迁移docker目录"
     echo "80）rtp2httpd IPTV 组播转 HTTP 单播"
     if ! is_openwrt; then
@@ -1133,7 +1239,7 @@ repo_stage_update() {
     rm -rf "$tmp" "$NEXT_DIR" 2>/dev/null || true
     mkdir -p "$tmp" || return 1
 
-    if curl -L "$tar_url" | tar -xz -C "$tmp" --strip-components=1; then
+    if yehbp_curl -L "$tar_url" | tar -xz -C "$tmp" --strip-components=1; then
       mv "$tmp" "$NEXT_DIR"
       WORK_DIR="$NEXT_DIR"
       NEED_SWITCH=1
@@ -1150,7 +1256,7 @@ repo_stage_update() {
   echo "⬇️ [$name] 首次部署，使用 tar.gz 克隆到正式目录：$TARGET_DIR"
   mkdir -p "$TARGET_DIR" || return 1
 
-  if curl -L "$tar_url" | tar -xz -C "$TARGET_DIR" --strip-components=1; then
+  if yehbp_curl -L "$tar_url" | tar -xz -C "$TARGET_DIR" --strip-components=1; then
     WORK_DIR="$TARGET_DIR"
     NEED_SWITCH=0
     return 0
@@ -1447,12 +1553,12 @@ function install_docker() {
     sudo install -m 0755 -d /etc/apt/keyrings
 
     if [[ "$ID" == "debian" ]]; then
-        sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+        yehbp_curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
         sudo chmod a+r /etc/apt/keyrings/docker.asc
         echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian ${VERSION_CODENAME} stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
     elif [[ "$ID" == "ubuntu" ]]; then
-        sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+        yehbp_curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
         sudo chmod a+r /etc/apt/keyrings/docker.asc
         echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${UBUNTU_CODENAME:-$VERSION_CODENAME} stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
@@ -3568,7 +3674,7 @@ install_dockcheck_auto_update() {
 
     echo "📁 安装目录：$base_dir"
     echo "⬇️ 下载 Dockcheck（优先上游 mag37/dockcheck）..."
-    if ! curl --connect-timeout 10 --max-time 60 -fsSL "$DOCKCHECK_URL" -o "$base_dir/dockcheck.sh"; then
+    if ! yehbp_curl --connect-timeout 10 --max-time 60 -fsSL "$DOCKCHECK_URL" -o "$base_dir/dockcheck.sh"; then
         echo "⚠️ 上游 Dockcheck 下载失败，改用 yehbp 内置副本。"
         download_yehbp_asset "assets/docker-auto-update/dockcheck.sh" "$base_dir/dockcheck.sh" || return 1
     fi
@@ -3584,7 +3690,7 @@ install_dockcheck_auto_update() {
             *) echo "❌ 不支持的 CPU 架构：$arch"; return 1 ;;
         esac
         echo "⬇️ 下载 regctl ($reg_arch)..."
-        curl --connect-timeout 20 --max-time 180 -fL \
+        yehbp_curl --connect-timeout 20 --max-time 180 -fL \
             "https://github.com/regclient/regclient/releases/latest/download/regctl-linux-${reg_arch}" \
             -o "$base_dir/bin/regctl" || return 1
         chmod 0755 "$base_dir/bin/regctl"
@@ -3719,7 +3825,7 @@ sync_dockcheck_auto_update_components() {
         if dockcheck_version_gt "$remote_version" "$local_version"; then
             echo "⬇️ 检测到新 Dockcheck：$local_version -> $remote_version"
             dockcheck_source="上游 mag37/dockcheck"
-            if ! curl --connect-timeout 10 --max-time 60 -fsSL "$DOCKCHECK_URL" -o "$tmp_dir/dockcheck.sh"; then
+            if ! yehbp_curl --connect-timeout 10 --max-time 60 -fsSL "$DOCKCHECK_URL" -o "$tmp_dir/dockcheck.sh"; then
                 echo "⚠️ 上游 Dockcheck 下载失败，改用 yehbp 内置副本。"
                 download_yehbp_asset "assets/docker-auto-update/dockcheck.sh" "$tmp_dir/dockcheck.sh" || return 1
                 dockcheck_source="yehbp 内置副本"
@@ -4409,6 +4515,7 @@ while true; do
         20) install_mihomo ;;
         21) install_ddnsgo ;;
         22) install_lucky ;;
+        23) manage_socks5_proxy ;;
         70) migrate_docker_datadir ;;
         71) if is_openwrt; then echo "ℹ️ OpenWrt dockerd 日志配置不使用 daemon.json；该功能当前不适用。"; else optimize_docker_logs; fi ;;
         72) if is_openwrt; then echo "ℹ️ OpenWrt 使用 logd/logread，不使用 journald；该功能不适用。"; else optimize_journald_to_volatile; fi ;;
