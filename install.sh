@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.26.18"
+APP_VERSION="2026.08.26.19"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -1621,15 +1621,16 @@ create_macvlan_network() {
 
     macvlans="${MACVLAN_BY_PARENT[$iface]}"
     if [ -n "$macvlans" ]; then
-      echo "$((i + 1))) $iface  IPv4: ${ip4:-无}  ULA: ${ip6:-无}"
+      echo "$((i + 1))）$iface  IPv4: ${ip4:-无}  ULA: ${ip6:-无}"
       echo "    ↳ 已存在 macvlan: $macvlans"
     else
-      echo "$((i + 1))) $iface  IPv4: ${ip4:-无}  ULA: ${ip6:-无}"
+      echo "$((i + 1))）$iface  IPv4: ${ip4:-无}  ULA: ${ip6:-无}"
     fi
   done
+  echo "0）返回"
 
   local netcard_index networkcard
-  read -r -p "输入网卡序号（0/回车/其他输入退出）: " netcard_index
+  read -r -p "请输入要操作的序号: " netcard_index
 
   # 直接回车：退出（不报错）
   if [ -z "$netcard_index" ]; then
