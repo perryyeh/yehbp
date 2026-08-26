@@ -54,7 +54,6 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 20 | 安装 mihomo                   |
 | 21 | 安装 ddnsgo                   |
 | 22 | 安装 lucky                    |
-| 95 | 添加/管理 SOCKS5 代理          |
 | 70 | 迁移docker目录                  |
 | 71 | 优化docker日志                  |
 | 72 | 优化journald日志                |
@@ -62,6 +61,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 81 | 删除IPTV(rtp2httpd)            |
 | 90 | 创建macvlan bridge            |
 | 91 | 删除macvlan bridge            |
+| 95 | 添加/管理 SOCKS5 代理          |
 | 97 | Dockcheck 安装/删除/管理          |
 | 98 | Dockcheck 检查/更新镜像           |
 | 99 / exit / quit / q | 退出脚本           |

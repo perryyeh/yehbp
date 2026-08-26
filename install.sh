@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.26.04"
+APP_VERSION="2026.08.26.05"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -569,16 +569,16 @@ function show_menu() {
     echo "20）安装mihomo"
     echo "21）安装ddns-go"
     echo "22）安装lucky"
-    echo "95）添加/管理 SOCKS5 代理"
     echo "70) 迁移docker目录"
-    echo "80）安装IPTV(rtp2httpd)"
-    echo "81）删除IPTV(rtp2httpd)"
     if ! is_openwrt; then
         echo "71) 优化docker日志"
         echo "72) 优化journald日志"
     fi
+    echo "80）安装IPTV(rtp2httpd)"
+    echo "81）删除IPTV(rtp2httpd)"
     echo "90）创建macvlan bridge"
     echo "91）删除macvlan bridge"
+    echo "95）添加/管理 SOCKS5 代理"
     if ! is_openwrt; then
         echo "97）Dockcheck 安装/删除/管理"
         echo "98）Dockcheck 检查/更新镜像"
