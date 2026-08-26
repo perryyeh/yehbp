@@ -70,6 +70,8 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 
 此功能面向使用 **NetworkManager + systemd** 的 Linux/NAS 主机，不支持 OpenWrt。它会：
 
+官方项目：[stackia/rtp2httpd](https://github.com/stackia/rtp2httpd)。
+
 1. 菜单 `80` 提供安装/替换配置、仅升级共享二进制和删除配置。安装时先搜索并选择 `dockerapps` 目录；共享二进制固定安装在 `<dockerapps>/rtp2httpd/rtp2httpd`，不会为每个配置重复下载。
 2. 输入配置名，例如 `tel` 会创建 `rtp2httpd_tel.conf`、状态文件 `rtp2httpd_tel.env` 和开机启动服务 `rtp2httpd_tel.service`；留空时自动使用最小未占用编号 `_1`、`_2`。
 3. 分别输入组播 VLAN ID 与 FCC/DHCP VLAN ID，以及一个已经配置在本机的 IPv4 监听地址及端口（默认 `5140`）。
@@ -183,7 +185,7 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbpproxy.conf /usr/local/bin/ye
 安装 Dockcheck 时：
 
 - 选择 `dockerapps` 目录后，组件会安装到 `<dockerapps>/_auto_update`。
-- Dockcheck 脚本优先从上游 raw 脚本地址下载：`https://raw.githubusercontent.com/mag37/dockcheck/main/dockcheck.sh`；如该 raw 地址下载失败，则使用 yehbp 仓库内置副本。
+- Dockcheck 脚本直接从上游 raw 脚本地址下载：`https://raw.githubusercontent.com/mag37/dockcheck/main/dockcheck.sh`；上游下载失败时会明确失败，不使用 YehBP 内置副本。
 - 可设置新镜像发布后延迟 N 天再更新。
 - 可选择更新后自动删除 dangling images。
 - 可选择是否启用每日 systemd timer。
@@ -339,7 +341,7 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 | Docker 功能依赖 | `docker`, `docker compose` |
 | 自动更新依赖 | `dockcheck`, `flock`, `python3`, `systemctl`, `regctl` |
 
-其中 Dockcheck 默认从 `mag37/dockcheck` 获取；yehbp 仓库保留一份 `assets/docker-auto-update/dockcheck.sh` 作为 fallback。`regctl` 会在安装 Dockcheck 自动更新时下载到 `_auto_update/bin`。
+其中 Dockcheck 直接从 `mag37/dockcheck` 获取；`regctl` 会在安装 Dockcheck 自动更新时下载到 `_auto_update/bin`。
 
 不同 NAS / Linux 发行版自带命令差异较大，安装前建议先确认基础依赖和 Docker Compose 是否可用。
 

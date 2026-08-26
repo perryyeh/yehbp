@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.26.11"
+APP_VERSION="2026.08.26.12"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -3673,11 +3673,11 @@ install_dockcheck_auto_update() {
     mkdir -p "$root_dir" "$base_dir/bin" "$log_dir" || return 1
 
     echo "📁 安装目录：$base_dir"
-    echo "⬇️ 下载 Dockcheck（优先上游 mag37/dockcheck）..."
-    if ! yehbp_curl --connect-timeout 10 --max-time 60 -fsSL "$DOCKCHECK_URL" -o "$base_dir/dockcheck.sh"; then
-        echo "⚠️ 上游 Dockcheck 下载失败，改用 yehbp 内置副本。"
-        download_yehbp_asset "assets/docker-auto-update/dockcheck.sh" "$base_dir/dockcheck.sh" || return 1
-    fi
+    echo "⬇️ 下载 Dockcheck（上游 mag37/dockcheck）..."
+    yehbp_curl --connect-timeout 10 --max-time 60 -fsSL "$DOCKCHECK_URL" -o "$base_dir/dockcheck.sh" || {
+        echo "❌ 上游 Dockcheck 下载失败。"
+        return 1
+    }
     chmod 0755 "$base_dir/dockcheck.sh"
     bash -n "$base_dir/dockcheck.sh" || return 1
 
@@ -3825,11 +3825,10 @@ sync_dockcheck_auto_update_components() {
         if dockcheck_version_gt "$remote_version" "$local_version"; then
             echo "⬇️ 检测到新 Dockcheck：$local_version -> $remote_version"
             dockcheck_source="上游 mag37/dockcheck"
-            if ! yehbp_curl --connect-timeout 10 --max-time 60 -fsSL "$DOCKCHECK_URL" -o "$tmp_dir/dockcheck.sh"; then
-                echo "⚠️ 上游 Dockcheck 下载失败，改用 yehbp 内置副本。"
-                download_yehbp_asset "assets/docker-auto-update/dockcheck.sh" "$tmp_dir/dockcheck.sh" || return 1
-                dockcheck_source="yehbp 内置副本"
-            fi
+            yehbp_curl --connect-timeout 10 --max-time 60 -fsSL "$DOCKCHECK_URL" -o "$tmp_dir/dockcheck.sh" || {
+                echo "❌ 上游 Dockcheck 下载失败。"
+                return 1
+            }
             bash -n "$tmp_dir/dockcheck.sh" || return 1
             dockcheck_update=true
         else
