@@ -476,7 +476,7 @@ rtp2httpd_delete() {
 
 manage_rtp2httpd() {
     local choice
-    echo "\n=== 安装/删除/升级 IPTV（rtp2httpd） ==="
+    printf '\n=== 安装/删除/升级 IPTV（rtp2httpd） ===\n'
     echo "1) 安装 / 替换配置"
     echo "2) 仅升级 rtp2httpd 二进制"
     echo "3) 删除配置"

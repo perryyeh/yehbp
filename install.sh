@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.26.08"
+APP_VERSION="2026.08.26.09"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -4473,7 +4473,7 @@ EOF
 
 # ========== IPTV rtp2httpd ==========
 
-manage_rtp2httpd_menu() {
+load_rtp2httpd_asset() {
     local asset
     asset="$(mktemp /tmp/yehbp-rtp2httpd.XXXXXX)" || return 1
     if ! download_yehbp_asset "assets/iptv/rtp2httpd.sh" "$asset" || ! bash -n "$asset"; then
@@ -4484,7 +4484,24 @@ manage_rtp2httpd_menu() {
     # shellcheck disable=SC1090
     . "$asset"
     rm -f "$asset"
-    manage_rtp2httpd
+}
+
+manage_rtp2httpd_menu() {
+    local choice
+
+    printf '\n=== 安装/删除/升级 IPTV（rtp2httpd） ===\n'
+    echo "1) 安装 / 替换配置"
+    echo "2) 仅升级 rtp2httpd 二进制"
+    echo "3) 删除配置"
+    echo "0) 返回"
+    read -r -p "请选择: " choice
+    case "$choice" in
+        1) load_rtp2httpd_asset && rtp2httpd_install ;;
+        2) load_rtp2httpd_asset && rtp2httpd_upgrade ;;
+        3) load_rtp2httpd_asset && rtp2httpd_delete ;;
+        0|"") return 0 ;;
+        *) echo "❌ 无效选择。"; return 1 ;;
+    esac
 }
 
 # ========== 主循环 ==========
