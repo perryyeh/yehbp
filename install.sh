@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.26.20"
+APP_VERSION="2026.08.26.21"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -1921,9 +1921,8 @@ create_macvlan_bridge() {
     done
     echo "  0）返回"
 
-    read -r -p "请输入要操作的序号（回车默认 1）: " idx
-    [ "$idx" = "0" ] && return 0
-    idx=${idx:-1}
+    read -r -p "请输入要操作的序号: " idx
+    [ -n "$idx" ] && [ "$idx" != "0" ] || return 0
     if ! [[ "$idx" =~ ^[0-9]+$ ]] || [ "$idx" -lt 1 ] || [ "$idx" -gt "${#macvlan_networks[@]}" ]; then
         echo "❌ 输入序号无效。"
         return 1
