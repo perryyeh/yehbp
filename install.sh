@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.26.28"
+APP_VERSION="2026.08.27.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -457,85 +457,28 @@ check_yehbp_update
 
 # ========== 环境准备 ==========
 
-install_dependencies() {
-    echo "🔧 检查并安装依赖（自动适配系统：${PLATFORM}）..."
+check_dependencies() {
+    # Do not invoke a package manager on every menu launch. NAS vendors may
+    # intentionally keep APT/OPKG in a partially managed state; an unrelated
+    # package can otherwise block YehBP from starting.
+    local dep
+    local -a missing=()
 
-    deps=(ipcalc curl jq tar python3)
-
-    need_install() {
-        ! command -v "$1" >/dev/null 2>&1
-    }
-
-    if is_openwrt; then
-        # OpenWrt ships /bin/ipcalc.sh, whose CLI is not compatible with the
-        # ipcalc utility used by this script. CIDR fallback calculations use
-        # python3 on this platform instead.
-        deps=(curl jq tar python3)
-        echo "📦 使用 OpenWrt opkg 安装依赖"
-        local to_install=()
-        for dep in "${deps[@]}"; do
-            if need_install "$dep"; then
-                to_install+=("$dep")
-            else
-                echo "✅ $dep 已安装"
-            fi
-        done
-
-        if [ ${#to_install[@]} -gt 0 ]; then
-            echo "⬇️ 正在安装缺少的依赖: ${to_install[*]}"
-            opkg update && opkg install "${to_install[@]}" || {
-                echo "❌ OpenWrt 依赖安装失败：${to_install[*]}"
-                return 1
-            }
+    # ipcalc is optional: get_subnet_v4 uses Python as a portable fallback.
+    for dep in curl jq tar python3; do
+        if ! command -v "$dep" >/dev/null 2>&1; then
+            missing+=("$dep")
         fi
+    done
+
+    if [ ${#missing[@]} -eq 0 ]; then
+        echo "✅ 基础依赖已就绪。"
         return 0
     fi
 
-    # === 1️⃣ Debian / Ubuntu / Armbian ===
-    if command -v apt-get >/dev/null 2>&1; then
-        echo "📦 使用 apt-get 安装依赖"
-        local to_install=()
-        for dep in "${deps[@]}"; do
-            if need_install "$dep"; then
-                to_install+=("$dep")
-            else
-                echo "✅ $dep 已安装"
-            fi
-        done
-
-        if [ ${#to_install[@]} -gt 0 ]; then
-            echo "⬇️ 正在安装缺少的依赖: ${to_install[*]}"
-            apt-get update
-            apt-get install -y "${to_install[@]}"
-        fi
-        return 0
-    fi
-
-    # === 2️⃣ 群晖 / 飞牛 OS（Entware）===
-    if [ -x /opt/bin/opkg ]; then
-        echo "📦 使用 Entware(opkg) 安装依赖"
-        export PATH=/opt/bin:$PATH
-
-        local to_install=()
-        for dep in "${deps[@]}"; do
-            if need_install "$dep"; then
-                to_install+=("$dep")
-            else
-                echo "✅ $dep 已安装"
-            fi
-        done
-
-        if [ ${#to_install[@]} -gt 0 ]; then
-             echo "⬇️ 正在安装缺少的依赖: ${to_install[*]}"
-            /opt/bin/opkg update
-            /opt/bin/opkg install "${to_install[@]}"
-        fi
-
-        return 0
-    fi
-
-    echo "❌ 未识别的系统，无法自动安装依赖"
-    echo "👉 请手动安装：${deps[*]}"
+    echo "⚠️ 缺少基础命令：${missing[*]}"
+    echo "ℹ️ YehBP 不会自动运行 apt/opkg 安装它们，避免 NAS 的既有软件包问题阻止启动。"
+    echo "ℹ️ 请按系统实际情况单独安装；缺少的功能在使用时会提示失败。"
     return 1
 }
 
@@ -738,22 +681,20 @@ get_subnet_v4() {
     local prefix_len
     prefix_len=$(ip -4 addr show "$iface" | grep inet | awk '{print $2}' | cut -d'/' -f2)
 
-    if [ -n "$prefix_len" ] && is_openwrt; then
+    if [ -n "$prefix_len" ] && command -v python3 >/dev/null 2>&1; then
       cidr=$(python3 - "$ip/$prefix_len" <<'PY'
 import ipaddress
 import sys
 print(ipaddress.IPv4Interface(sys.argv[1]).network)
 PY
 )
-    else
+    elif [ -n "$prefix_len" ] && command -v ipcalc >/dev/null 2>&1; then
       local ipcalc_out
-      # 移除 -n 选项以提高兼容性（Busybox ipcalc 可能不支持，或者输出不同）
+      # Fallback for systems without Python 3. Supports both Debian and
+      # BusyBox/Entware output formats.
       ipcalc_out=$(ipcalc "$ip/$prefix_len" 2>/dev/null)
 
-      # 1. 尝试 Debian 格式 (Network: 192.168.1.0/24)
       cidr=$(echo "$ipcalc_out" | grep "Network:" | awk '{print $2}')
-
-      # 2. 尝试 Busybox/Entware 格式 (NETWORK=192.168.1.0 + PREFIX=24)
       if [ -z "$cidr" ]; then
         local net_val prefix_val
         net_val=$(echo "$ipcalc_out" | grep "NETWORK=" | cut -d= -f2)
@@ -4509,7 +4450,7 @@ manage_rtp2httpd_menu() {
 
 # ========== 主循环 ==========
 
-install_dependencies
+check_dependencies || true
 show_menu
 
 while true; do
