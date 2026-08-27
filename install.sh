@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.27.04"
+APP_VERSION="2026.08.27.05"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -4626,7 +4626,7 @@ install_dependencies
 show_menu
 
 while true; do
-    if ! read -r -p "请输入要操作的序号: " choice; then
+    if ! read -r -p "请输入主菜单序号: " choice; then
         echo
         echo "退出脚本。"
         exit 0
