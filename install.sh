@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.27.02"
+APP_VERSION="2026.08.27.03"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -583,6 +583,29 @@ install_dependencies() {
     echo "❌ 未识别的系统，无法自动安装依赖"
     echo "👉 请手动安装：${to_install[*]}"
     return 1
+}
+
+install_python3_for_dockcheck() {
+    command -v python3 >/dev/null 2>&1 && return 0
+
+    echo "⬇️ Dockcheck 自动更新需要 python3，正在安装…"
+    if is_openwrt; then
+        opkg update && opkg install python3
+    elif command -v apt-get >/dev/null 2>&1; then
+        apt-get update && apt-get install -y python3
+    elif [ -x /opt/bin/opkg ]; then
+        export PATH=/opt/bin:$PATH
+        /opt/bin/opkg update && /opt/bin/opkg install python3
+    else
+        echo "❌ 未识别的系统，无法自动安装 python3。"
+        return 1
+    fi
+
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "❌ python3 安装后仍未找到。"
+        return 1
+    fi
+    echo "✅ python3 已安装：$(python3 --version 2>&1)"
 }
 
 echo "⚠️ 请以 root 权限运行 ${APP_TITLE}"
@@ -3710,8 +3733,7 @@ install_dockcheck_auto_update() {
         return 1
     fi
     if ! command -v python3 >/dev/null 2>&1; then
-        echo "❌ 未检测到 python3。"
-        return 1
+        install_python3_for_dockcheck || return 1
     fi
 
     local root_dir base_dir log_dir enable_timer update_time delay_days prune_ans auto_prune timer_calendar check_now rc
