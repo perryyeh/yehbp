@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.27.03"
+APP_VERSION="2026.08.27.04"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -1202,6 +1202,50 @@ remove_incompatible_host_time_mounts() {
   fi
 }
 
+docker_server_api_at_least() {
+  local required_major="$1" required_minor="$2" api major minor
+  api="$(docker version --format '{{.Server.APIVersion}}' 2>/dev/null)" || return 1
+  [[ "$api" =~ ^([0-9]+)\.([0-9]+)$ ]] || return 1
+  major="${BASH_REMATCH[1]}"
+  minor="${BASH_REMATCH[2]}"
+  (( 10#$major > 10#$required_major || (10#$major == 10#$required_major && 10#$minor >= 10#$required_minor) ))
+}
+
+convert_compose_network_mac_for_legacy_docker() {
+  local compose_file="$1" api mac count tmp
+  [ -f "$compose_file" ] || return 0
+
+  api="$(docker version --format '{{.Server.APIVersion}}' 2>/dev/null)" || return 0
+  if docker_server_api_at_least 1 44; then
+    return 0
+  fi
+
+  # Docker API < 1.44 cannot accept EndpointConfig.MacAddress (the Compose
+  # network-level form). Its long-supported service-level mac_address works
+  # for YehBP's single-macvlan service templates.
+  count="$(awk '/^        mac_address:[[:space:]]*/ {n++} END {print n+0}' "$compose_file")"
+  [ "$count" -eq 0 ] && return 0
+  if [ "$count" -ne 1 ]; then
+    echo "❌ [$compose_file] Docker API $api 不支持网络级 mac_address，且该模板含 $count 个 MAC；拒绝进行不安全转换。"
+    return 1
+  fi
+
+  mac="$(awk '/^        mac_address:[[:space:]]*/ {sub(/^[[:space:]]*mac_address:[[:space:]]*/, ""); print; exit}' "$compose_file")"
+  [ -n "$mac" ] || { echo "❌ [$compose_file] 无法读取网络级 mac_address。"; return 1; }
+
+  tmp="$(mktemp "${compose_file}.legacy-mac.XXXXXX")" || return 1
+  awk -v mac="$mac" '
+    /^    networks:[[:space:]]*$/ && !inserted {
+      print "    mac_address: " mac
+      inserted = 1
+    }
+    /^        mac_address:[[:space:]]*/ { next }
+    { print }
+  ' "$compose_file" > "$tmp" || { rm -f "$tmp"; return 1; }
+  mv "$tmp" "$compose_file" || { rm -f "$tmp"; return 1; }
+  echo "ℹ️ Docker API $api：已将 $compose_file 的网络级 mac_address 转为旧版兼容的服务级写法。"
+}
+
 remove_compose_ipv6_fields() {
   local compose_file="${1:-docker-compose.yml}"
   [ -f "$compose_file" ] || return 0
@@ -1381,6 +1425,7 @@ compose_deploy_with_repo_switch() {
   for f in "${files[@]}"; do
     remove_unsupported_compose_endpoint_sysctls "$f"
     remove_incompatible_host_time_mounts "$f"
+    convert_compose_network_mac_for_legacy_docker "$f" || return 1
   done
 
   echo "🔎 [$name] docker compose config 校验..."

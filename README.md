@@ -204,6 +204,8 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbpproxy.conf /usr/local/bin/ye
 
 需要固定容器 MAC 的服务，应在 compose 网络配置中显式写 `mac_address`；Dockcheck 更新后会检查 compose 期望 MAC 与实际容器 MAC 是否一致。
 
+若 Docker daemon API 低于 `1.44`，YehBP 会在部署单 macvlan 服务前自动将网络级 `mac_address` 转为旧版 Docker 兼容的服务级写法；API `1.44` 及以上保持网络级写法不变。
+
 <a id="fakeip-routing"></a>
 
 ### 5. FakeIP 旁路与 IPv6 规划
