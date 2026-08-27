@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.27.01"
+APP_VERSION="2026.08.27.02"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -457,28 +457,131 @@ check_yehbp_update
 
 # ========== 环境准备 ==========
 
-check_dependencies() {
-    # Do not invoke a package manager on every menu launch. NAS vendors may
-    # intentionally keep APT/OPKG in a partially managed state; an unrelated
-    # package can otherwise block YehBP from starting.
-    local dep
-    local -a missing=()
+JQ_VERSION="1.8.2"
 
-    # ipcalc is optional: get_subnet_v4 uses Python as a portable fallback.
-    for dep in curl jq tar python3; do
-        if ! command -v "$dep" >/dev/null 2>&1; then
-            missing+=("$dep")
-        fi
-    done
+install_jq_standalone() {
+    # NAS vendor APT states can be blocked by an unrelated incomplete package.
+    # jq publishes verified standalone Linux binaries, so use one only after
+    # the normal package-manager path failed.
+    local arch asset expected tmp base
 
-    if [ ${#missing[@]} -eq 0 ]; then
-        echo "✅ 基础依赖已就绪。"
-        return 0
+    case "$(uname -m)" in
+        x86_64|amd64) arch="amd64" ;;
+        aarch64|arm64) arch="arm64" ;;
+        *) echo "❌ jq 后备安装不支持 CPU 架构：$(uname -m)"; return 1 ;;
+    esac
+    asset="jq-linux-${arch}"
+    base="https://github.com/jqlang/jq/releases/download/jq-${JQ_VERSION}"
+    tmp="$(mktemp /tmp/yehbp-jq.XXXXXX)" || return 1
+
+    echo "🔄 APT 安装 jq 失败，尝试官方独立 jq ${JQ_VERSION}…"
+    if command -v curl >/dev/null 2>&1; then
+        yehbp_curl -fsSL "$base/$asset" -o "$tmp" || { rm -f "$tmp"; return 1; }
+        expected="$(yehbp_curl -fsSL "$base/sha256sum.txt" | awk -v f="$asset" '$2 == f {print $1}')"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO "$tmp" "$base/$asset" || { rm -f "$tmp"; return 1; }
+        expected="$(wget -qO- "$base/sha256sum.txt" | awk -v f="$asset" '$2 == f {print $1}')"
+    else
+        echo "❌ 未找到 curl 或 wget，无法下载 jq 后备文件。"
+        rm -f "$tmp"
+        return 1
     fi
 
-    echo "⚠️ 缺少基础命令：${missing[*]}"
-    echo "ℹ️ YehBP 不会自动运行 apt/opkg 安装它们，避免 NAS 的既有软件包问题阻止启动。"
-    echo "ℹ️ 请按系统实际情况单独安装；缺少的功能在使用时会提示失败。"
+    if [ -z "$expected" ] || ! printf '%s  %s\n' "$expected" "$tmp" | sha256sum -c - >/dev/null 2>&1; then
+        echo "❌ 官方 jq 文件校验失败，已取消安装。"
+        rm -f "$tmp"
+        return 1
+    fi
+    install -m 0755 "$tmp" /usr/local/bin/jq || { rm -f "$tmp"; return 1; }
+    rm -f "$tmp"
+    if command -v jq >/dev/null 2>&1 && jq --version >/dev/null 2>&1; then
+        echo "✅ 已安装官方独立 jq：$(jq --version)"
+        return 0
+    fi
+    echo "❌ jq 后备安装后仍无法运行。"
+    return 1
+}
+
+install_ipcalc_deb_fallback() {
+    local tmp package
+    command -v apt-get >/dev/null 2>&1 && command -v dpkg >/dev/null 2>&1 || return 1
+    tmp="$(mktemp -d /tmp/yehbp-ipcalc.XXXXXX)" || return 1
+
+    echo "🔄 APT 安装 ipcalc 失败，尝试仅下载并安装 ipcalc 包…"
+    (
+        cd "$tmp" || exit 1
+        apt-get download ipcalc
+    ) || { rm -rf "$tmp"; return 1; }
+    package="$(printf '%s\n' "$tmp"/ipcalc_*.deb)"
+    [ -f "$package" ] || { rm -rf "$tmp"; return 1; }
+    dpkg -i "$package"
+    local rc=$?
+    rm -rf "$tmp"
+    [ "$rc" -eq 0 ] && command -v ipcalc >/dev/null 2>&1
+}
+
+install_dependencies() {
+    echo "🔧 检查并安装基础依赖（自动适配系统：${PLATFORM}）..."
+
+    local dep rc
+    local -a deps=(ipcalc curl jq tar)
+    local -a to_install=()
+    for dep in "${deps[@]}"; do
+        if ! command -v "$dep" >/dev/null 2>&1; then
+            to_install+=("$dep")
+        else
+            echo "✅ $dep 已安装"
+        fi
+    done
+    [ ${#to_install[@]} -eq 0 ] && return 0
+
+    if is_openwrt; then
+        # OpenWrt ships /bin/ipcalc.sh, which is not CLI-compatible here.
+        to_install=()
+        for dep in curl jq tar; do
+            command -v "$dep" >/dev/null 2>&1 || to_install+=("$dep")
+        done
+        [ ${#to_install[@]} -eq 0 ] && return 0
+        echo "⬇️ 正在安装缺少的依赖: ${to_install[*]}"
+        opkg update && opkg install "${to_install[@]}"
+        return $?
+    fi
+
+    if command -v apt-get >/dev/null 2>&1; then
+        echo "⬇️ 正在安装缺少的依赖: ${to_install[*]}"
+        apt-get update && apt-get install -y "${to_install[@]}"
+        rc=$?
+        [ "$rc" -eq 0 ] && return 0
+
+        echo "⚠️ APT 未能完成基础依赖安装；将仅为可独立安装的 jq/ipcalc 尝试后备方式。"
+        if ! command -v jq >/dev/null 2>&1 && [[ " ${to_install[*]} " == *" jq "* ]]; then
+            install_jq_standalone || true
+        fi
+        if ! command -v ipcalc >/dev/null 2>&1 && [[ " ${to_install[*]} " == *" ipcalc "* ]]; then
+            install_ipcalc_deb_fallback || true
+        fi
+
+        local -a remaining=()
+        for dep in "${deps[@]}"; do
+            command -v "$dep" >/dev/null 2>&1 || remaining+=("$dep")
+        done
+        if [ ${#remaining[@]} -eq 0 ]; then
+            echo "✅ 基础依赖安装完成。"
+            return 0
+        fi
+        echo "❌ 仍缺少依赖：${remaining[*]}"
+        return "$rc"
+    fi
+
+    if [ -x /opt/bin/opkg ]; then
+        export PATH=/opt/bin:$PATH
+        echo "⬇️ 正在安装缺少的依赖: ${to_install[*]}"
+        /opt/bin/opkg update && /opt/bin/opkg install "${to_install[@]}"
+        return $?
+    fi
+
+    echo "❌ 未识别的系统，无法自动安装依赖"
+    echo "👉 请手动安装：${to_install[*]}"
     return 1
 }
 
@@ -681,20 +784,22 @@ get_subnet_v4() {
     local prefix_len
     prefix_len=$(ip -4 addr show "$iface" | grep inet | awk '{print $2}' | cut -d'/' -f2)
 
-    if [ -n "$prefix_len" ] && command -v python3 >/dev/null 2>&1; then
+    if [ -n "$prefix_len" ] && is_openwrt; then
       cidr=$(python3 - "$ip/$prefix_len" <<'PY'
 import ipaddress
 import sys
 print(ipaddress.IPv4Interface(sys.argv[1]).network)
 PY
 )
-    elif [ -n "$prefix_len" ] && command -v ipcalc >/dev/null 2>&1; then
+    else
       local ipcalc_out
-      # Fallback for systems without Python 3. Supports both Debian and
-      # BusyBox/Entware output formats.
+      # 移除 -n 选项以提高兼容性（Busybox ipcalc 可能不支持，或者输出不同）
       ipcalc_out=$(ipcalc "$ip/$prefix_len" 2>/dev/null)
 
+      # 1. 尝试 Debian 格式 (Network: 192.168.1.0/24)
       cidr=$(echo "$ipcalc_out" | grep "Network:" | awk '{print $2}')
+
+      # 2. 尝试 Busybox/Entware 格式 (NETWORK=192.168.1.0 + PREFIX=24)
       if [ -z "$cidr" ]; then
         local net_val prefix_val
         net_val=$(echo "$ipcalc_out" | grep "NETWORK=" | cut -d= -f2)
@@ -4450,7 +4555,7 @@ manage_rtp2httpd_menu() {
 
 # ========== 主循环 ==========
 
-check_dependencies || true
+install_dependencies
 show_menu
 
 while true; do

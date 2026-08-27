@@ -337,13 +337,13 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 
 | 类型 | 依赖 |
 |---|---|
-| 基础脚本依赖 | `curl`, `jq`, `tar`, `python3`（`ipcalc` 为无 Python 3 时的可选后备） |
+| 基础脚本依赖 | `ipcalc`, `curl`, `jq`, `tar` |
 | Docker 功能依赖 | `docker`, `docker compose` |
 | 自动更新依赖 | `dockcheck`, `flock`, `python3`, `systemctl`, `regctl` |
 
 其中 Dockcheck 直接从 `mag37/dockcheck` 获取；`regctl` 会在安装 Dockcheck 自动更新时下载到 `_auto_update/bin`。
 
-不同 NAS / Linux 发行版自带命令差异较大。YehBP 启动时只检查基础依赖，不会自动执行 `apt`、`opkg` 或其他包管理器安装，避免 NAS 已有的软件包问题阻止启动；请按系统实际情况单独安装缺失命令。
+不同 NAS / Linux 发行版自带命令差异较大，安装前建议先确认基础依赖和 Docker Compose 是否可用。若 Debian/类 Debian NAS 的 APT 被与 YehBP 无关的残缺软件包阻塞，YehBP 会在常规安装失败后：为 `jq` 下载并校验官方独立二进制、为 `ipcalc` 仅下载并安装该单独 `.deb`；不会执行 `apt --fix-broken install`。
 
 - https://github.com/perryyeh/librespeed
 - https://github.com/perryyeh/adguardhome
