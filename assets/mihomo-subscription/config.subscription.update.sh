@@ -1,7 +1,7 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # YehBP Mihomo full-configuration subscription updater.
-# This script is installed beside config.yaml and is invoked by YehBP or a host timer.
-set -euo pipefail
+# Runs inside the Mihomo container; its supervisor owns schedule and core restart.
+set -eu
 umask 077
 
 APP_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
@@ -10,18 +10,15 @@ BACKUP="$APP_DIR/config.macvlan.backup.yaml"
 SUBSCRIPTION_CONF="$APP_DIR/config.subscription.conf"
 LOG_FILE="$APP_DIR/config.subscription.update.log"
 LOCK_DIR="$APP_DIR/.config.subscription.update.lock"
-CONTAINER_NAME="${MIHOMO_CONTAINER_NAME:-}"
+RELOAD_REQUEST="$APP_DIR/.config.subscription.reload.request"
+RELOAD_DONE="$APP_DIR/.config.subscription.reload.done"
+MODE="${1:---once}"
 
 log_event() {
-  local message="$1" body existing tmp
-  mkdir -p "$APP_DIR"
+  message="$1"
   body="$(mktemp "$APP_DIR/.subscription-log.XXXXXX")"
-  {
-    printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S %z')" "$message"
-  } >"$body"
+  printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S %z')" "$message" >"$body"
 
-  # Keep log entries dated within the most recent seven calendar days, newest first.
-  # Python is already required for the structural YAML transformation below.
   existing="$(mktemp "$APP_DIR/.subscription-log-existing.XXXXXX")"
   if [ -f "$LOG_FILE" ]; then
     python3 - "$LOG_FILE" "$existing" <<'PY'
@@ -53,7 +50,6 @@ PY
     printf '\n' >>"$tmp"
     cat "$existing" >>"$tmp"
   fi
-  # Collapse accidental duplicate blank lines before atomically publishing.
   python3 - "$tmp" "$LOG_FILE" <<'PY'
 from pathlib import Path
 import re, sys
@@ -67,49 +63,90 @@ PY
 }
 
 cleanup() {
-  local status=$?
+  status="${1:-$?}"
   rm -rf "$LOCK_DIR" 2>/dev/null || true
   return "$status"
 }
-trap cleanup EXIT INT TERM
+trap 'status=$?; cleanup "$status"' 0 1 2 15
+
+request_reload() {
+  [ "${MIHOMO_SUPERVISOR_BOOT:-0}" = 1 ] && return 0
+  rm -f "$RELOAD_DONE"
+  : >"$RELOAD_REQUEST"
+  [ "${MIHOMO_WAIT_RELOAD:-0}" = 1 ] || return 0
+  i=0
+  while [ "$i" -lt 30 ]; do
+    [ -f "$RELOAD_DONE" ] && return 0
+    sleep 1
+    i=$((i + 1))
+  done
+  log_event "警告：新 config.yaml 已通过校验并已替换，但容器内 Mihomo 未在 30 秒内确认重载。"
+  return 1
+}
+
+CONFIG_CHANGED=0
+
+validate_and_publish() {
+  candidate="$1"
+  if ! /mihomo -t -f "$candidate" >/dev/null 2>&1; then
+    log_event "失败：Mihomo 校验未通过，运行中的 config.yaml 未修改。"
+    return 1
+  fi
+  if cmp -s "$candidate" "$CONFIG"; then
+    log_event "完成：订阅有效，但生成配置未变化，无需重载 Mihomo。"
+    return 0
+  fi
+  mv "$candidate" "$CONFIG"
+  chmod 0600 "$CONFIG"
+  CONFIG_CHANGED=1
+  request_reload
+}
 
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
   log_event "跳过：已有订阅更新任务正在执行。"
   exit 0
 fi
 
+case "$MODE" in
+  --restore)
+    if [ ! -r "$BACKUP" ]; then
+      log_event "失败：未找到 config.macvlan.backup.yaml，拒绝恢复。"
+      exit 1
+    fi
+    candidate="$(mktemp "$APP_DIR/.subscription-restore.XXXXXX.yaml")"
+    cp "$BACKUP" "$candidate"
+    if validate_and_publish "$candidate"; then
+      log_event "完成：已恢复本地 macvlan 配置并请求重载 Mihomo。"
+      exit 0
+    fi
+    rm -f "$candidate"
+    exit 1
+    ;;
+  --once|--scheduled|--internal|"")
+    ;;
+  *)
+    log_event "失败：未知更新参数：$MODE"
+    exit 2
+    ;;
+esac
+
 if [ ! -r "$SUBSCRIPTION_CONF" ]; then
   log_event "失败：未找到 config.subscription.conf。"
   exit 1
 fi
-
-# shellcheck disable=SC1090
-. "$SUBSCRIPTION_CONF"
-URL="${URL:-}"
-if [[ ! "$URL" =~ ^https?://[^[:space:]]+$ ]]; then
-  log_event "失败：config.subscription.conf 中的 URL 无效。"
-  exit 1
-fi
+URL="$(sed -n 's/^URL=//p' "$SUBSCRIPTION_CONF" | sed -n '1p')"
+case "$URL" in
+  http://*|https://*) ;;
+  *) log_event "失败：config.subscription.conf 中的 URL 无效。"; exit 1 ;;
+esac
 if [ ! -r "$BACKUP" ]; then
   log_event "失败：未找到 config.macvlan.backup.yaml，拒绝覆盖当前配置。"
-  exit 1
-fi
-if [ -z "$CONTAINER_NAME" ]; then
-  log_event "失败：未提供 MIHOMO_CONTAINER_NAME。"
-  exit 1
-fi
-if ! command -v docker >/dev/null 2>&1 || ! docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
-  log_event "失败：Mihomo 容器不存在：$CONTAINER_NAME。"
-  exit 1
-fi
-if ! command -v curl >/dev/null 2>&1; then
-  log_event "失败：宿主机未安装 curl。"
   exit 1
 fi
 
 raw="$(mktemp "$APP_DIR/.subscription-download.XXXXXX.yaml")"
 candidate="$(mktemp "$APP_DIR/.subscription-candidate.XXXXXX.yaml")"
-trap 'rm -f "$raw" "$candidate"; cleanup' EXIT INT TERM
+trap 'status=$?; rm -f "$raw" "$candidate"; cleanup "$status"' 0 1 2 15
 
 if ! curl --connect-timeout 15 --max-time 120 --fail --location --silent --show-error "$URL" -o "$raw"; then
   log_event "失败：订阅下载失败，运行中的 config.yaml 未修改。"
@@ -127,7 +164,7 @@ import sys
 try:
     import yaml
 except ImportError:
-    raise SystemExit('缺少 PyYAML：请通过 YehBP 配置菜单安装 python3-yaml 后重试。')
+    raise SystemExit('缺少 PyYAML。')
 
 source_path, backup_path, candidate_path = map(Path, sys.argv[1:])
 try:
@@ -140,8 +177,6 @@ if not isinstance(source, dict):
 if not isinstance(backup, dict):
     raise SystemExit('config.macvlan.backup.yaml 根节点必须是 YAML mapping。')
 
-# Only gateway-owned settings are overlaid. Nodes, groups, rules, and upstream
-# DNS servers remain owned by the full upstream subscription.
 def require_backup(path):
     value = backup
     for part in path:
@@ -161,8 +196,6 @@ def set_path(path, value):
 for key in ('secret', 'bind-address', 'allow-lan', 'ipv6', 'mode',
             'external-controller', 'external-ui', 'external-ui-url'):
     set_path((key,), require_backup((key,)))
-# Unified delay is a local gateway default; it only affects latency measurement
-# for URLTest/Fallback groups and does not modify upstream routing semantics.
 set_path(('unified-delay',), True)
 for key in ('store-selected', 'store-fake-ip'):
     set_path(('profile', key), require_backup(('profile', key)))
@@ -172,8 +205,6 @@ for key in ('enable', 'stack', 'udp-timeout', 'auto-route',
 for key in ('enable', 'listen', 'enhanced-mode', 'respect-rules'):
     set_path(('dns', key), require_backup(('dns', key)))
 
-# Do not introduce fake-IP address families absent from the upstream complete
-# configuration. If present, replace them with the site-local macvlan values.
 source_dns = source.get('dns')
 if not isinstance(source_dns, dict):
     raise SystemExit('订阅 dns 必须是 YAML mapping。')
@@ -196,31 +227,9 @@ then
   exit 1
 fi
 
-# Use the exact core that is currently running to validate the generated file.
-if ! docker cp "$candidate" "$CONTAINER_NAME:/tmp/config.subscription.candidate.yaml" >/dev/null; then
-  log_event "失败：无法将候选配置送入 Mihomo 容器，运行中的 config.yaml 未修改。"
-  exit 1
-fi
-if ! docker exec "$CONTAINER_NAME" /mihomo -t -f /tmp/config.subscription.candidate.yaml >/dev/null 2>&1; then
-  docker exec "$CONTAINER_NAME" rm -f /tmp/config.subscription.candidate.yaml >/dev/null 2>&1 || true
-  log_event "失败：Mihomo 校验未通过，运行中的 config.yaml 未修改。"
-  exit 1
-fi
-docker exec "$CONTAINER_NAME" rm -f /tmp/config.subscription.candidate.yaml >/dev/null 2>&1 || true
-
-if cmp -s "$candidate" "$CONFIG"; then
-  log_event "完成：订阅有效，但生成配置未变化，无需重启 Mihomo。"
+if validate_and_publish "$candidate"; then
+  log_event "完成：订阅有效，已替换 config.yaml 并请求重载 Mihomo。"
   exit 0
 fi
-
-# mv is atomic because candidate and config.yaml share the bind-mounted directory.
-mv "$candidate" "$CONFIG"
-chmod 0600 "$CONFIG"
-if docker restart "$CONTAINER_NAME" >/dev/null; then
-  if docker inspect -f '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null | grep -qx true; then
-    log_event "完成：订阅有效，已替换 config.yaml 并重启 Mihomo。"
-    exit 0
-  fi
-fi
-log_event "警告：新 config.yaml 已通过校验并已替换，但 Mihomo 重启后未处于运行状态；请检查容器日志。"
+rm -f "$candidate"
 exit 1

@@ -69,9 +69,9 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 
 ### 配置 Mihomo 外部订阅（菜单 29）
 
-此功能仅管理 YehBP 安装的 **macvlan Mihomo**，不修改 `docker-compose.yml`。进入菜单后会列出所有已安装实例的容器名与实际 bind-mount 安装目录，必须选择一个目标，因此可安全管理多个 Mihomo 版本/实例。它将完整 Mihomo YAML 订阅下载到临时文件，使用本地 macvlan 网关配置覆写管理密码、控制器/UI、`mode: rule`、`unified-delay: true`、TUN、DNS `:53`、fake-IP 等必要字段；节点、策略组、规则和订阅提供的 DNS 上游保持订阅原样。只有下载、YAML 解析和容器内 `mihomo -t` 全部成功时，才原子替换 `config.yaml` 并重启 Mihomo；失败时保持正在运行的配置不变。
+此功能仅管理 YehBP 安装的 **macvlan Mihomo**。Mihomo Compose 模板会构建一个基于官方镜像的本地运行时，并注入容器内 PID 1 entrypoint；更新循环在该容器内部运行，不依赖宿主机 systemd、crond 或 Docker socket。进入菜单后会列出所有已安装实例的容器名与实际 bind-mount 安装目录，必须选择一个目标，因此可安全管理多个 Mihomo 版本/实例。它将完整 Mihomo YAML 订阅下载到容器内临时文件，使用本地 macvlan 网关配置覆写管理密码、控制器/UI、`mode: rule`、`unified-delay: true`、TUN、DNS `:53`、fake-IP 等必要字段；节点、策略组、规则和订阅提供的 DNS 上游保持订阅原样。只有下载、YAML 解析和容器内 `mihomo -t` 全部成功时，才原子替换 `config.yaml` 并由容器 entrypoint 重载 Mihomo；失败时保持正在运行的配置不变。
 
-首次配置订阅时，现有 `config.yaml` 会备份为 `config.macvlan.backup.yaml`；订阅 URL 和周期保存在权限为 `0600` 的 `config.subscription.conf`，默认每 8 小时更新。systemd 主机使用 timer，OpenWrt/iStoreOS 使用 crond；若两者都不可用，YehBP 拒绝启用自动更新但仍支持手动更新。删除订阅会验证并恢复该备份、重启 Mihomo、删除定时任务及订阅相关文件。日志为 `config.subscription.update.log`，最新记录在前、条目以一个空行分隔，并仅保留最近 7 天。
+首次配置订阅时，现有 `config.yaml` 会备份为 `config.macvlan.backup.yaml`；订阅 URL 和周期保存在权限为 `0600` 的 `config.subscription.conf`，默认每 8 小时更新。entrypoint 在容器启动时刷新一次，之后按该周期执行；即使 OpenWrt/iStoreOS 没有可用宿主机定时器也不受影响。菜单 `2` 通过 `docker exec` 调用同一个容器内更新器并等待重载确认。删除订阅会验证并恢复该备份、由 entrypoint 重载 Mihomo、清理旧版 YehBP 创建的宿主机 timer/crond 项及订阅相关文件。日志为 `config.subscription.update.log`，最新记录在前、条目以一个空行分隔，并仅保留最近 7 天。
 
 ### 安装/删除/升级 IPTV（rtp2httpd）（菜单 30）
 
