@@ -183,14 +183,13 @@ if not isinstance(replace, dict):
     raise SystemExit('config.replace.yaml 根节点必须是 YAML mapping。')
 
 conditional_paths = {
-    ('dns', 'fake-ip-range'),
     ('dns', 'fake-ip-range6'),
 }
 
 def merge(target, overlay, path=()):
     for key, value in overlay.items():
         child_path = path + (key,)
-        # Do not add fake-IP ranges that are absent from the upstream config.
+        # IPv6 fake-IP is optional: do not add it when upstream lacks the key.
         if child_path in conditional_paths and key not in target:
             continue
         if isinstance(value, dict):
