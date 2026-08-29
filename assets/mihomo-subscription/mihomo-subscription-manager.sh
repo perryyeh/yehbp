@@ -110,8 +110,22 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 EOF
-    systemd-analyze verify "/etc/systemd/system/$MIHOMO_SUBSCRIPTION_SERVICE" "/etc/systemd/system/$MIHOMO_SUBSCRIPTION_TIMER" || return 1
-    systemctl daemon-reload && systemctl enable --now "$MIHOMO_SUBSCRIPTION_TIMER" || return 1
+    local output
+    if ! output="$(systemd-analyze verify "/etc/systemd/system/$MIHOMO_SUBSCRIPTION_SERVICE" "/etc/systemd/system/$MIHOMO_SUBSCRIPTION_TIMER" 2>&1)"; then
+      echo "❌ systemd unit 校验失败。"
+      [ -z "$output" ] || printf '%s\n' "$output"
+      return 1
+    fi
+    if ! output="$(systemctl daemon-reload 2>&1)"; then
+      echo "❌ systemd daemon-reload 失败。"
+      [ -z "$output" ] || printf '%s\n' "$output"
+      return 1
+    fi
+    if ! output="$(systemctl enable --now "$MIHOMO_SUBSCRIPTION_TIMER" 2>&1)"; then
+      echo "❌ systemd 定时任务启用失败。"
+      [ -z "$output" ] || printf '%s\n' "$output"
+      return 1
+    fi
     echo "✅ 已创建 systemd 定时任务：每 ${hours} 小时更新一次。"
     return 0
   fi
@@ -139,7 +153,7 @@ EOF
 mihomo_subscription_install_script() {
   local script="$MIHOMO_SUBSCRIPTION_DIR/config.subscription.update.sh"
   download_yehbp_asset "assets/mihomo-subscription/config.subscription.update.sh" "$script" || return 1
-  chmod 0755 "$script"
+  chmod 0700 "$script"
   bash -n "$script"
 }
 
@@ -166,6 +180,7 @@ mihomo_subscription_add_or_replace() {
 
   if [ ! -f "$backup" ]; then
     cp "$MIHOMO_SUBSCRIPTION_DIR/config.yaml" "$backup" || return 1
+    chmod 0600 "$backup"
     echo "✅ 已保存本地 macvlan 配置备份：$backup"
   fi
   mihomo_subscription_install_script || return 1

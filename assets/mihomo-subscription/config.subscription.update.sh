@@ -2,6 +2,7 @@
 # YehBP Mihomo full-configuration subscription updater.
 # This script is installed beside config.yaml and is invoked by YehBP or a host timer.
 set -euo pipefail
+umask 077
 
 APP_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 CONFIG="$APP_DIR/config.yaml"
@@ -61,6 +62,7 @@ text = src.read_text(encoding='utf-8', errors='replace').strip()
 text = re.sub(r'\n{3,}', '\n\n', text)
 Path(dst).write_text((text + '\n') if text else '', encoding='utf-8')
 PY
+  chmod 0600 "$LOG_FILE"
   rm -f "$body" "$existing" "$tmp"
 }
 
@@ -213,6 +215,7 @@ fi
 
 # mv is atomic because candidate and config.yaml share the bind-mounted directory.
 mv "$candidate" "$CONFIG"
+chmod 0600 "$CONFIG"
 if docker restart "$CONTAINER_NAME" >/dev/null; then
   if docker inspect -f '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null | grep -qx true; then
     log_event "完成：订阅有效，已替换 config.yaml 并重启 Mihomo。"
