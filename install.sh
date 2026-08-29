@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.29.07"
+APP_VERSION="2026.08.29.08"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -3851,25 +3851,27 @@ install_dockcheck_auto_update() {
     download_yehbp_asset "assets/docker-auto-update/docker-auto-update.service.tpl" "$base_dir/docker-auto-update.service.tpl" || return 1
     download_yehbp_asset "assets/docker-auto-update/docker-auto-update.timer.tpl" "$base_dir/docker-auto-update.timer.tpl" || return 1
 
-    read -r -p "新镜像发布后延迟 N 天再更新 [0]: " delay_days
-    delay_days="${delay_days:-0}"
-    if ! [[ "$delay_days" =~ ^[0-9]+$ ]]; then
-        echo "❌ 延迟天数必须是数字。"
-        return 1
-    fi
-
-    read -r -p "更新成功后，是否自动删除旧的无用镜像？[y/N]: " prune_ans
-    if [[ "$prune_ans" =~ ^[Yy]$ ]]; then
-        auto_prune=true
-    else
-        auto_prune=false
-    fi
-
     if is_openwrt; then
+        delay_days=0
+        auto_prune=false
         enable_timer=n
         timer_calendar="*-*-* 04:30:00"
-        echo "ℹ️ OpenWrt 手动模式：不创建定时任务；请通过菜单 88 手动检查或更新镜像。"
+        echo "ℹ️ OpenWrt 手动模式：不创建定时任务，固定为不延迟更新、不自动清理镜像；请通过菜单 88 手动检查或更新镜像。"
     else
+        read -r -p "新镜像发布后延迟 N 天再更新 [0]: " delay_days
+        delay_days="${delay_days:-0}"
+        if ! [[ "$delay_days" =~ ^[0-9]+$ ]]; then
+            echo "❌ 延迟天数必须是数字。"
+            return 1
+        fi
+
+        read -r -p "更新成功后，是否自动删除旧的无用镜像？[y/N]: " prune_ans
+        if [[ "$prune_ans" =~ ^[Yy]$ ]]; then
+            auto_prune=true
+        else
+            auto_prune=false
+        fi
+
         read -r -p "是否启用每日自动更新 timer？[y/N]: " enable_timer
         if [[ "$enable_timer" =~ ^[Yy]$ ]]; then
             read -r -p "每天检查时间 HH:MM [04:30]: " update_time

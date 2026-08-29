@@ -186,9 +186,8 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbpproxy.conf /usr/local/bin/ye
 
 - 选择 `dockerapps` 目录后，组件会安装到 `<dockerapps>/_auto_update`。
 - Dockcheck 脚本直接从上游 raw 脚本地址下载：`https://raw.githubusercontent.com/mag37/dockcheck/main/dockcheck.sh`；上游下载失败时会明确失败，不使用 YehBP 内置副本。
-- 可设置新镜像发布后延迟 N 天再更新。
-- 可选择更新后自动删除 dangling images。
-- Linux/NAS 可选择是否启用每日 systemd timer；OpenWrt 始终为手动模式，不创建 cron、procd 或定时任务。
+- Linux/NAS 可设置新镜像发布后延迟 N 天再更新，也可选择更新后自动删除 dangling images 和是否启用每日 systemd timer。
+- OpenWrt 始终为手动模式，不创建 cron、procd 或定时任务；安装固定为不延迟更新、不自动清理镜像。
 
 删除 Dockcheck 时会停用并移除 systemd service/timer（如存在），并可选择是否删除 `_auto_update` 目录。
 
