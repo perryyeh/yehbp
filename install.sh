@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.29.22"
+APP_VERSION="2026.08.29.23"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -2896,6 +2896,96 @@ EOF
     repo_offer_delete_backup "mosdns" "$BAK_DIR" "mosdns"
 }
 
+read_mihomo_template_scalar() {
+    local template="$1" key="$2" value
+
+    [ -r "$template" ] || return 1
+    value="$(awk -v key="$key" '
+        $0 ~ "^[[:space:]]*" key ":[[:space:]]*" {
+            line = $0
+            sub("^[[:space:]]*" key ":[[:space:]]*", "", line)
+            sub(/[[:space:]]+#.*/, "", line)
+            sub(/^[[:space:]]+/, "", line)
+            sub(/[[:space:]]+$/, "", line)
+            quote = substr(line, 1, 1)
+            if ((quote == "\"" || quote == sprintf("%c", 39)) && substr(line, length(line), 1) == quote) {
+                line = substr(line, 2, length(line) - 2)
+            }
+            print line
+            exit
+        }
+    ' "$template")"
+    [ -n "$value" ] || return 1
+    printf '%s\n' "$value"
+}
+
+install_mihomo_external_ui() {
+    local config_template="$1" ui_dir ui_url archive stage content target backup archive_root_count
+
+    ui_dir="$(read_mihomo_template_scalar "$config_template" "external-ui")" || {
+        echo "❌ 无法从 $config_template 读取 external-ui。"
+        return 1
+    }
+    ui_url="$(read_mihomo_template_scalar "$config_template" "external-ui-url")" || {
+        echo "❌ 无法从 $config_template 读取 external-ui-url。"
+        return 1
+    }
+    case "$ui_dir" in
+        ""|/*|.|..|../*|*/../*|*/..)
+            echo "❌ external-ui 必须是安装目录内的相对路径：$ui_dir"
+            return 1
+            ;;
+    esac
+
+    require_curl_for_configured_proxy || return 1
+    archive="$(mktemp "$WORK_DIR/.mihomo-ui.XXXXXX")" || return 1
+    stage="$(mktemp -d "$WORK_DIR/.mihomo-ui.XXXXXX")" || {
+        rm -f "$archive"
+        return 1
+    }
+    content="$stage/content"
+
+    echo "⬇️ 正在从模板 external-ui-url 下载 Mihomo UI…"
+    if ! yehbp_curl --connect-timeout 15 --max-time 120 --retry 2 --retry-all-errors --fail --location --silent --show-error "$ui_url" -o "$archive"; then
+        echo "❌ Mihomo UI 下载失败，取消安装。"
+        rm -rf "$stage" "$archive"
+        return 1
+    fi
+    if ! tar -tzf "$archive" >/dev/null 2>&1; then
+        echo "❌ external-ui-url 未返回有效的 tar.gz 归档，取消安装。"
+        rm -rf "$stage" "$archive"
+        return 1
+    fi
+    archive_root_count="$(tar -tzf "$archive" | awk -F/ 'NF { print $1 }' | sort -u | wc -l | tr -d '[:space:]')"
+    if [ "$archive_root_count" != "1" ]; then
+        echo "❌ Mihomo UI 归档必须只有一个顶层目录，取消安装。"
+        rm -rf "$stage" "$archive"
+        return 1
+    fi
+
+    mkdir -p "$content" || { rm -rf "$stage" "$archive"; return 1; }
+    if ! tar -xzf "$archive" -C "$content" --strip-components=1 || [ ! -f "$content/index.html" ]; then
+        echo "❌ Mihomo UI 解压或内容校验失败（缺少 index.html），取消安装。"
+        rm -rf "$stage" "$archive"
+        return 1
+    fi
+
+    target="$WORK_DIR/$ui_dir"
+    backup="$WORK_DIR/.mihomo-ui.previous-$$"
+    mkdir -p "$(dirname "$target")" || { rm -rf "$stage" "$archive"; return 1; }
+    if [ -e "$target" ]; then
+        mv "$target" "$backup" || { rm -rf "$stage" "$archive"; return 1; }
+    fi
+    if ! mv "$content" "$target"; then
+        echo "❌ Mihomo UI 替换失败。"
+        [ -e "$backup" ] && mv "$backup" "$target" || true
+        rm -rf "$stage" "$archive"
+        return 1
+    fi
+    rm -rf "$backup" "$stage" "$archive"
+    echo "✅ 已将最新 Mihomo UI 安装到：${ui_dir}（来源：模板 external-ui-url）"
+}
+
 install_mihomo() {
 
     echo "🔧 安装 mihomo"
@@ -2987,6 +3077,7 @@ install_mihomo() {
     cp "$config_template" config.yaml || return 1
     echo "✅ 已选择 compose 模板：$compose_template -> docker-compose.yml"
     echo "✅ 已选择 mihomo 配置模板：$config_template -> config.yaml"
+    install_mihomo_external_ui "$config_template" || return 1
 
     # 6) 替换compose配置中的容器相关字段
     if [ "$CONTAINER_NAME" != "$DEFAULT_CONTAINER_NAME" ]; then
