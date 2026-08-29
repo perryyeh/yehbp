@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.29.20"
+APP_VERSION="2026.08.29.21"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -688,7 +688,33 @@ function show_menu() {
 # 全局保存用户选择的 macvlan 网络名
 SELECTED_MACVLAN=""
 
-# 选择macvlan
+# 显示一个 macvlan 网络的关键地址范围；供所有 macvlan 选择菜单复用。
+show_macvlan_network_summary() {
+    local index="$1" net="$2" network_info
+    local parent subnet4 iprange4 subnet6 iprange6
+
+    network_info="$(docker network inspect "$net" 2>/dev/null)" || {
+        echo "  ${index}）${net}（无法读取网络配置）"
+        return 1
+    }
+
+    parent="$(echo "$network_info" | jq -r '.[0].Options.parent // "未设置"')"
+    subnet4="$(echo "$network_info" | jq -r '.[0].IPAM.Config[]? | select((.Subnet // "") | contains(":") | not) | .Subnet // empty' | head -n1)"
+    iprange4="$(echo "$network_info" | jq -r '.[0].IPAM.Config[]? | select((.Subnet // "") | contains(":") | not) | .IPRange // empty' | head -n1)"
+    subnet6="$(echo "$network_info" | jq -r '.[0].IPAM.Config[]? | select((.Subnet // "") | contains(":")) | .Subnet // empty' | head -n1)"
+    iprange6="$(echo "$network_info" | jq -r '.[0].IPAM.Config[]? | select((.Subnet // "") | contains(":")) | .IPRange // empty' | head -n1)"
+
+    [ -n "$subnet4" ] || subnet4="未配置"
+    [ -n "$iprange4" ] || iprange4="未设置（使用 Subnet）"
+    [ -n "$subnet6" ] || subnet6="未配置"
+    [ -n "$iprange6" ] || iprange6="未设置（使用 Subnet）"
+
+    echo "  ${index}）${net}  [parent: ${parent}]"
+    echo "      IPv4 Subnet: ${subnet4}  IPRange: ${iprange4}"
+    echo "      IPv6 Subnet: ${subnet6}  IPRange: ${iprange6}"
+}
+
+# 选择 macvlan；所有容器安装和 macvlan bridge 配置共用。
 select_macvlan_or_exit() {
     mapfile -t macvlan_networks < <(docker network ls --format '{{.Name}}' | grep '^macvlan' || true)
     if [ ${#macvlan_networks[@]} -eq 0 ]; then
@@ -698,17 +724,17 @@ select_macvlan_or_exit() {
 
     echo "可用的 macvlan 网络："
     for i in "${!macvlan_networks[@]}"; do
-        echo "  $((i + 1))）${macvlan_networks[$i]}"
+        show_macvlan_network_summary "$((i + 1))" "${macvlan_networks[$i]}"
     done
     echo "  0）返回"
 
     read -r -p "请输入要操作的序号: " choice
     if [ -z "$choice" ]; then
-        echo "✅ 已退出安装。"
+        echo "✅ 已取消操作。"
         return 2
     fi
     if [[ ! "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "${#macvlan_networks[@]}" ]; then
-        echo "ℹ️ 已退出安装。"
+        echo "ℹ️ 已取消操作。"
         return 2
     fi
 
@@ -2060,27 +2086,11 @@ install_openwrt_macvlan_persistence() {
 create_macvlan_bridge() {
     echo "🔧 开始创建/更新 macvlan bridge（宿主机 <-> macvlan 网络互通）"
 
-    # 1. 列出所有 macvlan 开头的 docker 网络
-    mapfile -t macvlan_networks < <(docker network ls --format '{{.Name}}' | grep '^macvlan' || true)
-    if [ ${#macvlan_networks[@]} -eq 0 ]; then
-        echo "❌ 未发现任何以 macvlan 开头的 Docker 网络，请先创建 macvlan 网络。"
-        return 1
-    fi
-
-    echo "可用的 macvlan 网络："
-    for i in "${!macvlan_networks[@]}"; do
-        echo "  $((i + 1))）${macvlan_networks[$i]}"
-    done
-    echo "  0）返回"
-
-    read -r -p "请输入要操作的序号: " idx
-    [ -n "$idx" ] && [ "$idx" != "0" ] || return 0
-    if ! [[ "$idx" =~ ^[0-9]+$ ]] || [ "$idx" -lt 1 ] || [ "$idx" -gt "${#macvlan_networks[@]}" ]; then
-        return 0
-    fi
-
-    macvlan_name="${macvlan_networks[$((idx - 1))]}"
-    echo "📡 选中的 macvlan 网络: $macvlan_name"
+    # 1. 复用所有容器安装项的 macvlan 选择与地址范围展示。
+    select_macvlan_or_exit
+    local select_status=$?
+    [ "$select_status" -eq 0 ] || return "$select_status"
+    macvlan_name="$SELECTED_MACVLAN"
 
     # 2. 获取网络配置
     network_info=$(docker network inspect "$macvlan_name" 2>/dev/null)
@@ -3470,15 +3480,14 @@ clean_macvlan_network() {
         return 0
     fi
 
-    # 列表展示（含是否使用中）
+    # 列表展示（地址范围与是否使用中）
     echo "检测到以下 macvlan 网络："
     for i in "${!macvlan_networks[@]}"; do
         net="${macvlan_networks[$i]}"
+        show_macvlan_network_summary "$((i + 1))" "$net"
         containers=$(docker network inspect -f '{{range $id,$c := .Containers}}{{printf "%s " $c.Name}}{{end}}' "$net" 2>/dev/null)
         if [ -n "$containers" ]; then
-            echo "  $((i + 1))）$net    (使用中的容器: $containers)"
-        else
-            echo "  $((i + 1))）$net"
+            echo "      使用中的容器: $containers"
         fi
     done
     echo "  0）返回"
