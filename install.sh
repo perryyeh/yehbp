@@ -2,12 +2,12 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.29.09"
+APP_VERSION="2026.08.29.10"
 REPO_URL="https://github.com/perryyeh/yehbp"
-GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
-RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
-RAW_VERSION_URL="${GITHUB_CONTENTS_BASE}/VERSION?ref=main"
-RAW_ASSET_BASE="${GITHUB_CONTENTS_BASE}"
+RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
+RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
+RAW_VERSION_URL="${RAW_GITHUB_BASE}/VERSION"
+RAW_ASSET_BASE="${RAW_GITHUB_BASE}"
 DOCKCHECK_URL="https://raw.githubusercontent.com/mag37/dockcheck/main/dockcheck.sh"
 INSTALL_BIN="/usr/local/bin/${APP_NAME}"
 SOCKS5_PROXY_CONFIG="$(dirname "$INSTALL_BIN")/${APP_NAME}proxy.conf"
@@ -139,12 +139,12 @@ download_yehbp_script() {
     if ! require_curl_for_configured_proxy; then
         return 1
     elif command -v curl >/dev/null 2>&1; then
-        yehbp_curl --connect-timeout 10 --max-time 60 -H 'Accept: application/vnd.github.raw+json' -fsSL "$url" -o "$dst" || {
+        yehbp_curl --connect-timeout 10 --max-time 60 -fsSL "$url" -o "$dst" || {
             echo "❌ 下载失败，本次不更新。"
             return 1
         }
     elif command -v wget >/dev/null 2>&1; then
-        wget --header='Accept: application/vnd.github.raw+json' --timeout=60 -qO "$dst" "$url" || {
+        wget --timeout=60 -qO "$dst" "$url" || {
             echo "❌ 下载失败，本次不更新。"
             return 1
         }
@@ -162,11 +162,11 @@ download_yehbp_script() {
 download_yehbp_asset() {
     local src="$1"
     local dst="$2"
-    local url="${RAW_ASSET_BASE}/${src}?ref=main"
+    local url="${RAW_ASSET_BASE}/${src}"
 
     mkdir -p "$(dirname "$dst")" || return 1
     require_curl_for_configured_proxy || return 1
-    yehbp_curl --connect-timeout 10 --max-time 60 -H 'Accept: application/vnd.github.raw+json' -fsSL "$url" -o "$dst" || {
+    yehbp_curl --connect-timeout 10 --max-time 60 -fsSL "$url" -o "$dst" || {
         rm -f "$dst"
         echo "❌ 下载失败（60s 超时或网络错误）：$src；请重试。"
         return 1
@@ -204,9 +204,9 @@ fetch_remote_yehbp_version() {
     if ! require_curl_for_configured_proxy; then
         return 1
     elif command -v curl >/dev/null 2>&1; then
-        yehbp_curl --connect-timeout 10 --max-time 10 -H 'Accept: application/vnd.github.raw+json' -fsSL "$url" 2>/dev/null | tr -d '[:space:]'
+        yehbp_curl --connect-timeout 10 --max-time 10 -fsSL "$url" 2>/dev/null | tr -d '[:space:]'
     elif command -v wget >/dev/null 2>&1; then
-        wget --header='Accept: application/vnd.github.raw+json' --timeout=10 -qO- "$url" 2>/dev/null | tr -d '[:space:]'
+        wget --timeout=10 -qO- "$url" 2>/dev/null | tr -d '[:space:]'
     else
         return 1
     fi
