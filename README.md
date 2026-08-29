@@ -52,7 +52,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 14 | 安装 AdGuardHome              |
 | 19 | 安装 mosdns                   |
 | 20 | 安装 mihomo                   |
-| 21 | 配置 mihomo 订阅             |
+| 21 | 配置mihomo订阅             |
 | 22 | 安装 ddnsgo                   |
 | 23 | 安装 lucky                    |
 | 30 | 安装/删除/升级 IPTV（rtp2httpd） |
@@ -67,7 +67,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 99 / exit / quit / q | 退出脚本           |
 | 999 / del / delete / uninstall / remove / rm | 删除 `yehbp` |
 
-### 配置 Mihomo 订阅（菜单 21）
+### 配置Mihomo订阅（菜单 21）
 
 此功能仅管理 YehBP 安装的 **macvlan Mihomo**。Mihomo Compose 模板会构建一个基于官方镜像的本地运行时，并注入容器内 PID 1 entrypoint；更新循环在该容器内部运行，不依赖宿主机 systemd、crond 或 Docker socket。进入菜单后会列出所有已安装实例的容器名与实际 bind-mount 安装目录，必须选择一个目标，因此可安全管理多个 Mihomo 版本/实例。它将完整 Mihomo YAML 订阅下载到容器内临时文件，使用本地 macvlan 网关配置覆写管理密码、控制器/UI、`mode: rule`、`unified-delay: true`、TUN、DNS `:53`、fake-IP 等必要字段；节点、策略组、规则和订阅提供的 DNS 上游保持订阅原样。只有下载、YAML 解析和容器内 `mihomo -t` 全部成功时，才原子替换 `config.yaml` 并由容器 entrypoint 重载 Mihomo；失败时保持正在运行的配置不变。
 

@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.29.21"
+APP_VERSION="2026.08.29.22"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -664,7 +664,7 @@ function show_menu() {
     echo "14）安装adguardhome"
     echo "19）安装mosdns"
     echo "20）安装mihomo"
-    echo "21）配置 mihomo 订阅"
+    echo "21）配置mihomo订阅"
     echo "22）安装ddns-go"
     echo "23）安装lucky"
     echo "30）安装/删除/升级 IPTV（rtp2httpd）"
@@ -706,12 +706,12 @@ show_macvlan_network_summary() {
 
     [ -n "$subnet4" ] || subnet4="未配置"
     [ -n "$iprange4" ] || iprange4="未设置（使用 Subnet）"
-    [ -n "$subnet6" ] || subnet6="未配置"
-    [ -n "$iprange6" ] || iprange6="未设置（使用 Subnet）"
-
     echo "  ${index}）${net}  [parent: ${parent}]"
     echo "      IPv4 Subnet: ${subnet4}  IPRange: ${iprange4}"
-    echo "      IPv6 Subnet: ${subnet6}  IPRange: ${iprange6}"
+    if [ -n "$subnet6" ]; then
+        [ -n "$iprange6" ] || iprange6="未设置（使用 Subnet）"
+        echo "      IPv6 Subnet: ${subnet6}  IPRange: ${iprange6}"
+    fi
 }
 
 # 选择 macvlan；所有容器安装和 macvlan bridge 配置共用。
