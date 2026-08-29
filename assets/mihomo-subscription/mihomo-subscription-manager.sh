@@ -70,13 +70,40 @@ mihomo_subscription_install_script() {
   sh -n "$script"
 }
 
+# New Mihomo installs already contain this file. Fetch it only for deployments
+# created before the overlay template existed; never overwrite local customizations.
+mihomo_subscription_install_replace_template() {
+  local replace="$MIHOMO_SUBSCRIPTION_DIR/config.replace.yaml" tmp
+  [ -r "$replace" ] && return 0
+  tmp="$(mktemp "$MIHOMO_SUBSCRIPTION_DIR/.config.replace.XXXXXX")" || return 1
+  if ! yehbp_curl --connect-timeout 10 --max-time 60 -fsSL \
+      "https://raw.githubusercontent.com/perryyeh/mihomo/main/config.replace.yaml" -o "$tmp"; then
+    rm -f "$tmp"
+    echo "❌ 无法下载 Mihomo config.replace.yaml；请重试。"
+    return 1
+  fi
+  if ! python3 - "$tmp" <<'PY'
+from pathlib import Path
+import sys, yaml
+value = yaml.safe_load(Path(sys.argv[1]).read_text(encoding='utf-8'))
+if not isinstance(value, dict):
+    raise SystemExit('config.replace.yaml 根节点必须是 YAML mapping。')
+PY
+  then
+    rm -f "$tmp"
+    echo "❌ 下载的 config.replace.yaml 无效。"
+    return 1
+  fi
+  chmod 0600 "$tmp" && mv "$tmp" "$replace"
+}
+
 mihomo_subscription_runtime_ready() {
   if ! docker inspect -f '{{.State.Running}}' "$MIHOMO_SUBSCRIPTION_CONTAINER" 2>/dev/null | grep -qx true; then
     echo "❌ Mihomo 容器未运行。"
     return 1
   fi
   if ! docker exec "$MIHOMO_SUBSCRIPTION_CONTAINER" sh -c '
-    test -x /root/.config/mihomo/mihomo-entrypoint.sh &&
+    test -x /root/.config/mihomo/entrypoint.sh &&
     command -v curl >/dev/null &&
     command -v python3 >/dev/null &&
     python3 -c "import yaml"
@@ -123,6 +150,7 @@ mihomo_subscription_add_or_replace() {
     echo "✅ 已保存本地 macvlan 配置备份：$backup"
   fi
   mihomo_subscription_install_script || return 1
+  mihomo_subscription_install_replace_template || return 1
   umask 077
   printf 'URL=%q\nINTERVAL_HOURS=%s\n' "$url" "$hours" >"$conf"
   chmod 0600 "$conf"
@@ -141,6 +169,7 @@ mihomo_subscription_manual_update() {
   [ -f "$MIHOMO_SUBSCRIPTION_DIR/config.subscription.conf" ] || { echo "❌ 未配置外部订阅。"; return 1; }
   mihomo_subscription_runtime_ready || return 1
   mihomo_subscription_install_script || return 1
+  mihomo_subscription_install_replace_template || return 1
   mihomo_subscription_run_update
 }
 

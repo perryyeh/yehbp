@@ -7,6 +7,7 @@ umask 077
 APP_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 CONFIG="$APP_DIR/config.yaml"
 BACKUP="$APP_DIR/config.macvlan.backup.yaml"
+REPLACE="$APP_DIR/config.replace.yaml"
 SUBSCRIPTION_CONF="$APP_DIR/config.subscription.conf"
 LOG_FILE="$APP_DIR/config.subscription.update.log"
 LOCK_DIR="$APP_DIR/.config.subscription.update.lock"
@@ -143,6 +144,10 @@ if [ ! -r "$BACKUP" ]; then
   log_event "失败：未找到 config.macvlan.backup.yaml，拒绝覆盖当前配置。"
   exit 1
 fi
+if [ ! -r "$REPLACE" ]; then
+  log_event "失败：未找到 config.replace.yaml，拒绝覆盖当前配置。"
+  exit 1
+fi
 
 raw="$(mktemp "$APP_DIR/.subscription-download.XXXXXX")"
 candidate="$(mktemp "$APP_DIR/.subscription-candidate.XXXXXX")"
@@ -157,7 +162,7 @@ if [ ! -s "$raw" ]; then
   exit 1
 fi
 
-if ! python3 - "$raw" "$BACKUP" "$candidate" <<'PY'
+if ! python3 - "$raw" "$REPLACE" "$candidate" <<'PY'
 from pathlib import Path
 import copy
 import sys
@@ -166,56 +171,38 @@ try:
 except ImportError:
     raise SystemExit('缺少 PyYAML。')
 
-source_path, backup_path, candidate_path = map(Path, sys.argv[1:])
+source_path, replace_path, candidate_path = map(Path, sys.argv[1:])
 try:
     source = yaml.safe_load(source_path.read_text(encoding='utf-8'))
-    backup = yaml.safe_load(backup_path.read_text(encoding='utf-8'))
+    replace = yaml.safe_load(replace_path.read_text(encoding='utf-8'))
 except Exception as e:
     raise SystemExit(f'YAML 解析失败：{e}')
 if not isinstance(source, dict):
     raise SystemExit('订阅根节点必须是 YAML mapping。')
-if not isinstance(backup, dict):
-    raise SystemExit('config.macvlan.backup.yaml 根节点必须是 YAML mapping。')
+if not isinstance(replace, dict):
+    raise SystemExit('config.replace.yaml 根节点必须是 YAML mapping。')
 
-def require_backup(path):
-    value = backup
-    for part in path:
-        if not isinstance(value, dict) or part not in value:
-            raise SystemExit('本地 macvlan 备份缺少必要字段：' + '.'.join(path))
-        value = value[part]
-    return copy.deepcopy(value)
+conditional_paths = {
+    ('dns', 'fake-ip-range'),
+    ('dns', 'fake-ip-range6'),
+}
 
-def set_path(path, value):
-    target = source
-    for part in path[:-1]:
-        if not isinstance(target.get(part), dict):
-            target[part] = {}
-        target = target[part]
-    target[path[-1]] = value
+def merge(target, overlay, path=()):
+    for key, value in overlay.items():
+        child_path = path + (key,)
+        # Do not add fake-IP ranges that are absent from the upstream config.
+        if child_path in conditional_paths and key not in target:
+            continue
+        if isinstance(value, dict):
+            current = target.get(key)
+            if not isinstance(current, dict):
+                current = {}
+                target[key] = current
+            merge(current, value, child_path)
+        else:
+            target[key] = copy.deepcopy(value)
 
-for key in ('secret', 'bind-address', 'allow-lan', 'ipv6', 'mode',
-            'external-controller', 'external-ui', 'external-ui-url'):
-    set_path((key,), require_backup((key,)))
-set_path(('unified-delay',), True)
-for key in ('store-selected', 'store-fake-ip'):
-    set_path(('profile', key), require_backup(('profile', key)))
-for key in ('enable', 'stack', 'udp-timeout', 'auto-route',
-            'auto-redirect', 'auto-detect-interface'):
-    set_path(('tun', key), require_backup(('tun', key)))
-for key in ('enable', 'listen', 'enhanced-mode', 'respect-rules'):
-    set_path(('dns', key), require_backup(('dns', key)))
-
-source_dns = source.get('dns')
-if not isinstance(source_dns, dict):
-    raise SystemExit('订阅 dns 必须是 YAML mapping。')
-backup_dns = backup.get('dns')
-if not isinstance(backup_dns, dict):
-    raise SystemExit('本地 macvlan 备份 dns 必须是 YAML mapping。')
-for fake_key in ('fake-ip-range', 'fake-ip-range6'):
-    if fake_key in source_dns:
-        if fake_key not in backup_dns:
-            raise SystemExit(f'订阅包含 {fake_key}，但本地 macvlan 备份没有对应目标网段。')
-        source_dns[fake_key] = copy.deepcopy(backup_dns[fake_key])
+merge(source, replace)
 
 candidate_path.write_text(
     yaml.safe_dump(source, allow_unicode=True, sort_keys=False, default_flow_style=False),

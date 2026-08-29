@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.29.23"
+APP_VERSION="2026.08.29.24"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -3073,6 +3073,10 @@ install_mihomo() {
         echo "❌ 缺少 mihomo 配置模板：$config_template"
         return 1
     fi
+    if [ "$MIHOMO_NETWORK_MODE" = "macvlan" ] && [ ! -f config.replace.yaml ]; then
+        echo "❌ 缺少 Mihomo 订阅覆盖模板：config.replace.yaml"
+        return 1
+    fi
     cp "$compose_template" docker-compose.yml || return 1
     cp "$config_template" config.yaml || return 1
     echo "✅ 已选择 compose 模板：$compose_template -> docker-compose.yml"
@@ -3093,6 +3097,7 @@ install_mihomo() {
     # 7) macvlan 模式替换 config.yaml 里的网关；host 模式保持仓库默认配置
     if [ "$MIHOMO_NETWORK_MODE" = "macvlan" ] && [ -f "config.yaml" ] && [ -n "$gateway" ] && [ "$gateway" != "null" ]; then
         sed -i "s/10.0.0.1/${gateway}/g" config.yaml
+        sed -i "s/10.0.0.1/${gateway}/g" config.replace.yaml
     fi
 
     # 8) macvlan 模式写 .env；host 模式清掉旧 .env，避免误导
@@ -3124,6 +3129,7 @@ install_mihomo() {
         if [ "$USE_IPV6" -eq 0 ]; then
             remove_compose_ipv6_fields docker-compose.yml
             remove_config_ipv6_fields config.yaml
+            remove_config_ipv6_fields config.replace.yaml
         fi
     else
         rm -f "$WORK_DIR/.env"
