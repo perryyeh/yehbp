@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.27.06"
+APP_VERSION="2026.08.29.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -3715,12 +3715,15 @@ cleanup_dockcheck_auto_update() {
     base_dir="${root_dir%/}/_auto_update"
 
     if command -v systemctl >/dev/null 2>&1; then
-        echo "🛑 停用 yehbp-docker-auto-update.timer ..."
-        systemctl disable --now yehbp-docker-auto-update.timer >/dev/null 2>&1 || true
+        echo "🛑 停用 docker-auto-update.timer ..."
+        systemctl disable --now docker-auto-update.timer yehbp-docker-auto-update.timer >/dev/null 2>&1 || true
+        rm -f /etc/systemd/system/docker-auto-update.service
+        rm -f /etc/systemd/system/docker-auto-update.timer
         rm -f /etc/systemd/system/yehbp-docker-auto-update.service
         rm -f /etc/systemd/system/yehbp-docker-auto-update.timer
         systemctl daemon-reload || true
-        systemctl reset-failed yehbp-docker-auto-update.service yehbp-docker-auto-update.timer >/dev/null 2>&1 || true
+        systemctl reset-failed docker-auto-update.service docker-auto-update.timer \
+            yehbp-docker-auto-update.service yehbp-docker-auto-update.timer >/dev/null 2>&1 || true
         echo "✅ 已移除 systemd service/timer。"
     else
         echo "ℹ️ 未检测到 systemctl，跳过 systemd service/timer 删除。"
@@ -3824,8 +3827,8 @@ install_dockcheck_auto_update() {
     download_yehbp_asset "assets/docker-auto-update/docker-auto-update.sh" "$base_dir/docker-auto-update.sh" || return 1
     download_yehbp_asset "assets/docker-auto-update/check-compose-macs.py" "$base_dir/check-compose-macs.py" || return 1
     download_yehbp_asset "assets/docker-auto-update/auto-update.conf.tpl" "$base_dir/auto-update.conf.tpl" || return 1
-    download_yehbp_asset "assets/docker-auto-update/yehbp-docker-auto-update.service.tpl" "$base_dir/yehbp-docker-auto-update.service.tpl" || return 1
-    download_yehbp_asset "assets/docker-auto-update/yehbp-docker-auto-update.timer.tpl" "$base_dir/yehbp-docker-auto-update.timer.tpl" || return 1
+    download_yehbp_asset "assets/docker-auto-update/docker-auto-update.service.tpl" "$base_dir/docker-auto-update.service.tpl" || return 1
+    download_yehbp_asset "assets/docker-auto-update/docker-auto-update.timer.tpl" "$base_dir/docker-auto-update.timer.tpl" || return 1
 
     read -r -p "新镜像发布后延迟 N 天再更新 [0]: " delay_days
     delay_days="${delay_days:-0}"
@@ -3856,9 +3859,9 @@ install_dockcheck_auto_update() {
 
     render_template_file "$base_dir/auto-update.conf.tpl" "$base_dir/auto-update.conf" \
         "$root_dir" "$base_dir" "$log_dir" "$auto_prune" "$delay_days" "$timer_calendar" || return 1
-    render_template_file "$base_dir/yehbp-docker-auto-update.service.tpl" "$base_dir/yehbp-docker-auto-update.service" \
+    render_template_file "$base_dir/docker-auto-update.service.tpl" "$base_dir/docker-auto-update.service" \
         "$root_dir" "$base_dir" "$log_dir" "$auto_prune" "$delay_days" "$timer_calendar" || return 1
-    render_template_file "$base_dir/yehbp-docker-auto-update.timer.tpl" "$base_dir/yehbp-docker-auto-update.timer" \
+    render_template_file "$base_dir/docker-auto-update.timer.tpl" "$base_dir/docker-auto-update.timer" \
         "$root_dir" "$base_dir" "$log_dir" "$auto_prune" "$delay_days" "$timer_calendar" || return 1
 
     chmod 0755 "$base_dir/check-compose-macs.py" "$base_dir/docker-auto-update.sh"
@@ -3866,19 +3869,21 @@ install_dockcheck_auto_update() {
     bash -n "$base_dir/docker-auto-update.sh" || return 1
 
     if command -v systemctl >/dev/null 2>&1; then
-        cp "$base_dir/yehbp-docker-auto-update.service" /etc/systemd/system/yehbp-docker-auto-update.service
-        cp "$base_dir/yehbp-docker-auto-update.timer" /etc/systemd/system/yehbp-docker-auto-update.timer
-        systemd-analyze verify /etc/systemd/system/yehbp-docker-auto-update.service /etc/systemd/system/yehbp-docker-auto-update.timer >/dev/null 2>&1 || {
+        systemctl disable --now yehbp-docker-auto-update.timer >/dev/null 2>&1 || true
+        rm -f /etc/systemd/system/yehbp-docker-auto-update.service /etc/systemd/system/yehbp-docker-auto-update.timer
+        cp "$base_dir/docker-auto-update.service" /etc/systemd/system/docker-auto-update.service
+        cp "$base_dir/docker-auto-update.timer" /etc/systemd/system/docker-auto-update.timer
+        systemd-analyze verify /etc/systemd/system/docker-auto-update.service /etc/systemd/system/docker-auto-update.timer >/dev/null 2>&1 || {
             echo "❌ systemd unit 校验失败："
-            systemd-analyze verify /etc/systemd/system/yehbp-docker-auto-update.service /etc/systemd/system/yehbp-docker-auto-update.timer
+            systemd-analyze verify /etc/systemd/system/docker-auto-update.service /etc/systemd/system/docker-auto-update.timer
             return 1
         }
         systemctl daemon-reload
         if [[ "$enable_timer" =~ ^[Yy]$ ]]; then
-            systemctl enable --now yehbp-docker-auto-update.timer
+            systemctl enable --now docker-auto-update.timer
             echo "✅ 已启用每日自动更新：$timer_calendar"
         else
-            systemctl disable --now yehbp-docker-auto-update.timer >/dev/null 2>&1 || true
+            systemctl disable --now docker-auto-update.timer >/dev/null 2>&1 || true
             echo "ℹ️ 已安装 systemd unit，但未启用 timer。"
         fi
     else
@@ -3895,7 +3900,7 @@ install_dockcheck_auto_update() {
 find_dockcheck_auto_update_base() {
     local service_path script
 
-    service_path="/etc/systemd/system/yehbp-docker-auto-update.service"
+    service_path="/etc/systemd/system/docker-auto-update.service"
     if [ ! -f "$service_path" ]; then
         return 1
     fi
@@ -3967,10 +3972,10 @@ sync_dockcheck_auto_update_components() {
     download_yehbp_asset "assets/docker-auto-update/check-compose-macs.py" "$tmp_dir/check-compose-macs.py" || return 1
     echo "  ⬇ auto-update.conf.tpl"
     download_yehbp_asset "assets/docker-auto-update/auto-update.conf.tpl" "$tmp_dir/auto-update.conf.tpl" || return 1
-    echo "  ⬇ yehbp-docker-auto-update.service.tpl"
-    download_yehbp_asset "assets/docker-auto-update/yehbp-docker-auto-update.service.tpl" "$tmp_dir/yehbp-docker-auto-update.service.tpl" || return 1
-    echo "  ⬇ yehbp-docker-auto-update.timer.tpl"
-    download_yehbp_asset "assets/docker-auto-update/yehbp-docker-auto-update.timer.tpl" "$tmp_dir/yehbp-docker-auto-update.timer.tpl" || return 1
+    echo "  ⬇ docker-auto-update.service.tpl"
+    download_yehbp_asset "assets/docker-auto-update/docker-auto-update.service.tpl" "$tmp_dir/docker-auto-update.service.tpl" || return 1
+    echo "  ⬇ docker-auto-update.timer.tpl"
+    download_yehbp_asset "assets/docker-auto-update/docker-auto-update.timer.tpl" "$tmp_dir/docker-auto-update.timer.tpl" || return 1
 
     bash -n "$tmp_dir/docker-auto-update.sh" || return 1
     python3 -m py_compile "$tmp_dir/check-compose-macs.py" || return 1
@@ -3981,8 +3986,8 @@ sync_dockcheck_auto_update_components() {
     install -m 0755 "$tmp_dir/docker-auto-update.sh" "$base_dir/docker-auto-update.sh" || return 1
     install -m 0755 "$tmp_dir/check-compose-macs.py" "$base_dir/check-compose-macs.py" || return 1
     install -m 0644 "$tmp_dir/auto-update.conf.tpl" "$base_dir/auto-update.conf.tpl" || return 1
-    install -m 0644 "$tmp_dir/yehbp-docker-auto-update.service.tpl" "$base_dir/yehbp-docker-auto-update.service.tpl" || return 1
-    install -m 0644 "$tmp_dir/yehbp-docker-auto-update.timer.tpl" "$base_dir/yehbp-docker-auto-update.timer.tpl" || return 1
+    install -m 0644 "$tmp_dir/docker-auto-update.service.tpl" "$base_dir/docker-auto-update.service.tpl" || return 1
+    install -m 0644 "$tmp_dir/docker-auto-update.timer.tpl" "$base_dir/docker-auto-update.timer.tpl" || return 1
 
     if [ "$dockcheck_update" = true ]; then
         echo "✅ Dockcheck 已更新（来源：$dockcheck_source）。"
@@ -3993,8 +3998,8 @@ sync_dockcheck_auto_update_components() {
     echo "  - docker-auto-update.sh"
     echo "  - check-compose-macs.py"
     echo "  - auto-update.conf.tpl"
-    echo "  - yehbp-docker-auto-update.service.tpl"
-    echo "  - yehbp-docker-auto-update.timer.tpl"
+    echo "  - docker-auto-update.service.tpl"
+    echo "  - docker-auto-update.timer.tpl"
 }
 
 show_dockcheck_auto_update_status() {
@@ -4015,8 +4020,8 @@ show_dockcheck_auto_update_status() {
     fi
 
     if command -v systemctl >/dev/null 2>&1; then
-        timer_enabled="$(systemctl is-enabled yehbp-docker-auto-update.timer 2>/dev/null || true)"
-        timer_active="$(systemctl is-active yehbp-docker-auto-update.timer 2>/dev/null || true)"
+        timer_enabled="$(systemctl is-enabled docker-auto-update.timer 2>/dev/null || true)"
+        timer_active="$(systemctl is-active docker-auto-update.timer 2>/dev/null || true)"
         echo "自动更新 timer：${timer_enabled:-未安装} / ${timer_active:-未运行}"
     fi
 }
