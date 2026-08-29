@@ -362,6 +362,11 @@ done
     echo "👉 请重新执行 81 安装 Dockcheck。"
     exit 1
   fi
+  if ! printf '%s\n' test | xargs -P 1 -I{} true >/dev/null 2>&1; then
+    echo "❌ 当前 xargs 不支持 Dockcheck 所需的 -P 和 -I 选项。"
+    echo "👉 OpenWrt 请先执行 81 → 2 安装 Dockcheck，以安装 findutils。"
+    exit 1
+  fi
 
   args=()
   # Split configured args intentionally; config is root-owned local file.

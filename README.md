@@ -200,7 +200,7 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbpproxy.conf /usr/local/bin/ye
 - 检查/拉取非 compose 容器镜像；不会重建该类容器。
 - 若已有 Dockcheck 任务，交互运行可选择强制终止旧任务后继续，或取消返回菜单；非交互任务不会终止已有任务。
 
-OpenWrt 中菜单 `81` 可安装、删除和升级 Dockcheck；菜单 `88` 可手动检查或更新镜像。安装会补齐 `bash`、`flock`、`python3` 等缺少的依赖，但不会创建 cron、procd 或其他定时任务。
+OpenWrt 中菜单 `81` 可安装、删除和升级 Dockcheck；菜单 `88` 可手动检查或更新镜像。安装会补齐 `bash`、`flock`、`findutils`、`python3` 等缺少的依赖，但不会创建 cron、procd 或其他定时任务。
 
 
 需要固定容器 MAC 的服务，应在 compose 网络配置中显式写 `mac_address`；Dockcheck 更新后会检查 compose 期望 MAC 与实际容器 MAC 是否一致。

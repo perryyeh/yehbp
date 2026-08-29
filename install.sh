@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.29.10"
+APP_VERSION="2026.08.29.11"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -608,6 +608,10 @@ install_python3_for_dockcheck() {
     echo "✅ python3 已安装：$(python3 --version 2>&1)"
 }
 
+openwrt_dockcheck_xargs_compatible() {
+    command -v xargs >/dev/null 2>&1 && printf '%s\n' test | xargs -P 1 -I{} true >/dev/null 2>&1
+}
+
 install_openwrt_dockcheck_dependencies() {
     local dep
     local -a packages=()
@@ -615,6 +619,7 @@ install_openwrt_dockcheck_dependencies() {
     is_openwrt || return 0
     command -v bash >/dev/null 2>&1 || packages+=(bash)
     command -v flock >/dev/null 2>&1 || packages+=(util-linux-flock)
+    openwrt_dockcheck_xargs_compatible || packages+=(findutils)
     [ ${#packages[@]} -eq 0 ] && return 0
 
     echo "⬇️ OpenWrt Dockcheck 需要安装：${packages[*]}"
@@ -625,6 +630,10 @@ install_openwrt_dockcheck_dependencies() {
             return 1
         fi
     done
+    if ! openwrt_dockcheck_xargs_compatible; then
+        echo "❌ findutils 安装后，xargs 仍不支持 Dockcheck 所需的 -P 和 -I 选项。"
+        return 1
+    fi
 }
 
 echo "⚠️ 请以 root 权限运行 ${APP_TITLE}"
