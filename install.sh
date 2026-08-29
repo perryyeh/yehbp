@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.29.05"
+APP_VERSION="2026.08.29.06"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -3870,8 +3870,6 @@ install_dockcheck_auto_update() {
     bash -n "$base_dir/docker-auto-update.sh" || return 1
 
     if command -v systemctl >/dev/null 2>&1; then
-        systemctl disable --now yehbp-docker-auto-update.timer >/dev/null 2>&1 || true
-        rm -f /etc/systemd/system/yehbp-docker-auto-update.service /etc/systemd/system/yehbp-docker-auto-update.timer
         cp "$base_dir/docker-auto-update.service" /etc/systemd/system/docker-auto-update.service
         cp "$base_dir/docker-auto-update.timer" /etc/systemd/system/docker-auto-update.timer
         systemd-analyze verify /etc/systemd/system/docker-auto-update.service /etc/systemd/system/docker-auto-update.timer >/dev/null 2>&1 || {
