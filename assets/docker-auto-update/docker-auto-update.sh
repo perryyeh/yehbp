@@ -359,7 +359,7 @@ done
   cd "$BASE_DIR"
   if [ ! -x ./dockcheck.sh ]; then
     echo "❌ 未找到可执行的 Dockcheck 脚本：$BASE_DIR/dockcheck.sh"
-    echo "👉 请重新执行 81 安装 Dockcheck 自动更新。"
+    echo "👉 请重新执行 81 安装 Dockcheck。"
     exit 1
   fi
 

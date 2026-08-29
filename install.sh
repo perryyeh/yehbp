@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.29.02"
+APP_VERSION="2026.08.29.03"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -588,7 +588,7 @@ install_dependencies() {
 install_python3_for_dockcheck() {
     command -v python3 >/dev/null 2>&1 && return 0
 
-    echo "⬇️ Dockcheck 自动更新需要 python3，正在安装…"
+    echo "⬇️ Dockcheck 需要 python3，正在安装…"
     if is_openwrt; then
         opkg update && opkg install python3
     elif command -v apt-get >/dev/null 2>&1; then
@@ -3755,7 +3755,7 @@ cleanup_dockcheck_auto_update() {
 }
 
 install_dockcheck_auto_update() {
-    echo "🔧 安装 Dockcheck 自动更新（保留 Docker 网络/MAC 配置）"
+    echo "🔧 安装 Dockcheck（保留 Docker 网络/MAC 配置）"
 
     if [ "${EUID:-$(id -u)}" -ne 0 ]; then
         echo "❌ 需要 root 权限，请使用 sudo 运行。"
@@ -3786,11 +3786,11 @@ install_dockcheck_auto_update() {
     fi
 
     local root_dir base_dir log_dir enable_timer update_time delay_days prune_ans auto_prune timer_calendar check_now rc
-    select_dockerapps_dir "Dockcheck 自动更新"
+    select_dockerapps_dir "Dockcheck"
     rc=$?
     case "$rc" in
         0) ;;
-        2) echo "✅ 已退出 Dockcheck 自动更新安装。"; return 0 ;;
+        2) echo "✅ 已退出 Dockcheck 安装。"; return 0 ;;
         *) return 1 ;;
     esac
 
@@ -3891,7 +3891,7 @@ install_dockcheck_auto_update() {
         echo "⚠️ 未检测到 systemctl，仅写入脚本；请自行定时调用：$base_dir/docker-auto-update.sh"
     fi
 
-    echo "✅ Dockcheck 自动更新组件安装完成。"
+    echo "✅ Dockcheck 组件安装完成。"
     echo "   手动检查：$base_dir/docker-auto-update.sh --check-only"
     echo "   手动更新：$base_dir/docker-auto-update.sh"
     echo "   日志目录：$log_dir"
@@ -3927,8 +3927,8 @@ sync_dockcheck_auto_update_components() {
         return 1
     fi
     if ! base_dir="$(find_dockcheck_auto_update_base)"; then
-        echo "❌ 未找到 Dockcheck 自动更新组件。"
-        echo "👉 请先执行 81 → 2 安装 Dockcheck 自动更新。"
+        echo "❌ 未找到 Dockcheck 组件。"
+        echo "👉 请先执行 81 → 2 安装 Dockcheck。"
         return 1
     fi
 
@@ -4007,7 +4007,7 @@ show_dockcheck_auto_update_status() {
     local base_dir local_version timer_enabled timer_active
 
     if ! base_dir="$(find_dockcheck_auto_update_base)"; then
-        echo "ℹ️ Dockcheck 自动更新尚未安装。"
+        echo "ℹ️ Dockcheck 尚未安装。"
         return 0
     fi
 
@@ -4071,8 +4071,8 @@ run_dockcheck_auto_update_once() {
 
     local base_dir mode confirm label non_compose_names name names_csv
     if ! base_dir="$(find_dockcheck_auto_update_base)"; then
-        echo "❌ 未找到 Dockcheck 自动更新组件。"
-        echo "👉 请先执行 81 → 2 安装 Dockcheck 自动更新。"
+        echo "❌ 未找到 Dockcheck 组件。"
+        echo "👉 请先执行 81 → 2 安装 Dockcheck。"
         return 1
     fi
 
@@ -4661,7 +4661,7 @@ while true; do
         30) manage_rtp2httpd_menu ;;
         90) create_macvlan_bridge ;;
         91) clean_macvlan_bridge ;;
-        81|88) if is_openwrt; then echo "ℹ️ Dockcheck 自动更新依赖 systemd timer，当前 OpenWrt 后端未提供该功能。"; else case $choice in 81) manage_dockcheck_auto_update ;; 88) run_dockcheck_auto_update_once ;; esac; fi ;;
+        81|88) if is_openwrt; then echo "ℹ️ Dockcheck 依赖 systemd timer，当前 OpenWrt 后端未提供该功能。"; else case $choice in 81) manage_dockcheck_auto_update ;; 88) run_dockcheck_auto_update_once ;; esac; fi ;;
         99|exit|quit|q) echo "退出脚本。"; exit 0 ;;
         999|del|delete|uninstall|remove|rm) uninstall_yehbp_cli ;;
         *) echo "无效选项，请重新输入。" ;;

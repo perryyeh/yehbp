@@ -343,7 +343,7 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 | Docker 功能依赖 | `docker`, `docker compose` |
 | 自动更新依赖 | `dockcheck`, `flock`, `python3`, `systemctl`, `regctl` |
 
-其中 Dockcheck 直接从 `mag37/dockcheck` 获取；`regctl` 会在安装 Dockcheck 自动更新时下载到 `_auto_update/bin`。选择菜单 81 安装自动更新时，若缺少 `python3`，YehBP 会按当前系统的包管理器自动安装它。
+其中 Dockcheck 直接从 `mag37/dockcheck` 获取；`regctl` 会在安装 Dockcheck 时下载到 `_auto_update/bin`。选择菜单 81 安装 Dockcheck 时，若缺少 `python3`，YehBP 会按当前系统的包管理器自动安装它。
 
 不同 NAS / Linux 发行版自带命令差异较大，安装前建议先确认基础依赖和 Docker Compose 是否可用。若 Debian/类 Debian NAS 的 APT 被与 YehBP 无关的残缺软件包阻塞，YehBP 会在常规安装失败后：为 `jq` 下载并校验官方独立二进制、为 `ipcalc` 仅下载并安装该单独 `.deb`；不会执行 `apt --fix-broken install`。
 
