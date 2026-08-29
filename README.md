@@ -52,6 +52,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 14 | 安装 AdGuardHome              |
 | 19 | 安装 mosdns                   |
 | 20 | 安装 mihomo                   |
+| 23 | 配置 mihomo 外部订阅             |
 | 21 | 安装 ddnsgo                   |
 | 22 | 安装 lucky                    |
 | 30 | 安装/删除/升级 IPTV（rtp2httpd） |
@@ -65,6 +66,12 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 94 | 优化journald日志               |
 | 99 / exit / quit / q | 退出脚本           |
 | 999 / del / delete / uninstall / remove / rm | 删除 `yehbp` |
+
+### 配置 Mihomo 外部订阅（菜单 23）
+
+此功能仅管理 YehBP 安装的 **macvlan Mihomo**，不修改 `docker-compose.yml`。它将完整 Mihomo YAML 订阅下载到临时文件，使用本地 macvlan 网关配置覆写管理密码、控制器/UI、`mode: rule`、TUN、DNS `:53`、fake-IP 等必要字段；节点、策略组、规则和订阅提供的 DNS 上游保持订阅原样。只有下载、YAML 解析和容器内 `mihomo -t` 全部成功时，才原子替换 `config.yaml` 并重启 Mihomo；失败时保持正在运行的配置不变。
+
+首次配置订阅时，现有 `config.yaml` 会备份为 `config.macvlan.backup.yaml`；订阅 URL 和周期保存在权限为 `0600` 的 `config.subscription.conf`，默认每 8 小时更新。systemd 主机使用 timer，OpenWrt/iStoreOS 使用 crond；若两者都不可用，YehBP 拒绝启用自动更新但仍支持手动更新。删除订阅会验证并恢复该备份、重启 Mihomo、删除定时任务及订阅相关文件。日志为 `config.subscription.update.log`，最新记录在前、条目以一个空行分隔，并仅保留最近 7 天。
 
 ### 安装/删除/升级 IPTV（rtp2httpd）（菜单 30）
 

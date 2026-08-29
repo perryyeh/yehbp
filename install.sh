@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.29.12"
+APP_VERSION="2026.08.29.13"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -664,6 +664,7 @@ function show_menu() {
     echo "14）安装adguardhome"
     echo "19）安装mosdns"
     echo "20）安装mihomo"
+    echo "23）配置 mihomo 外部订阅"
     echo "21）安装ddns-go"
     echo "22）安装lucky"
     echo "30）安装/删除/升级 IPTV（rtp2httpd）"
@@ -4689,6 +4690,24 @@ manage_rtp2httpd_menu() {
     esac
 }
 
+load_mihomo_subscription_asset() {
+    local asset
+    asset="$(mktemp /tmp/yehbp-mihomo-subscription.XXXXXX.sh)" || return 1
+    if ! download_yehbp_asset "assets/mihomo-subscription/mihomo-subscription-manager.sh" "$asset" || ! bash -n "$asset"; then
+        echo "❌ Mihomo 外部订阅功能脚本下载或语法检查失败。"
+        rm -f "$asset"
+        return 1
+    fi
+    # shellcheck disable=SC1090
+    . "$asset"
+    rm -f "$asset"
+}
+
+manage_mihomo_subscription_menu() {
+    load_mihomo_subscription_asset || return 1
+    manage_mihomo_subscription
+}
+
 # ========== 主循环 ==========
 
 install_dependencies
@@ -4715,6 +4734,7 @@ while true; do
         14) install_adguardhome ;;
         19) install_mosdns ;;
         20) install_mihomo ;;
+        23) manage_mihomo_subscription_menu ;;
         21) install_ddnsgo ;;
         22) install_lucky ;;
         80) manage_socks5_proxy ;;
