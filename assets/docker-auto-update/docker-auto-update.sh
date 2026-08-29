@@ -140,7 +140,7 @@ cleanup_old_logs() {
   # Logs are one file per calendar date. Compare their YYYYMMDD suffixes so
   # retention means exactly this date plus the preceding N-1 calendar dates,
   # rather than N rolling 24-hour periods.
-  cutoff_date="$(date -d "$((LOG_RETENTION_DAYS - 1)) days ago" +%Y%m%d)"
+  cutoff_date="$(python3 -c 'from datetime import date, timedelta; import sys; print((date.today() - timedelta(days=int(sys.argv[1]) - 1)).strftime("%Y%m%d"))' "$LOG_RETENTION_DAYS")" || return 1
   while IFS= read -r -d '' log_file; do
     log_name="${log_file##*/}"
     log_date="${log_name#update-}"
