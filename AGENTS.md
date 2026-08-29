@@ -16,7 +16,7 @@
 - Docker auto-update installs under the selected `dockerapps/_auto_update` via menu items; do not embed large auto-update payloads as heredocs in `install.sh`.
 - The Dockcheck feature uses menu 81 for status/install/delete/component upgrade and menu 88 for manual image check/update. Avoid reintroducing Watchtower menu entries.
 - Install Dockcheck directly from `https://raw.githubusercontent.com/mag37/dockcheck/main/dockcheck.sh`; do not keep a vendored fallback copy.
-- Menu 88 should locate the installation via systemd `ExecStart` only.
+- Menu 88 should locate the installation via systemd `ExecStart` on systemd hosts; on OpenWrt, locate executable `_auto_update/docker-auto-update.sh` installations under discovered dockerapps directories and require a selection if multiple exist.
 - The auto-update wrapper should resolve config from its own directory, not hardcoded paths.
 - yehbp upgrades should overwrite `/usr/local/bin/yehbp` without creating `.bak-*` files, and update checks must ignore remote versions that are not strictly greater than the local version.
 - Docker app installers should match existing replacement semantics: if the target app directory already exists under the selected dockerapps path, treat it as a replacement install and move/replace the old directory consistently with other app installers. Do not silently merge or preserve app state unless explicitly requested.

@@ -188,9 +188,9 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbpproxy.conf /usr/local/bin/ye
 - Dockcheck 脚本直接从上游 raw 脚本地址下载：`https://raw.githubusercontent.com/mag37/dockcheck/main/dockcheck.sh`；上游下载失败时会明确失败，不使用 YehBP 内置副本。
 - 可设置新镜像发布后延迟 N 天再更新。
 - 可选择更新后自动删除 dangling images。
-- 可选择是否启用每日 systemd timer。
+- Linux/NAS 可选择是否启用每日 systemd timer；OpenWrt 始终为手动模式，不创建 cron、procd 或定时任务。
 
-删除 Dockcheck 时会停用并移除 systemd service/timer，并可选择是否删除 `_auto_update` 目录。
+删除 Dockcheck 时会停用并移除 systemd service/timer（如存在），并可选择是否删除 `_auto_update` 目录。
 
 升级 Dockcheck 时会先显示本地与上游版本；仅上游版本严格更高时才替换 Dockcheck 本体。无论 Dockcheck 是否有新版本，都会同步 YehBP 的 wrapper、MAC 检查脚本和模板。升级不会修改 `auto-update.conf`，也不会执行 Dockcheck、更新容器或重启 timer。
 
@@ -200,6 +200,8 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbpproxy.conf /usr/local/bin/ye
 - 只检查全部容器，不更新。
 - 检查/拉取非 compose 容器镜像；不会重建该类容器。
 - 若已有 Dockcheck 任务，交互运行可选择强制终止旧任务后继续，或取消返回菜单；非交互任务不会终止已有任务。
+
+OpenWrt 中菜单 `81` 可安装、删除和升级 Dockcheck；菜单 `88` 可手动检查或更新镜像。安装会补齐 `bash`、`flock`、`python3` 等缺少的依赖，但不会创建 cron、procd 或其他定时任务。
 
 
 需要固定容器 MAC 的服务，应在 compose 网络配置中显式写 `mac_address`；Dockcheck 更新后会检查 compose 期望 MAC 与实际容器 MAC 是否一致。

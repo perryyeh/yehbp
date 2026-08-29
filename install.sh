@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.29.06"
+APP_VERSION="2026.08.29.07"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -608,6 +608,25 @@ install_python3_for_dockcheck() {
     echo "✅ python3 已安装：$(python3 --version 2>&1)"
 }
 
+install_openwrt_dockcheck_dependencies() {
+    local dep
+    local -a packages=()
+
+    is_openwrt || return 0
+    command -v bash >/dev/null 2>&1 || packages+=(bash)
+    command -v flock >/dev/null 2>&1 || packages+=(util-linux-flock)
+    [ ${#packages[@]} -eq 0 ] && return 0
+
+    echo "⬇️ OpenWrt Dockcheck 需要安装：${packages[*]}"
+    opkg update && opkg install "${packages[@]}" || return 1
+    for dep in bash flock; do
+        if ! command -v "$dep" >/dev/null 2>&1; then
+            echo "❌ ${dep} 安装后仍未找到。"
+            return 1
+        fi
+    done
+}
+
 echo "⚠️ 请以 root 权限运行 ${APP_TITLE}"
 
 # ========== 主菜单 ==========
@@ -640,10 +659,8 @@ function show_menu() {
     echo "22）安装lucky"
     echo "30）安装/删除/升级 IPTV（rtp2httpd）"
     echo "80）安装/管理 SOCKS5 代理"
-    if ! is_openwrt; then
-        echo "81）安装/删除/升级 Dockcheck"
-        echo "88）检查/更新docker镜像"
-    fi
+    echo "81）安装/删除/升级 Dockcheck"
+    echo "88）检查/更新docker镜像"
     echo "90）创建macvlan bridge"
     echo "91）删除macvlan bridge"
     echo "92）迁移docker目录"
@@ -3777,6 +3794,9 @@ install_dockcheck_auto_update() {
         echo "❌ 未检测到 jq，请先安装依赖。"
         return 1
     fi
+    if is_openwrt; then
+        install_openwrt_dockcheck_dependencies || return 1
+    fi
     if ! command -v flock >/dev/null 2>&1; then
         echo "❌ 未检测到 flock。"
         return 1
@@ -3845,17 +3865,23 @@ install_dockcheck_auto_update() {
         auto_prune=false
     fi
 
-    read -r -p "是否启用每日自动更新 timer？[y/N]: " enable_timer
-    if [[ "$enable_timer" =~ ^[Yy]$ ]]; then
-        read -r -p "每天检查时间 HH:MM [04:30]: " update_time
-        update_time="${update_time:-04:30}"
-        if ! [[ "$update_time" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]]; then
-            echo "❌ 时间格式错误，应为 HH:MM。"
-            return 1
-        fi
-        timer_calendar="*-*-* ${update_time}:00"
-    else
+    if is_openwrt; then
+        enable_timer=n
         timer_calendar="*-*-* 04:30:00"
+        echo "ℹ️ OpenWrt 手动模式：不创建定时任务；请通过菜单 88 手动检查或更新镜像。"
+    else
+        read -r -p "是否启用每日自动更新 timer？[y/N]: " enable_timer
+        if [[ "$enable_timer" =~ ^[Yy]$ ]]; then
+            read -r -p "每天检查时间 HH:MM [04:30]: " update_time
+            update_time="${update_time:-04:30}"
+            if ! [[ "$update_time" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]]; then
+                echo "❌ 时间格式错误，应为 HH:MM。"
+                return 1
+            fi
+            timer_calendar="*-*-* ${update_time}:00"
+        else
+            timer_calendar="*-*-* 04:30:00"
+        fi
     fi
 
     render_template_file "$base_dir/auto-update.conf.tpl" "$base_dir/auto-update.conf" \
@@ -3869,7 +3895,9 @@ install_dockcheck_auto_update() {
     python3 -m py_compile "$base_dir/check-compose-macs.py" || return 1
     bash -n "$base_dir/docker-auto-update.sh" || return 1
 
-    if command -v systemctl >/dev/null 2>&1; then
+    if is_openwrt; then
+        echo "✅ OpenWrt 手动模式已安装；未创建定时任务。"
+    elif command -v systemctl >/dev/null 2>&1; then
         cp "$base_dir/docker-auto-update.service" /etc/systemd/system/docker-auto-update.service
         cp "$base_dir/docker-auto-update.timer" /etc/systemd/system/docker-auto-update.timer
         systemd-analyze verify /etc/systemd/system/docker-auto-update.service /etc/systemd/system/docker-auto-update.timer >/dev/null 2>&1 || {
@@ -3897,7 +3925,31 @@ install_dockcheck_auto_update() {
 
 
 find_dockcheck_auto_update_base() {
-    local service_path script
+    local service_path script choice candidate
+    local -a candidates=()
+
+    if is_openwrt; then
+        while IFS= read -r candidate; do
+            [ -x "$candidate/_auto_update/docker-auto-update.sh" ] && candidates+=("$candidate/_auto_update")
+        done < <(discover_dockerapps_dirs)
+
+        case ${#candidates[@]} in
+            0) return 1 ;;
+            1) printf '%s\n' "${candidates[0]}"; return 0 ;;
+        esac
+
+        [ -t 0 ] || return 1
+        echo "发现多个 Dockcheck 安装目录：" >&2
+        for choice in "${!candidates[@]}"; do
+            echo "  $((choice + 1))）${candidates[$choice]}" >&2
+        done
+        read -r -p "请选择 Dockcheck 安装目录（回车取消）：" choice
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#candidates[@]}" ]; then
+            printf '%s\n' "${candidates[$((choice - 1))]}"
+            return 0
+        fi
+        return 1
+    fi
 
     service_path="/etc/systemd/system/docker-auto-update.service"
     if [ ! -f "$service_path" ]; then
@@ -4018,7 +4070,9 @@ show_dockcheck_auto_update_status() {
         echo "Dockcheck 版本：无法识别"
     fi
 
-    if command -v systemctl >/dev/null 2>&1; then
+    if is_openwrt; then
+        echo "运行模式：手动（未创建定时任务）"
+    elif command -v systemctl >/dev/null 2>&1; then
         timer_enabled="$(systemctl is-enabled docker-auto-update.timer 2>/dev/null || true)"
         timer_active="$(systemctl is-active docker-auto-update.timer 2>/dev/null || true)"
         echo "自动更新 timer：${timer_enabled:-未安装} / ${timer_active:-未运行}"
@@ -4659,7 +4713,8 @@ while true; do
         30) manage_rtp2httpd_menu ;;
         90) create_macvlan_bridge ;;
         91) clean_macvlan_bridge ;;
-        81|88) if is_openwrt; then echo "ℹ️ Dockcheck 依赖 systemd timer，当前 OpenWrt 后端未提供该功能。"; else case $choice in 81) manage_dockcheck_auto_update ;; 88) run_dockcheck_auto_update_once ;; esac; fi ;;
+        81) manage_dockcheck_auto_update ;;
+        88) run_dockcheck_auto_update_once ;;
         99|exit|quit|q) echo "退出脚本。"; exit 0 ;;
         999|del|delete|uninstall|remove|rm) uninstall_yehbp_cli ;;
         *) echo "无效选项，请重新输入。" ;;
