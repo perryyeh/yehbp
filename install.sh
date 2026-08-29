@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.29.11"
+APP_VERSION="2026.08.29.12"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -4043,13 +4043,13 @@ sync_dockcheck_auto_update_components() {
     python3 -m py_compile "$tmp_dir/check-compose-macs.py" || return 1
 
     if [ "$dockcheck_update" = true ]; then
-        install -m 0755 "$tmp_dir/dockcheck.sh" "$base_dir/dockcheck.sh" || return 1
+        cp -f "$tmp_dir/dockcheck.sh" "$base_dir/dockcheck.sh" && chmod 0755 "$base_dir/dockcheck.sh" || return 1
     fi
-    install -m 0755 "$tmp_dir/docker-auto-update.sh" "$base_dir/docker-auto-update.sh" || return 1
-    install -m 0755 "$tmp_dir/check-compose-macs.py" "$base_dir/check-compose-macs.py" || return 1
-    install -m 0644 "$tmp_dir/auto-update.conf.tpl" "$base_dir/auto-update.conf.tpl" || return 1
-    install -m 0644 "$tmp_dir/docker-auto-update.service.tpl" "$base_dir/docker-auto-update.service.tpl" || return 1
-    install -m 0644 "$tmp_dir/docker-auto-update.timer.tpl" "$base_dir/docker-auto-update.timer.tpl" || return 1
+    cp -f "$tmp_dir/docker-auto-update.sh" "$base_dir/docker-auto-update.sh" && chmod 0755 "$base_dir/docker-auto-update.sh" || return 1
+    cp -f "$tmp_dir/check-compose-macs.py" "$base_dir/check-compose-macs.py" && chmod 0755 "$base_dir/check-compose-macs.py" || return 1
+    cp -f "$tmp_dir/auto-update.conf.tpl" "$base_dir/auto-update.conf.tpl" && chmod 0644 "$base_dir/auto-update.conf.tpl" || return 1
+    cp -f "$tmp_dir/docker-auto-update.service.tpl" "$base_dir/docker-auto-update.service.tpl" && chmod 0644 "$base_dir/docker-auto-update.service.tpl" || return 1
+    cp -f "$tmp_dir/docker-auto-update.timer.tpl" "$base_dir/docker-auto-update.timer.tpl" && chmod 0644 "$base_dir/docker-auto-update.timer.tpl" || return 1
 
     if [ "$dockcheck_update" = true ]; then
         echo "✅ Dockcheck 已更新（来源：$dockcheck_source）。"
