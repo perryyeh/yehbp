@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.29.04"
+APP_VERSION="2026.08.29.05"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -3824,7 +3824,7 @@ install_dockcheck_auto_update() {
         chmod 0755 "$base_dir/bin/regctl"
     fi
 
-    echo "⬇️ 下载 Dockcheck 组件..."
+    echo "⬇️ 下载 Dockcheck 配套组件..."
     download_yehbp_asset "assets/docker-auto-update/docker-auto-update.sh" "$base_dir/docker-auto-update.sh" || return 1
     download_yehbp_asset "assets/docker-auto-update/check-compose-macs.py" "$base_dir/check-compose-macs.py" || return 1
     download_yehbp_asset "assets/docker-auto-update/auto-update.conf.tpl" "$base_dir/auto-update.conf.tpl" || return 1
@@ -3891,7 +3891,7 @@ install_dockcheck_auto_update() {
         echo "⚠️ 未检测到 systemctl，仅写入脚本；请自行定时调用：$base_dir/docker-auto-update.sh"
     fi
 
-    echo "✅ Dockcheck 组件安装完成。"
+    echo "✅ Dockcheck 安装完成。"
     echo "   手动检查：$base_dir/docker-auto-update.sh --check-only"
     echo "   手动更新：$base_dir/docker-auto-update.sh"
     echo "   日志目录：$log_dir"
@@ -3949,7 +3949,7 @@ sync_dockcheck_auto_update_components() {
     dockcheck_update=false
 
     if [ -z "$remote_version" ]; then
-        echo "⚠️ 无法识别上游 Dockcheck 版本；保留当前 Dockcheck，仅同步本地组件。"
+        echo "⚠️ 无法识别上游 Dockcheck 版本；保留当前 Dockcheck，仅同步 Dockcheck 配套组件。"
     else
         echo "上游版本：$remote_version"
         if dockcheck_version_gt "$remote_version" "$local_version"; then
@@ -3966,7 +3966,7 @@ sync_dockcheck_auto_update_components() {
         fi
     fi
 
-    echo "🔄 更新 Dockcheck 组件"
+    echo "🔄 更新 Dockcheck 配套组件"
     echo "  ⬇ docker-auto-update.sh"
     download_yehbp_asset "assets/docker-auto-update/docker-auto-update.sh" "$tmp_dir/docker-auto-update.sh" || return 1
     echo "  ⬇ check-compose-macs.py"
@@ -3995,7 +3995,7 @@ sync_dockcheck_auto_update_components() {
     else
         echo "ℹ️ Dockcheck 保持版本：$local_version。"
     fi
-    echo "✅ Dockcheck 组件已更新："
+    echo "✅ Dockcheck 配套组件已更新："
     echo "  - docker-auto-update.sh"
     echo "  - check-compose-macs.py"
     echo "  - auto-update.conf.tpl"
