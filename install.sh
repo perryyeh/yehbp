@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.29.26"
+APP_VERSION="2026.08.29.27"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -966,7 +966,7 @@ write_env_file() {
 SELECTED_DOCKERAPPS_DIR=""
 
 discover_dockerapps_dirs() {
-  # 默认扫描常见挂载点及家目录的最多六层路径；expanded 模式由用户明确确认，
+  # 默认扫描常见挂载点及家目录的最多四层路径；expanded 模式由用户明确确认，
   # 会遍历全盘，因此可能较慢。
   local scope="${1:-quick}"
   local search_roots=()
@@ -999,7 +999,7 @@ discover_dockerapps_dirs() {
 
   [ ${#search_roots[@]} -eq 0 ] && return 0
 
-  find "${search_roots[@]}" -maxdepth 6 \
+  find "${search_roots[@]}" -maxdepth 4 \
     \( -path '*/.@#local/trash' -o -path '*/.@#local/trash/*' \
        -o -path '*/thumb' -o -path '*/thumb/*' \) -prune -o \
     -type d -name dockerapps -print 2>/dev/null | sort -u
