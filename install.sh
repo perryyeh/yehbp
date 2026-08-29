@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.29.01"
+APP_VERSION="2026.08.29.02"
 REPO_URL="https://github.com/perryyeh/yehbp"
 GITHUB_CONTENTS_BASE="https://api.github.com/repos/perryyeh/yehbp/contents"
 RAW_INSTALL_URL="${GITHUB_CONTENTS_BASE}/install.sh?ref=main"
@@ -938,15 +938,16 @@ discover_dockerapps_dirs() {
 }
 
 select_dockerapps_dir() {
-  # 用法：select_dockerapps_dir "服务名"
+  # 用法：select_dockerapps_dir "服务名" [操作名]
   # 返回：0=已选择，2=用户回车退出，1=错误
   local app_name="$1"
+  local action_name="${2:-安装}"
   local scan_choice manual_dir choice dir
   local -a dockerapps_dirs=()
 
   SELECTED_DOCKERAPPS_DIR=""
 
-  echo "即将安装 ${app_name}，请选择存储目录。"
+  echo "即将${action_name} ${app_name}，请选择存储目录。"
   read -r -p "是否扫描本机已有 dockerapps 目录？[Y/n]: " scan_choice
 
   case "$scan_choice" in
@@ -3695,7 +3696,7 @@ clean_macvlan_bridge() {
 
 
 cleanup_dockcheck_auto_update() {
-    echo "🧹 删除 Dockcheck 自动更新"
+    echo "🧹 删除 Dockcheck"
 
     if [ "${EUID:-$(id -u)}" -ne 0 ]; then
         echo "❌ 需要 root 权限，请使用 sudo 运行。"
@@ -3703,11 +3704,11 @@ cleanup_dockcheck_auto_update() {
     fi
 
     local root_dir base_dir delete_dir_ans rc
-    select_dockerapps_dir "Dockcheck 自动更新删除"
+    select_dockerapps_dir "Dockcheck" "删除"
     rc=$?
     case "$rc" in
         0) ;;
-        2) echo "✅ 已退出 Dockcheck 自动更新删除。"; return 0 ;;
+        2) echo "✅ 已退出 Dockcheck 删除。"; return 0 ;;
         *) return 1 ;;
     esac
 
@@ -3750,7 +3751,7 @@ cleanup_dockcheck_auto_update() {
         echo "ℹ️ 未找到目录：$base_dir"
     fi
 
-    echo "✅ Dockcheck 自动更新删除完成。"
+    echo "✅ Dockcheck 删除完成。"
 }
 
 install_dockcheck_auto_update() {
