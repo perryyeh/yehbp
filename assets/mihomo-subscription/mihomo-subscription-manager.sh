@@ -42,7 +42,7 @@ mihomo_subscription_select_target() {
     echo "❌ 未找到 YehBP 安装的 macvlan Mihomo 容器。"
     return 1
   fi
-  echo "可管理的 macvlan Mihomo："
+  echo "请选择要配置的 macvlan Mihomo 安装目录/容器："
   local i name dir image
   for i in "${!targets[@]}"; do
     IFS='|' read -r name dir image <<<"${targets[$i]}"
