@@ -65,7 +65,9 @@ PY
 }
 
 cleanup() {
+  local status=$?
   rm -rf "$LOCK_DIR" 2>/dev/null || true
+  return "$status"
 }
 trap cleanup EXIT INT TERM
 
@@ -157,6 +159,9 @@ def set_path(path, value):
 for key in ('secret', 'bind-address', 'allow-lan', 'ipv6', 'mode',
             'external-controller', 'external-ui', 'external-ui-url'):
     set_path((key,), require_backup((key,)))
+# Unified delay is a local gateway default; it only affects latency measurement
+# for URLTest/Fallback groups and does not modify upstream routing semantics.
+set_path(('unified-delay',), True)
 for key in ('store-selected', 'store-fake-ip'):
     set_path(('profile', key), require_backup(('profile', key)))
 for key in ('enable', 'stack', 'udp-timeout', 'auto-route',
