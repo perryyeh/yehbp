@@ -113,7 +113,7 @@ case "$MODE" in
       log_event "失败：未找到 config.macvlan.backup.yaml，拒绝恢复。"
       exit 1
     fi
-    candidate="$(mktemp "$APP_DIR/.subscription-restore.XXXXXX.yaml")"
+    candidate="$(mktemp "$APP_DIR/.subscription-restore.XXXXXX")"
     cp "$BACKUP" "$candidate"
     if validate_and_publish "$candidate"; then
       log_event "完成：已恢复本地 macvlan 配置并请求重载 Mihomo。"
@@ -144,8 +144,8 @@ if [ ! -r "$BACKUP" ]; then
   exit 1
 fi
 
-raw="$(mktemp "$APP_DIR/.subscription-download.XXXXXX.yaml")"
-candidate="$(mktemp "$APP_DIR/.subscription-candidate.XXXXXX.yaml")"
+raw="$(mktemp "$APP_DIR/.subscription-download.XXXXXX")"
+candidate="$(mktemp "$APP_DIR/.subscription-candidate.XXXXXX")"
 trap 'status=$?; rm -f "$raw" "$candidate"; cleanup "$status"' 0 1 2 15
 
 if ! curl --connect-timeout 15 --max-time 120 --fail --location --silent --show-error "$URL" -o "$raw"; then
