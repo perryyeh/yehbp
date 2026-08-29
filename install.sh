@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.08.29.25"
+APP_VERSION="2026.08.29.26"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -966,9 +966,21 @@ write_env_file() {
 SELECTED_DOCKERAPPS_DIR=""
 
 discover_dockerapps_dirs() {
-  # 仅扫描常见挂载点和当前用户家目录，避免全盘 find 过慢或产生大量权限噪音
+  # 默认扫描常见挂载点及家目录的最多六层路径；expanded 模式由用户明确确认，
+  # 会遍历全盘，因此可能较慢。
+  local scope="${1:-quick}"
   local search_roots=()
   local root existing duplicate
+
+  if [ "$scope" = "expanded" ]; then
+    find / \
+      \( -path /proc -o -path '/proc/*' -o -path /sys -o -path '/sys/*' \
+         -o -path /dev -o -path '/dev/*' -o -path /run -o -path '/run/*' \
+         -o -path /tmp -o -path '/tmp/*' -o -path '*/.@#local/trash' \
+         -o -path '*/.@#local/trash/*' -o -path '*/thumb' -o -path '*/thumb/*' \) \
+      -prune -o -type d -name dockerapps -print 2>/dev/null | sort -u
+    return 0
+  fi
 
   for root in /data /vol* /volume* /mnt /srv /opt "${HOME:-}" "/home/${SUDO_USER:-}"; do
     [ -n "$root" ] && [ -d "$root" ] || continue
@@ -987,7 +999,10 @@ discover_dockerapps_dirs() {
 
   [ ${#search_roots[@]} -eq 0 ] && return 0
 
-  find "${search_roots[@]}" -maxdepth 4 -type d -name dockerapps 2>/dev/null | sort -u
+  find "${search_roots[@]}" -maxdepth 6 \
+    \( -path '*/.@#local/trash' -o -path '*/.@#local/trash/*' \
+       -o -path '*/thumb' -o -path '*/thumb/*' \) -prune -o \
+    -type d -name dockerapps -print 2>/dev/null | sort -u
 }
 
 select_dockerapps_dir() {
@@ -995,7 +1010,7 @@ select_dockerapps_dir() {
   # 返回：0=已选择，2=用户回车退出，1=错误
   local app_name="$1"
   local action_name="${2:-安装}"
-  local scan_choice manual_dir choice dir
+  local scan_choice expand_choice manual_dir choice dir
   local -a dockerapps_dirs=()
 
   SELECTED_DOCKERAPPS_DIR=""
@@ -1009,6 +1024,25 @@ select_dockerapps_dir() {
       while IFS= read -r dir; do
         [ -n "$dir" ] && dockerapps_dirs+=("$dir")
       done < <(discover_dockerapps_dirs)
+
+      if [ ${#dockerapps_dirs[@]} -eq 0 ]; then
+        echo "⚠️ 未发现已有 dockerapps 目录。"
+        read -r -p "是否扩大范围搜索（可能很慢）？[y/N]: " expand_choice
+        case "$expand_choice" in
+          y|Y|yes|YES)
+            echo "🔎 正在扩大范围搜索 dockerapps 目录（可能需要较长时间）..."
+            while IFS= read -r dir; do
+              [ -n "$dir" ] && dockerapps_dirs+=("$dir")
+            done < <(discover_dockerapps_dirs expanded)
+            ;;
+          ""|n|N|no|NO)
+            ;;
+          *)
+            echo "❌ 无效选择：$expand_choice"
+            return 1
+            ;;
+        esac
+      fi
 
       if [ ${#dockerapps_dirs[@]} -gt 0 ]; then
         echo "发现以下 dockerapps 目录："
@@ -1040,8 +1074,6 @@ select_dockerapps_dir() {
               ;;
           esac
         done
-      else
-        echo "⚠️ 未发现已有 dockerapps 目录。"
       fi
       ;;
     "n"|"N"|"no"|"NO")
