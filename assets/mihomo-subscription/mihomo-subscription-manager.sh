@@ -1,14 +1,19 @@
 # YehBP Mihomo complete-subscription manager. This file is sourced by install.sh.
 
 mihomo_subscription_list_targets() {
-  local id name image dir
+  local id name image dir mode
   while IFS='|' read -r id name image; do
     [[ "$image" == *mihomo* || "$name" == *mihomo* ]] || continue
     dir="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/root/.config/mihomo"}}{{.Source}}{{end}}{{end}}' "$id" 2>/dev/null || true)"
     [ -n "$dir" ] && [ -d "$dir" ] && [ -f "$dir/config.yaml" ] || continue
-    # YehBP's macvlan install directory retains this source template.
-    [ -f "$dir/config.macvlan.yaml" ] || continue
-    printf '%s|%s|%s\n' "$name" "$dir" "$image"
+    if [ -f "$dir/config.macvlan.yaml" ]; then
+      mode="macvlan"
+    elif [ -f "$dir/config.host.yaml" ]; then
+      mode="host"
+    else
+      continue
+    fi
+    printf '%s|%s|%s|%s\n' "$name" "$dir" "$image" "$mode"
   done < <(docker ps -a --format '{{.ID}}|{{.Names}}|{{.Image}}')
 }
 
@@ -17,20 +22,20 @@ mihomo_subscription_select_target() {
   local -a targets=()
   while IFS= read -r line; do targets+=("$line"); done < <(mihomo_subscription_list_targets)
   if [ ${#targets[@]} -eq 0 ]; then
-    echo "❌ 未找到 YehBP 安装的 macvlan Mihomo 容器。"
+    echo "❌ 未找到 YehBP 安装的 Mihomo 容器。"
     return 1
   fi
-  echo "请选择要配置的 macvlan Mihomo 安装目录/容器："
-  local i name dir image
+  echo "请选择要配置的 Mihomo 安装目录/容器："
+  local i name dir image mode
   for i in "${!targets[@]}"; do
-    IFS='|' read -r name dir image <<<"${targets[$i]}"
-    echo "  $((i + 1))）容器：$name  目录：$dir"
+    IFS='|' read -r name dir image mode <<<"${targets[$i]}"
+    echo "  $((i + 1))）模式：$mode  容器：$name  目录：$dir"
   done
   echo "  0）返回"
   read -r -p "请输入要操作的序号: " choice
   [ -n "$choice" ] && [[ "$choice" =~ ^[0-9]+$ ]] || return 2
   [ "$choice" -ge 1 ] && [ "$choice" -le "${#targets[@]}" ] || return 2
-  IFS='|' read -r MIHOMO_SUBSCRIPTION_CONTAINER MIHOMO_SUBSCRIPTION_DIR _ <<<"${targets[$((choice - 1))]}"
+  IFS='|' read -r MIHOMO_SUBSCRIPTION_CONTAINER MIHOMO_SUBSCRIPTION_DIR _ MIHOMO_SUBSCRIPTION_MODE <<<"${targets[$((choice - 1))]}"
   return 0
 }
 
@@ -70,16 +75,30 @@ mihomo_subscription_install_script() {
   sh -n "$script"
 }
 
-# New Mihomo installs already contain this file. Fetch it only for deployments
-# created before the overlay template existed; never overwrite local customizations.
+# Use the mode-specific YehBP template when the user asks to enforce local
+# settings. Existing macvlan config.replace.yaml remains untouched, so local
+# customizations from earlier releases keep working.
 mihomo_subscription_install_replace_template() {
-  local replace="$MIHOMO_SUBSCRIPTION_DIR/config.replace.yaml" tmp
+  local replace asset tmp
+  case "$MIHOMO_SUBSCRIPTION_MODE" in
+    macvlan)
+      replace="$MIHOMO_SUBSCRIPTION_DIR/config.replace.yaml"
+      asset="assets/mihomo-subscription/config.replace.macvlan.yaml"
+      ;;
+    host)
+      replace="$MIHOMO_SUBSCRIPTION_DIR/config.replace.host.yaml"
+      asset="assets/mihomo-subscription/config.replace.host.yaml"
+      ;;
+    *)
+      echo "❌ 未知 Mihomo 安装模式：${MIHOMO_SUBSCRIPTION_MODE:-<空>}"
+      return 1
+      ;;
+  esac
   [ -r "$replace" ] && return 0
   tmp="$(mktemp "$MIHOMO_SUBSCRIPTION_DIR/.config.replace.XXXXXX")" || return 1
-  if ! yehbp_curl --connect-timeout 10 --max-time 60 -fsSL \
-      "https://raw.githubusercontent.com/perryyeh/mihomo/main/config.replace.yaml" -o "$tmp"; then
+  if ! download_yehbp_asset "$asset" "$tmp"; then
     rm -f "$tmp"
-    echo "❌ 无法下载 Mihomo config.replace.yaml；请重试。"
+    echo "❌ 无法下载 $MIHOMO_SUBSCRIPTION_MODE 订阅覆盖模板；请重试。"
     return 1
   fi
   if ! python3 - "$tmp" <<'PY'
@@ -87,11 +106,11 @@ from pathlib import Path
 import sys, yaml
 value = yaml.safe_load(Path(sys.argv[1]).read_text(encoding='utf-8'))
 if not isinstance(value, dict):
-    raise SystemExit('config.replace.yaml 根节点必须是 YAML mapping。')
+    raise SystemExit('订阅覆盖模板根节点必须是 YAML mapping。')
 PY
   then
     rm -f "$tmp"
-    echo "❌ 下载的 config.replace.yaml 无效。"
+    echo "❌ 下载的订阅覆盖模板无效。"
     return 1
   fi
   chmod 0600 "$tmp" && mv "$tmp" "$replace"
@@ -251,7 +270,7 @@ mihomo_subscription_run_update() {
 }
 
 mihomo_subscription_add_or_replace() {
-  local url hours backup conf
+  local url hours apply_template backup conf
   mihomo_subscription_select_target || return $?
   mihomo_subscription_enable_runtime || return 1
   backup="$MIHOMO_SUBSCRIPTION_DIR/config.macvlan.backup.yaml"
@@ -262,28 +281,49 @@ mihomo_subscription_add_or_replace() {
   fi
   read -r -p "请输入完整 Mihomo YAML 订阅 URL: " url
   [[ "$url" =~ ^https?://[^[:space:]\']+$ ]] || { echo "❌ URL 无效，仅接受不含空格或单引号的 http(s) URL。"; return 1; }
-  read -r -p "更新间隔（小时，1-23；回车默认 8）: " hours
-  hours="${hours:-8}"
-  [[ "$hours" =~ ^[0-9]+$ ]] && [ "$hours" -ge 1 ] && [ "$hours" -le 23 ] || { echo "❌ 更新间隔必须是 1-23 小时。"; return 1; }
+  read -r -p "更新间隔（小时；0 为不自动刷新，回车默认 0）: " hours
+  hours="${hours:-0}"
+  [[ "$hours" =~ ^[0-9]+$ ]] || { echo "❌ 更新间隔必须是 0 或正整数小时。"; return 1; }
+  read -r -p "是否按 ${MIHOMO_SUBSCRIPTION_MODE} 刷新模板强制覆盖本地参数？[Y/n]: " apply_template
+  case "$apply_template" in
+    ""|y|Y|yes|YES) apply_template=1 ;;
+    n|N|no|NO) apply_template=0 ;;
+    *) echo "❌ 请输入 y 或 n。"; return 1 ;;
+  esac
 
   if [ ! -f "$backup" ]; then
     cp "$MIHOMO_SUBSCRIPTION_DIR/config.yaml" "$backup" || return 1
     chmod 0600 "$backup"
-    echo "✅ 已保存本地 macvlan 配置备份：$backup"
+    echo "✅ 已保存本地配置备份：$backup"
   fi
   mihomo_subscription_install_script || return 1
-  mihomo_subscription_install_replace_template || return 1
+  [ "$apply_template" -eq 0 ] || mihomo_subscription_install_replace_template || return 1
   umask 077
-  printf 'URL=%q\nINTERVAL_HOURS=%s\n' "$url" "$hours" >"$conf"
+  printf 'URL=%q\nINTERVAL_HOURS=%s\nAPPLY_TEMPLATE=%s\nTEMPLATE_MODE=%s\n' \
+    "$url" "$hours" "$apply_template" "$MIHOMO_SUBSCRIPTION_MODE" >"$conf"
   chmod 0600 "$conf"
 
-  echo "🔎 正在由 Mihomo 容器下载、修补并验证订阅…"
+  if [ "$apply_template" -eq 1 ]; then
+    echo "🔎 正在由 Mihomo 容器下载、按模板修补并验证订阅…"
+  else
+    echo "🔎 正在由 Mihomo 容器原样下载并验证订阅…"
+  fi
   if ! mihomo_subscription_run_update; then
-    echo "❌ 首次更新失败；已保留当前运行配置，未启用容器内定时更新。请查看：$MIHOMO_SUBSCRIPTION_DIR/config.subscription.update.log"
+    echo "❌ 首次更新失败；已保留当前运行配置。请查看：$MIHOMO_SUBSCRIPTION_DIR/config.subscription.update.log"
     return 1
   fi
   mihomo_subscription_remove_legacy_timer || return 1
-  echo "✅ 已启用容器内定时更新：每 ${hours} 小时一次。"
+  if [ "$hours" -eq 0 ]; then
+    echo "✅ 已配置订阅；自动刷新已关闭，可通过菜单 2 手动更新。"
+  else
+    echo "✅ 已配置订阅并启用容器内自动刷新：每 ${hours} 小时一次。"
+  fi
+}
+
+mihomo_subscription_template_is_enabled() {
+  local apply
+  apply="$(sed -n 's/^APPLY_TEMPLATE=//p' "$MIHOMO_SUBSCRIPTION_DIR/config.subscription.conf" | sed -n '1p')"
+  [ "${apply:-1}" != 0 ]
 }
 
 mihomo_subscription_manual_update() {
@@ -291,7 +331,9 @@ mihomo_subscription_manual_update() {
   [ -f "$MIHOMO_SUBSCRIPTION_DIR/config.subscription.conf" ] || { echo "❌ 未配置外部订阅。"; return 1; }
   mihomo_subscription_runtime_ready || return 1
   mihomo_subscription_install_script || return 1
-  mihomo_subscription_install_replace_template || return 1
+  if mihomo_subscription_template_is_enabled; then
+    mihomo_subscription_install_replace_template || return 1
+  fi
   mihomo_subscription_run_update
 }
 
@@ -302,16 +344,16 @@ mihomo_subscription_delete() {
   dir="$MIHOMO_SUBSCRIPTION_DIR"
   backup="$dir/config.macvlan.backup.yaml"
   [ -f "$backup" ] || { echo "❌ 未找到 $backup，拒绝删除订阅以免无法恢复。"; return 1; }
-  read -r -p "确认删除外部订阅、恢复本地 macvlan 配置并重载 Mihomo？[y/N]: " confirm
+  read -r -p "确认删除外部订阅、恢复本地配置并重载 Mihomo？[y/N]: " confirm
   [[ "$confirm" =~ ^[Yy]$ ]] || { echo "ℹ️ 已取消。"; return 0; }
   if ! docker exec -e MIHOMO_WAIT_RELOAD=1 "$MIHOMO_SUBSCRIPTION_CONTAINER" \
       /root/.config/mihomo/config.subscription.update.sh --restore; then
-    echo "❌ 本地 macvlan 备份未通过当前 Mihomo 校验或重载失败，未删除订阅。"
+    echo "❌ 本地备份未通过当前 Mihomo 校验或重载失败，未删除订阅。"
     return 1
   fi
   mihomo_subscription_remove_legacy_timer || return 1
   rm -f "$dir/config.subscription.conf" "$dir/config.subscription.update.sh" "$dir/config.subscription.update.log" "$backup"
-  echo "✅ 已恢复本地 macvlan 配置、重载 Mihomo，并删除外部订阅。"
+  echo "✅ 已恢复本地配置、重载 Mihomo，并删除外部订阅。"
 }
 
 mihomo_subscription_show_log() {
@@ -323,10 +365,10 @@ mihomo_subscription_show_log() {
 }
 
 manage_mihomo_subscription() {
-  echo "🔧 Mihomo 外部完整订阅配置（仅 macvlan；容器内更新）"
-  echo "1）添加/修改外部订阅（默认每 8 小时更新）"
+  echo "🔧 Mihomo 外部完整订阅配置（macvlan / host；容器内更新）"
+  echo "1）添加/修改外部订阅（默认不自动刷新）"
   echo "2）立即更新外部订阅"
-  echo "3）删除外部订阅并恢复本地 macvlan 配置"
+  echo "3）删除外部订阅并恢复本地配置"
   echo "4）查看订阅更新日志"
   echo "0）返回"
   local choice

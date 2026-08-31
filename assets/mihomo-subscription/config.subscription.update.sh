@@ -136,16 +136,35 @@ if [ ! -r "$SUBSCRIPTION_CONF" ]; then
   exit 1
 fi
 URL="$(sed -n 's/^URL=//p' "$SUBSCRIPTION_CONF" | sed -n '1p')"
+APPLY_TEMPLATE="$(sed -n 's/^APPLY_TEMPLATE=//p' "$SUBSCRIPTION_CONF" | sed -n '1p')"
+TEMPLATE_MODE="$(sed -n 's/^TEMPLATE_MODE=//p' "$SUBSCRIPTION_CONF" | sed -n '1p')"
+# Configurations from releases before the mode/template switch keep the former
+# macvlan-overlay behavior.
+APPLY_TEMPLATE="${APPLY_TEMPLATE:-1}"
+TEMPLATE_MODE="${TEMPLATE_MODE:-macvlan}"
 case "$URL" in
   http://*|https://*) ;;
   *) log_event "失败：config.subscription.conf 中的 URL 无效。"; exit 1 ;;
 esac
+case "$APPLY_TEMPLATE" in
+  0|1) ;;
+  *) log_event "失败：APPLY_TEMPLATE 必须为 0 或 1。"; exit 1 ;;
+esac
+case "$TEMPLATE_MODE" in
+  macvlan|host) ;;
+  *) log_event "失败：TEMPLATE_MODE 必须为 macvlan 或 host。"; exit 1 ;;
+esac
+if [ "$APPLY_TEMPLATE" = 1 ]; then
+  if [ "$TEMPLATE_MODE" = host ]; then
+    REPLACE="$APP_DIR/config.replace.host.yaml"
+  fi
+  if [ ! -r "$REPLACE" ]; then
+    log_event "失败：未找到 $REPLACE，拒绝覆盖当前配置。"
+    exit 1
+  fi
+fi
 if [ ! -r "$BACKUP" ]; then
   log_event "失败：未找到 config.macvlan.backup.yaml，拒绝覆盖当前配置。"
-  exit 1
-fi
-if [ ! -r "$REPLACE" ]; then
-  log_event "失败：未找到 config.replace.yaml，拒绝覆盖当前配置。"
   exit 1
 fi
 
@@ -162,7 +181,15 @@ if [ ! -s "$raw" ]; then
   exit 1
 fi
 
-if ! python3 - "$raw" "$REPLACE" "$candidate" <<'PY'
+if [ "$APPLY_TEMPLATE" = 0 ]; then
+  # Raw mode deliberately preserves the subscription bytes; Mihomo itself is
+  # still required to validate the candidate before it replaces config.yaml.
+  if ! cp "$raw" "$candidate"; then
+    log_event "失败：无法准备原样订阅配置，运行中的 config.yaml 未修改。"
+    exit 1
+  fi
+else
+  if ! python3 - "$raw" "$REPLACE" "$candidate" <<'PY'
 from pathlib import Path
 import copy
 import sys
@@ -180,7 +207,7 @@ except Exception as e:
 if not isinstance(source, dict):
     raise SystemExit('订阅根节点必须是 YAML mapping。')
 if not isinstance(replace, dict):
-    raise SystemExit('config.replace.yaml 根节点必须是 YAML mapping。')
+    raise SystemExit('订阅覆盖模板根节点必须是 YAML mapping。')
 
 conditional_paths = {
     ('dns', 'fake-ip-range6'),
@@ -208,9 +235,10 @@ candidate_path.write_text(
     encoding='utf-8',
 )
 PY
-then
-  log_event "失败：订阅 YAML 修补失败，运行中的 config.yaml 未修改。"
-  exit 1
+  then
+    log_event "失败：订阅 YAML 修补失败，运行中的 config.yaml 未修改。"
+    exit 1
+  fi
 fi
 
 if validate_and_publish "$candidate"; then

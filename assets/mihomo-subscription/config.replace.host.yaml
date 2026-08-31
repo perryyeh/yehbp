@@ -1,0 +1,4 @@
+# Host-mode subscription overlay: retain the subscription configuration except
+# for disabling TUN, because the host template does not own transparent routing.
+tun:
+  enable: false
