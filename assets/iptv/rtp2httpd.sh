@@ -312,8 +312,8 @@ rtp2httpd_install() {
     download_yehbp_asset "assets/iptv/rtp2httpd.conf.tpl" "${RTP2HTTPD_APP_DIR}/rtp2httpd.conf.tpl" || return 1
     download_yehbp_asset "assets/iptv/rtp2httpd.service.tpl" "${RTP2HTTPD_APP_DIR}/rtp2httpd.service.tpl" || return 1
 
-    mcast_name="yehbp-rtp2httpd-${RTP2HTTPD_INSTANCE}-mcast-${RTP2HTTPD_PARENT_IF}-${RTP2HTTPD_MULTICAST_VLAN}"
-    fcc_name="yehbp-rtp2httpd-${RTP2HTTPD_INSTANCE}-fcc-${RTP2HTTPD_PARENT_IF}-${RTP2HTTPD_FCC_VLAN}"
+    mcast_name="rtp2httpd-${RTP2HTTPD_INSTANCE}-mcast-${RTP2HTTPD_PARENT_IF}-${RTP2HTTPD_MULTICAST_VLAN}"
+    fcc_name="rtp2httpd-${RTP2HTTPD_INSTANCE}-fcc-${RTP2HTTPD_PARENT_IF}-${RTP2HTTPD_FCC_VLAN}"
     if nmcli connection show "$mcast_name" >/dev/null 2>&1 || nmcli connection show "$fcc_name" >/dev/null 2>&1; then
         echo "❌ 同名 NetworkManager profile 已存在；为避免覆盖未知配置，已取消。"
         return 1
