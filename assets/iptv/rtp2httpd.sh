@@ -7,7 +7,7 @@ RTP2HTTPD_RELEASE_API="https://api.github.com/repos/stackia/rtp2httpd/releases/l
 
 rtp2httpd_require_commands() {
     local missing=() cmd
-    for cmd in curl nmcli systemctl ip sha256sum uname python3; do
+    for cmd in curl nmcli systemctl ip sysctl tr sha256sum uname python3; do
         command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
     done
     if [ ${#missing[@]} -ne 0 ]; then
@@ -85,6 +85,21 @@ rtp2httpd_prompt_vlan() {
             return 0
         fi
         echo "❌ VLAN ID 必须是 1–4094。"
+    done
+}
+
+rtp2httpd_prompt_igmp_version() {
+    local value
+    while true; do
+        read -r -p "指定 IGMP 版本（0=不指定，2/3=强制；默认 0）: " value
+        value="${value:-0}"
+        case "$value" in
+            0|2|3)
+                RTP2HTTPD_IGMP_VERSION="$value"
+                return 0
+                ;;
+            *) echo "❌ 请输入 0、2 或 3。" ;;
+        esac
     done
 }
 
@@ -270,6 +285,7 @@ MULTICAST_VLAN=${RTP2HTTPD_MULTICAST_VLAN}
 FCC_VLAN=${RTP2HTTPD_FCC_VLAN}
 FCC_ROUTE_TABLE=${RTP2HTTPD_FCC_ROUTE_TABLE}
 FCC_ROUTE_PRIORITY=${RTP2HTTPD_FCC_ROUTE_PRIORITY}
+IGMP_VERSION=${RTP2HTTPD_IGMP_VERSION}
 BIND_ADDRESS=${RTP2HTTPD_BIND_ADDRESS}
 PORT=${RTP2HTTPD_PORT}
 MULTICAST_PROFILE_UUID=${RTP2HTTPD_MULTICAST_PROFILE_UUID}
@@ -279,7 +295,7 @@ EOF
 }
 
 rtp2httpd_install() {
-    local dockerapps answer mcast_name fcc_name tmp_conf tmp_service
+    local dockerapps answer mcast_name fcc_name mcast_sysctl_if tmp_conf tmp_service
     rtp2httpd_require_commands || return 1
     select_dockerapps_dir "安装IPTV(rtp2httpd)"
     case $? in 0) dockerapps="$SELECTED_DOCKERAPPS_DIR" ;; 2) return 0 ;; *) return 1 ;; esac
@@ -301,6 +317,7 @@ rtp2httpd_install() {
         echo "❌ 组播和 FCC/DHCP VLAN ID 必须不同。"
         return 1
     fi
+    rtp2httpd_prompt_igmp_version || return 0
     rtp2httpd_prompt_bind || return 0
     rtp2httpd_fcc_routing_params || return 1
 
@@ -347,6 +364,8 @@ rtp2httpd_install() {
 
     tmp_conf="${RTP2HTTPD_CONFIG_PATH}.tmp"
     tmp_service="${RTP2HTTPD_SERVICE_PATH}.tmp"
+    mcast_sysctl_if="${RTP2HTTPD_PARENT_IF}.${RTP2HTTPD_MULTICAST_VLAN}"
+    mcast_sysctl_if="$(printf '%s' "$mcast_sysctl_if" | tr . /)"
     rtp2httpd_render_template "${RTP2HTTPD_APP_DIR}/rtp2httpd.conf.tpl" "$tmp_conf" \
         "__MULTICAST_IF__=${RTP2HTTPD_PARENT_IF}.${RTP2HTTPD_MULTICAST_VLAN}" \
         "__FCC_IF__=${RTP2HTTPD_PARENT_IF}.${RTP2HTTPD_FCC_VLAN}" \
@@ -354,7 +373,9 @@ rtp2httpd_install() {
     rtp2httpd_render_template "${RTP2HTTPD_APP_DIR}/rtp2httpd.service.tpl" "$tmp_service" \
         "__APP_DIR__=${RTP2HTTPD_APP_DIR}" "__CONFIG_PATH__=${RTP2HTTPD_CONFIG_PATH}" \
         "__MULTICAST_PROFILE_UUID__=${RTP2HTTPD_MULTICAST_PROFILE_UUID}" \
-        "__FCC_PROFILE_UUID__=${RTP2HTTPD_FCC_PROFILE_UUID}" || return 1
+        "__FCC_PROFILE_UUID__=${RTP2HTTPD_FCC_PROFILE_UUID}" \
+        "__MULTICAST_SYSCTL_IF__=${mcast_sysctl_if}" \
+        "__IGMP_VERSION__=${RTP2HTTPD_IGMP_VERSION}" || return 1
     rtp2httpd_write_state "$RTP2HTTPD_STATE_PATH"
     mv -f "$tmp_conf" "$RTP2HTTPD_CONFIG_PATH"
     mv -f "$tmp_service" "$RTP2HTTPD_SERVICE_PATH"

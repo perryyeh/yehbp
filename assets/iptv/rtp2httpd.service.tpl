@@ -8,6 +8,7 @@ Type=simple
 WorkingDirectory=__APP_DIR__
 ExecStartPre=/usr/bin/nmcli --wait 60 connection up uuid __MULTICAST_PROFILE_UUID__
 ExecStartPre=/usr/bin/nmcli --wait 60 connection up uuid __FCC_PROFILE_UUID__
+ExecStartPre=/usr/sbin/sysctl -w net.ipv4.conf.__MULTICAST_SYSCTL_IF__.force_igmp_version=__IGMP_VERSION__
 ExecStart=__APP_DIR__/rtp2httpd -c __CONFIG_PATH__
 Restart=on-failure
 RestartSec=5
