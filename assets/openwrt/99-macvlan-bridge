@@ -1,4 +1,4 @@
 #!/bin/sh
 
 [ "$ACTION" = "ifup" ] || exit 0
-/etc/init.d/yehbp-macvlan-bridge restart
+/etc/init.d/macvlan-bridge restart

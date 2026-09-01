@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.01.11"
+APP_VERSION="2026.09.01.12"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -2104,12 +2104,12 @@ create_macvlan_network() {
 }
 
 install_openwrt_macvlan_persistence() {
-    local init_script="/etc/init.d/yehbp-macvlan-bridge"
-    local hotplug_script="/etc/hotplug.d/iface/99-yehbp-macvlan-bridge"
+    local init_script="/etc/init.d/macvlan-bridge"
+    local hotplug_script="/etc/hotplug.d/iface/99-macvlan-bridge"
 
     mkdir -p /etc/init.d /etc/hotplug.d/iface
-    download_yehbp_asset "assets/openwrt/yehbp-macvlan-bridge.init" "$init_script" || return 1
-    download_yehbp_asset "assets/openwrt/99-yehbp-macvlan-bridge" "$hotplug_script" || return 1
+    download_yehbp_asset "assets/openwrt/macvlan-bridge.init" "$init_script" || return 1
+    download_yehbp_asset "assets/openwrt/99-macvlan-bridge" "$hotplug_script" || return 1
     chmod 0755 "$init_script" "$hotplug_script"
     "$init_script" enable
 }
@@ -2283,7 +2283,7 @@ create_macvlan_bridge() {
     fi
 
     if is_openwrt; then
-        setup_script="/usr/local/bin/yehbp-${safe_name}.sh"
+        setup_script="/usr/local/bin/${safe_name}.sh"
     else
         setup_script="/usr/local/bin/${safe_name}.sh"
     fi
@@ -2292,7 +2292,7 @@ create_macvlan_bridge() {
     echo "🧩 bridge 接口: $bridge_if"
     echo "🧩 配置脚本: $setup_script"
     if is_openwrt; then
-        echo "🧩 持久化服务: /etc/init.d/yehbp-macvlan-bridge + hotplug"
+        echo "🧩 持久化服务: /etc/init.d/macvlan-bridge + hotplug"
     else
         echo "🧩 systemd 服务: $service_name"
     fi
@@ -3727,7 +3727,7 @@ clean_macvlan_network() {
 clean_macvlan_bridge_openwrt() {
     local scripts=() script bridge_if choice to_clean=()
 
-    for script in /usr/local/bin/yehbp-macvlan_*.sh; do
+    for script in /usr/local/bin/macvlan_*.sh /usr/local/bin/yehbp-macvlan_*.sh; do
         [ -f "$script" ] && scripts+=("$script")
     done
     if [ ${#scripts[@]} -eq 0 ]; then
@@ -3762,6 +3762,10 @@ clean_macvlan_bridge_openwrt() {
         rm -f "$script"
     done
 
+    if ! compgen -G "/usr/local/bin/macvlan_*.sh" >/dev/null; then
+        /etc/init.d/macvlan-bridge disable 2>/dev/null || true
+        rm -f /etc/init.d/macvlan-bridge /etc/hotplug.d/iface/99-macvlan-bridge
+    fi
     if ! compgen -G "/usr/local/bin/yehbp-macvlan_*.sh" >/dev/null; then
         /etc/init.d/yehbp-macvlan-bridge disable 2>/dev/null || true
         rm -f /etc/init.d/yehbp-macvlan-bridge /etc/hotplug.d/iface/99-yehbp-macvlan-bridge

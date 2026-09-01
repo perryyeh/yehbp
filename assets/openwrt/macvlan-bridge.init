@@ -6,9 +6,9 @@ STOP=10
 start() {
     local script
 
-    for script in /usr/local/bin/yehbp-macvlan_*.sh; do
+    for script in /usr/local/bin/macvlan_*.sh; do
         [ -x "$script" ] || continue
-        "$script" || logger -t yehbp-macvlan "failed to apply $script"
+        "$script" || logger -t macvlan-bridge "failed to apply $script"
     done
 }
 
