@@ -69,9 +69,9 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 
 ### 配置Mihomo订阅（菜单 21）
 
-此功能管理 YehBP 安装的 **macvlan 和 host Mihomo**。Mihomo Compose 模板会构建一个基于官方镜像的本地运行时，并注入容器内 PID 1 `entrypoint.sh`；更新循环在该容器内部运行，不依赖宿主机 systemd、crond 或 Docker socket。进入菜单后会列出实例模式、容器名与实际 bind-mount 安装目录，必须选择一个目标，因此可安全管理多个版本/实例。完整 Mihomo YAML 订阅会下载到容器内临时文件；选择“按刷新模板覆盖参数”时，macvlan 使用现有的本地覆盖模板，host 使用仅含 `tun.enable: false` 的模板。选择“否”时订阅 YAML 原样校验后替换，不载入任何模板。两种模式均仅在下载和 `mihomo -t` 成功后原子替换 `config.yaml`，再由容器 `entrypoint.sh` 重载 Mihomo 核心进程，绝不重启整个容器；失败时保持正在运行的配置不变。
+此功能管理 YehBP 安装的 **macvlan 和 host Mihomo**。Mihomo Compose 模板会构建一个基于官方镜像的本地运行时，并注入容器内 PID 1 `entrypoint.sh`；更新循环在该容器内部运行，不依赖宿主机 systemd、crond 或 Docker socket。进入菜单后会列出实例模式、容器名与实际 bind-mount 安装目录，必须选择一个目标，因此可安全管理多个版本/实例。完整 Mihomo YAML 订阅会下载到容器内临时文件；选择“按刷新模板覆盖参数”时，YehBP 会从 Mihomo 仓库下载并原子覆盖该模式的最新模板：macvlan 使用 macvlan 覆盖模板，host 使用仅含 `tun.enable: false` 的模板。选择“否”时订阅 YAML 原样校验后替换，不载入任何模板。两种模式均仅在下载和 `mihomo -t` 成功后原子替换 `config.yaml`，再由容器 `entrypoint.sh` 重载 Mihomo 核心进程，绝不重启整个容器；失败时保持正在运行的配置不变。
 
-首次配置订阅时，会先选择目标实例的实际安装目录。若该实例尚未带有容器内自动更新，菜单会说明影响并要求确认；确认后仅将该实例的旧版 Compose 运行时迁移为本地构建运行时、重建容器以启用自动更新，保留安装目录、`config.yaml`、`.env`、容器名、网络/IP/MAC 及其余 Compose 字段。运行时下载、Compose 校验或容器健康检查失败时，会恢复原 Compose 并重新拉起旧容器；不会要求通过菜单 20 重装。`subscription.update.sh` 与 `config.yaml` 平级，随 Mihomo 模板仓库持续保留；每次菜单 21 执行添加、手动更新或删除前，YehBP 都会从 Mihomo 仓库下载、语法校验并原子覆盖该脚本。订阅 URL 仅在自动更新已就绪后才会提示输入。更新间隔默认 `0`，表示关闭自动刷新；设为任意正整数时才按对应小时周期刷新，非数字或小于 `1` 的值均不执行定时刷新，菜单 `2` 始终可手动更新。订阅 URL、周期、模板开关和模式保存在权限为 `0600` 的 `subscription.conf`；未配置订阅时该文件和 `subscription.update.log` 均不存在。删除订阅会验证并恢复该备份、由 `entrypoint.sh` 重载 Mihomo、删除 `subscription.conf`、日志和备份但保留 `subscription.update.sh`，并清理旧版 YehBP 创建的宿主机 timer/crond 项。
+首次配置订阅时，会先选择目标实例的实际安装目录。若该实例尚未带有容器内自动更新，菜单会说明影响并要求确认；确认后仅将该实例的旧版 Compose 运行时迁移为本地构建运行时、重建容器以启用自动更新，保留安装目录、`config.yaml`、`.env`、容器名、网络/IP/MAC 及其余 Compose 字段。运行时下载、Compose 校验或容器健康检查失败时，会恢复原 Compose 并重新拉起旧容器；不会要求通过菜单 20 重装。`subscription.sh` 与 `config.yaml` 平级，随 Mihomo 模板仓库持续保留；每次菜单 21 执行添加、手动更新或删除前，YehBP 都会从 Mihomo 仓库下载、语法校验并原子覆盖该脚本。订阅 URL 仅在自动更新已就绪后才会提示输入。更新间隔默认 `0`，表示关闭自动刷新；设为任意正整数时才按对应小时周期刷新，非数字或小于 `1` 的值均不执行定时刷新，菜单 `2` 始终可手动更新。订阅 URL、周期、模板开关和模式保存在权限为 `0600` 的 `subscription.conf`；未配置订阅时该文件和 `subscription.log` 均不存在。删除订阅会验证并恢复该备份、由 `entrypoint.sh` 重载 Mihomo、删除 `subscription.conf`、日志和备份但保留 `subscription.sh`，并清理旧版 YehBP 创建的宿主机 timer/crond 项。
 
 ### 安装/删除/升级 IPTV（rtp2httpd）（菜单 30）
 

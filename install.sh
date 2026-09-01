@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.09.01.04"
+APP_VERSION="2026.09.01.05"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -4831,7 +4831,7 @@ manage_rtp2httpd_menu() {
 load_mihomo_subscription_asset() {
     local asset
     asset="$(mktemp /tmp/yehbp-mihomo-subscription.XXXXXX.sh)" || return 1
-    if ! download_yehbp_asset "assets/mihomo-subscription/mihomo-subscription-manager.sh" "$asset" || ! bash -n "$asset"; then
+    if ! download_yehbp_asset "assets/mihomo/subscription.sh" "$asset" || ! bash -n "$asset"; then
         echo "❌ Mihomo 外部订阅功能脚本下载或语法检查失败。"
         rm -f "$asset"
         return 1
