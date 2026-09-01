@@ -1,6 +1,6 @@
 # YehBP maintenance notes
 
-- Project identity: repository `https://github.com/perryyeh/yehbp`, installed command `yehbp`, title `Yeh Bypass (Gateway)`, personal bypass-router helper covering DNS cache/splitting, proxy access, and remote home-network access.
+- Project identity: repository `https://github.com/perryyeh/yehbp`, installed command `yehbp`, title `Yeh Bypass Gateway`, personal bypass-router helper covering DNS cache/splitting, proxy access, and remote home-network access.
 - README install command should stay as a simple pipe form: `curl -fsSL <install.sh> | sudo bash`; do not change it to process substitution or require extra parameters.
 - Version bump rule:
   - Any code/script/behavior change must bump both `VERSION` and `APP_VERSION`.
