@@ -68,11 +68,20 @@ mihomo_subscription_remove_legacy_timer() {
   fi
 }
 
+# subscription.update.sh is owned by the Mihomo template repository. Every
+# YehBP subscription operation refreshes it from the canonical source so the
+# menu logic and updater protocol cannot drift out of sync.
 mihomo_subscription_install_script() {
-  local script="$MIHOMO_SUBSCRIPTION_DIR/config.subscription.update.sh"
-  download_yehbp_asset "assets/mihomo-subscription/config.subscription.update.sh" "$script" || return 1
-  chmod 0700 "$script"
-  sh -n "$script"
+  local script="$MIHOMO_SUBSCRIPTION_DIR/subscription.update.sh" tmp
+  tmp="$(mktemp "$MIHOMO_SUBSCRIPTION_DIR/.subscription.update.XXXXXX")" || return 1
+  if ! yehbp_curl --connect-timeout 10 --max-time 60 -fsSL \
+      "https://raw.githubusercontent.com/perryyeh/mihomo/main/subscription.update.sh" -o "$tmp" || \
+     ! sh -n "$tmp"; then
+    rm -f "$tmp"
+    echo "❌ 无法下载或校验 Mihomo subscription.update.sh。"
+    return 1
+  fi
+  chmod 0700 "$tmp" && mv "$tmp" "$script"
 }
 
 # Use the mode-specific YehBP template when the user asks to enforce local
@@ -266,7 +275,7 @@ mihomo_subscription_wait_for_mihomo() {
 
 mihomo_subscription_run_update() {
   docker exec -e MIHOMO_WAIT_RELOAD=1 "$MIHOMO_SUBSCRIPTION_CONTAINER" \
-    /root/.config/mihomo/config.subscription.update.sh --once
+    /root/.config/mihomo/subscription.update.sh --once
 }
 
 mihomo_subscription_add_or_replace() {
@@ -274,7 +283,7 @@ mihomo_subscription_add_or_replace() {
   mihomo_subscription_select_target || return $?
   mihomo_subscription_enable_runtime || return 1
   backup="$MIHOMO_SUBSCRIPTION_DIR/config.macvlan.backup.yaml"
-  conf="$MIHOMO_SUBSCRIPTION_DIR/config.subscription.conf"
+  conf="$MIHOMO_SUBSCRIPTION_DIR/subscription.conf"
 
   if [ -f "$conf" ]; then
     echo "当前已配置外部完整订阅（URL 为敏感信息，不显示）。"
@@ -309,7 +318,7 @@ mihomo_subscription_add_or_replace() {
     echo "🔎 正在由 Mihomo 容器原样下载并验证订阅…"
   fi
   if ! mihomo_subscription_run_update; then
-    echo "❌ 首次更新失败；已保留当前运行配置。请查看：$MIHOMO_SUBSCRIPTION_DIR/config.subscription.update.log"
+    echo "❌ 首次更新失败；已保留当前运行配置。请查看：$MIHOMO_SUBSCRIPTION_DIR/subscription.update.log"
     return 1
   fi
   mihomo_subscription_remove_legacy_timer || return 1
@@ -322,13 +331,13 @@ mihomo_subscription_add_or_replace() {
 
 mihomo_subscription_template_is_enabled() {
   local apply
-  apply="$(sed -n 's/^APPLY_TEMPLATE=//p' "$MIHOMO_SUBSCRIPTION_DIR/config.subscription.conf" | sed -n '1p')"
+  apply="$(sed -n 's/^APPLY_TEMPLATE=//p' "$MIHOMO_SUBSCRIPTION_DIR/subscription.conf" | sed -n '1p')"
   [ "${apply:-1}" != 0 ]
 }
 
 mihomo_subscription_manual_update() {
   mihomo_subscription_select_target || return $?
-  [ -f "$MIHOMO_SUBSCRIPTION_DIR/config.subscription.conf" ] || { echo "❌ 未配置外部订阅。"; return 1; }
+  [ -f "$MIHOMO_SUBSCRIPTION_DIR/subscription.conf" ] || { echo "❌ 未配置外部订阅。"; return 1; }
   mihomo_subscription_runtime_ready || return 1
   mihomo_subscription_install_script || return 1
   if mihomo_subscription_template_is_enabled; then
@@ -341,24 +350,25 @@ mihomo_subscription_delete() {
   local confirm dir backup
   mihomo_subscription_select_target || return $?
   mihomo_subscription_runtime_ready || return 1
+  mihomo_subscription_install_script || return 1
   dir="$MIHOMO_SUBSCRIPTION_DIR"
   backup="$dir/config.macvlan.backup.yaml"
   [ -f "$backup" ] || { echo "❌ 未找到 $backup，拒绝删除订阅以免无法恢复。"; return 1; }
   read -r -p "确认删除外部订阅、恢复本地配置并重载 Mihomo？[y/N]: " confirm
   [[ "$confirm" =~ ^[Yy]$ ]] || { echo "ℹ️ 已取消。"; return 0; }
   if ! docker exec -e MIHOMO_WAIT_RELOAD=1 "$MIHOMO_SUBSCRIPTION_CONTAINER" \
-      /root/.config/mihomo/config.subscription.update.sh --restore; then
+      /root/.config/mihomo/subscription.update.sh --restore; then
     echo "❌ 本地备份未通过当前 Mihomo 校验或重载失败，未删除订阅。"
     return 1
   fi
   mihomo_subscription_remove_legacy_timer || return 1
-  rm -f "$dir/config.subscription.conf" "$dir/config.subscription.update.sh" "$dir/config.subscription.update.log" "$backup"
+  rm -f "$dir/subscription.conf" "$dir/subscription.update.log" "$backup"
   echo "✅ 已恢复本地配置、重载 Mihomo，并删除外部订阅。"
 }
 
 mihomo_subscription_show_log() {
   mihomo_subscription_select_target || return $?
-  local log="$MIHOMO_SUBSCRIPTION_DIR/config.subscription.update.log"
+  local log="$MIHOMO_SUBSCRIPTION_DIR/subscription.update.log"
   [ -f "$log" ] || { echo "ℹ️ 暂无订阅更新日志。"; return 0; }
   printf '%s\n' "----- $log（最新在前）-----"
   cat "$log"
