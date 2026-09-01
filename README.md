@@ -285,28 +285,30 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 | 4  | ❌ | ✅ | ❌        | IPv6入站可做但不推荐，视作行5考虑                                                                            |
 | 5  | ❌ | ❌ | ❌        | 选relay/tunnel方案，比如cloudflare tunnel，frp，tailscale什么的                                           |
 
-## 📌 注意事项
-- 默认使用ipv4计算容器的mac地址，mac地址格式类似02:*:86
-- YehBP 的 IPv4→ULA 默认推导、适用范围和 RFC4193 注意事项见「4.1 ULA：YehBP 为什么这样推导」。
-- 安装macvlan bridge错误请回滚操作，以免流量死循环导致无法进入而重新刷机
+> [!WARNING]
+> - 默认使用 IPv4 计算容器的 MAC 地址，格式类似 `02:*:86`。
+> - YehBP 的 IPv4→ULA 默认推导、适用范围和 RFC4193 注意事项见「4.1 ULA：YehBP 为什么这样推导」。
+> - 安装 macvlan bridge 出错时请回滚，以免流量死循环、无法进入设备而需要重新刷机。
 
-## 其他
+### 6. 其他
 
-### 配置Mihomo订阅（菜单 21）
+#### 6.1 配置 Mihomo 订阅（菜单 21）
 
 管理 YehBP 安装的 **macvlan 和 host Mihomo**。选择实例后可添加/修改、立即更新、删除订阅或查看日志；更新间隔默认 `0`（不自动刷新）。可选择按当前模式模板覆盖参数，或原样使用订阅；更新成功后只重载 Mihomo，不重启容器。
 
 首次配置会在需要时提示启用容器内自动更新。订阅配置保存在权限为 `0600` 的 `subscription.conf`；未配置时 `subscription.conf` 和 `subscription.log` 不存在。删除订阅会恢复原本地配置并保留 `subscription.sh`。
 
-### 安装/删除/升级 IPTV（rtp2httpd）（菜单 30）
+#### 6.2 安装/删除/升级 IPTV（rtp2httpd）（菜单 30）
 
 仅支持 **NetworkManager + systemd** 的 Linux/NAS，不支持 OpenWrt。菜单提供安装/替换配置、升级共享二进制和删除配置；安装时需输入组播 VLAN、FCC/DHCP VLAN 及本机 IPv4 监听地址/端口（默认 `5140`）。
 
 二进制从 [stackia/rtp2httpd](https://github.com/stackia/rtp2httpd) 官方 release 下载并校验 SHA-256。删除只移除 YehBP 创建的配置、service 与 VLAN profile，保留共享二进制和既有网络配置。
 
-### Docker 镜像自动更新
+#### 6.3 安装/删除/升级 Dockcheck（菜单 80）
 
 菜单 `80` 管理 Dockcheck（状态、安装、删除、升级）；组件安装在所选 `dockerapps/_auto_update`，Dockcheck 直接从上游下载。Linux/NAS 可选定时更新，OpenWrt 仅支持手动模式。
+
+#### 6.4 检查/更新 Docker 镜像（菜单 88）
 
 菜单 `88` 可手动检查或更新 Docker 镜像；compose 容器可更新，非 compose 容器仅检查/拉取镜像而不重建。
 
@@ -317,8 +319,6 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 | 基础脚本依赖 | `ipcalc`, `curl`, `jq`, `tar` |
 | Docker 功能依赖 | `docker`, `docker compose` |
 | 自动更新依赖 | `dockcheck`, `flock`, `python3`, `systemctl`, `regctl` |
-
-其中 Dockcheck 直接从 `mag37/dockcheck` 获取；`regctl` 会在安装 Dockcheck 时下载到 `_auto_update/bin`。选择菜单 80 安装 Dockcheck 时，若缺少 `python3`，YehBP 会按当前系统的包管理器自动安装它。
 
 不同 NAS / Linux 发行版自带命令差异较大，安装前建议先确认基础依赖和 Docker Compose 是否可用。若 Debian/类 Debian NAS 的 APT 被与 YehBP 无关的残缺软件包阻塞，YehBP 会在常规安装失败后：为 `jq` 下载并校验官方独立二进制、为 `ipcalc` 仅下载并安装该单独 `.deb`；不会执行 `apt --fix-broken install`。
 
