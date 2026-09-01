@@ -7,7 +7,7 @@ umask 077
 APP_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 CONFIG="$APP_DIR/config.yaml"
 BACKUP="$APP_DIR/config.macvlan.backup.yaml"
-REPLACE="$APP_DIR/config.replace.yaml"
+REPLACE="$APP_DIR/config.replace.macvlan.yaml"
 SUBSCRIPTION_CONF="$APP_DIR/config.subscription.conf"
 LOG_FILE="$APP_DIR/config.subscription.update.log"
 LOCK_DIR="$APP_DIR/.config.subscription.update.lock"

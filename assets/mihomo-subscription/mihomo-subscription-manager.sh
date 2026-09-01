@@ -76,13 +76,13 @@ mihomo_subscription_install_script() {
 }
 
 # Use the mode-specific YehBP template when the user asks to enforce local
-# settings. Existing macvlan config.replace.yaml remains untouched, so local
-# customizations from earlier releases keep working.
+# settings. Existing macvlan config.replace.macvlan.yaml remains untouched, so
+# local customizations from earlier releases keep working.
 mihomo_subscription_install_replace_template() {
   local replace asset tmp
   case "$MIHOMO_SUBSCRIPTION_MODE" in
     macvlan)
-      replace="$MIHOMO_SUBSCRIPTION_DIR/config.replace.yaml"
+      replace="$MIHOMO_SUBSCRIPTION_DIR/config.replace.macvlan.yaml"
       asset="assets/mihomo-subscription/config.replace.macvlan.yaml"
       ;;
     host)
