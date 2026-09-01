@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.01.12"
+APP_VERSION="2026.09.01.13"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -2426,7 +2426,7 @@ EOF
 
     if is_openwrt; then
         install_openwrt_macvlan_persistence || return 1
-        /etc/init.d/yehbp-macvlan-bridge restart || {
+        /etc/init.d/macvlan-bridge restart || {
             echo "❌ macvlan bridge 持久化服务启动失败。"
             return 1
         }
