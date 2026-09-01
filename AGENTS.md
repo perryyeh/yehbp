@@ -14,7 +14,7 @@
 - Larger helper scripts/templates belong under `assets/<feature>/`; `install.sh` should download/render them instead of embedding large heredocs.
 - `yehbp` is public: keep generic installer/macvlan implementation behavior, reusable scripts, and non-private docs in this repo. Keep private homelab deployment differences, live IPs/paths, node-specific state, and operational notes in Obsidian homelab notes instead of the public repo. Old Obsidian/Hermes archive notes about `armbian` installer or macvlan may be stale and should not override repo-local code/docs for public behavior.
 - Docker auto-update installs under the selected `dockerapps/_auto_update` via menu items; do not embed large auto-update payloads as heredocs in `install.sh`.
-- The Dockcheck feature uses menu 81 for status/install/delete/component upgrade and menu 88 for manual image check/update. Avoid reintroducing Watchtower menu entries.
+- The Dockcheck feature uses menu 80 for status/install/delete/component upgrade and menu 88 for manual image check/update. Avoid reintroducing Watchtower menu entries.
 - Install Dockcheck directly from `https://raw.githubusercontent.com/mag37/dockcheck/main/dockcheck.sh`; do not keep a vendored fallback copy.
 - Menu 88 should locate the installation via systemd `ExecStart` on systemd hosts; on OpenWrt, locate executable `_auto_update/docker-auto-update.sh` installations under discovered dockerapps directories and require a selection if multiple exist.
 - The auto-update wrapper should resolve config from its own directory, not hardcoded paths.
