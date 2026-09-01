@@ -69,23 +69,15 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 
 ### 配置Mihomo订阅（菜单 21）
 
-此功能管理 YehBP 安装的 **macvlan 和 host Mihomo**。Mihomo Compose 模板会构建一个基于官方镜像的本地运行时，并注入容器内 PID 1 `entrypoint.sh`；更新循环在该容器内部运行，不依赖宿主机 systemd、crond 或 Docker socket。进入菜单后会列出实例模式、容器名与实际 bind-mount 安装目录，必须选择一个目标，因此可安全管理多个版本/实例。完整 Mihomo YAML 订阅会下载到容器内临时文件；选择“按刷新模板覆盖参数”时，YehBP 会从 Mihomo 仓库下载并原子覆盖该模式的最新模板：macvlan 使用 macvlan 覆盖模板，host 使用仅含 `tun.enable: false` 的模板。选择“否”时订阅 YAML 原样校验后替换，不载入任何模板。两种模式均仅在下载和 `mihomo -t` 成功后原子替换 `config.yaml`，再由容器 `entrypoint.sh` 重载 Mihomo 核心进程，绝不重启整个容器；失败时保持正在运行的配置不变。
+管理 YehBP 安装的 **macvlan 和 host Mihomo**。选择实例后可添加/修改、立即更新、删除订阅或查看日志；更新间隔默认 `0`（不自动刷新）。可选择按当前模式模板覆盖参数，或原样使用订阅；更新成功后只重载 Mihomo，不重启容器。
 
-首次配置订阅时，会先选择目标实例的实际安装目录。若该实例尚未带有容器内自动更新，菜单会说明影响并要求确认；确认后仅将该实例的旧版 Compose 运行时迁移为本地构建运行时、重建容器以启用自动更新，保留安装目录、`config.yaml`、`.env`、容器名、网络/IP/MAC 及其余 Compose 字段。运行时下载、Compose 校验或容器健康检查失败时，会恢复原 Compose 并重新拉起旧容器；不会要求通过菜单 20 重装。`subscription.sh` 与 `config.yaml` 平级，随 Mihomo 模板仓库持续保留；每次菜单 21 执行添加、手动更新或删除前，YehBP 都会从 Mihomo 仓库下载、语法校验并原子覆盖该脚本。订阅 URL 仅在自动更新已就绪后才会提示输入。更新间隔默认 `0`，表示关闭自动刷新；设为任意正整数时才按对应小时周期刷新，非数字或小于 `1` 的值均不执行定时刷新，菜单 `2` 始终可手动更新。订阅 URL、周期、模板开关和模式保存在权限为 `0600` 的 `subscription.conf`；未配置订阅时该文件和 `subscription.log` 均不存在。删除订阅会验证并恢复该备份、由 `entrypoint.sh` 重载 Mihomo、删除 `subscription.conf`、日志和备份但保留 `subscription.sh`，并清理旧版 YehBP 创建的宿主机 timer/crond 项。
+首次配置会在需要时提示启用容器内自动更新。订阅配置保存在权限为 `0600` 的 `subscription.conf`；未配置时 `subscription.conf` 和 `subscription.log` 不存在。删除订阅会恢复原本地配置并保留 `subscription.sh`。
 
 ### 安装/删除/升级 IPTV（rtp2httpd）（菜单 30）
 
-此功能面向使用 **NetworkManager + systemd** 的 Linux/NAS 主机，不支持 OpenWrt。它会：
+仅支持 **NetworkManager + systemd** 的 Linux/NAS，不支持 OpenWrt。菜单提供安装/替换配置、升级共享二进制和删除配置；安装时需输入组播 VLAN、FCC/DHCP VLAN 及本机 IPv4 监听地址/端口（默认 `5140`）。
 
-官方项目：[stackia/rtp2httpd](https://github.com/stackia/rtp2httpd)。
-
-1. 菜单 `30` 提供安装/替换配置、仅升级共享二进制和删除配置。安装时先搜索并选择 `dockerapps` 目录；共享二进制固定安装在 `<dockerapps>/rtp2httpd/rtp2httpd`，不会为每个配置重复下载。
-2. 输入配置名，例如 `tel` 会创建 `rtp2httpd_tel.conf`、状态文件 `rtp2httpd_tel.env` 和开机启动服务 `rtp2httpd_tel.service`；留空时自动使用最小未占用编号 `_1`、`_2`。
-3. 分别输入组播 VLAN ID 与 FCC/DHCP VLAN ID，以及一个已经配置在本机的 IPv4 监听地址及端口（默认 `5140`）。
-4. 创建两个 YehBP 管理的 VLAN profile：组播 VLAN 禁用 IPv4；FCC/DHCP VLAN 使用 DHCP，并将 DHCP 下发的路由放入实例专用路由表。rtp2httpd 的 FCC socket 绑定该 VLAN 接口，按 `oif` 规则仅使用该专用表，不改变主机其他流量的默认路由。
-5. 首次安装时从 `stackia/rtp2httpd` 官方 release 下载与本机架构匹配的二进制，并校验 GitHub 发布的 SHA-256 digest。
-
-同名配置已存在时，菜单 `30` 会询问是否替换对应配置和 service。仅升级操作从已安装 service 的 `ExecStart` 定位共享二进制，只下载并校验官方二进制，不改 VLAN、配置或 service 内容；会重启引用该二进制且当前运行中的实例使升级生效。父口列表只显示实际物理网卡，不显示 Docker bridge、veth、macvlan 或已有 VLAN 子接口。删除操作会枚举 `rtp2httpd.service` 和 `rtp2httpd_*.service`；前者对应 `rtp2httpd.conf`，确认后按状态文件记录的 UUID 删除两个 VLAN profile，并回读确认。profile 未完全删除时会保留 service、配置和状态文件以便修复后重试；共享二进制始终保留，不会按 VLAN ID 猜测或删除既有网络配置。
+二进制从 [stackia/rtp2httpd](https://github.com/stackia/rtp2httpd) 官方 release 下载并校验 SHA-256。删除只移除 YehBP 创建的配置、service 与 VLAN profile，保留共享二进制和既有网络配置。
 
 
 ## 🚀 使用方法
@@ -184,37 +176,9 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbpproxy.conf /usr/local/bin/ye
 
 ### 4. Docker 镜像自动更新
 
-菜单 `80` 提供 Dockcheck 管理：
+菜单 `80` 管理 Dockcheck（状态、安装、删除、升级）；组件安装在所选 `dockerapps/_auto_update`，Dockcheck 直接从上游下载。Linux/NAS 可选定时更新，OpenWrt 仅支持手动模式。
 
-- 查看 Dockcheck 状态/版本。
-- 安装 Dockcheck。
-- 删除 Dockcheck。
-- 升级 Dockcheck。
-
-安装 Dockcheck 时：
-
-- 选择 `dockerapps` 目录后，组件会安装到 `<dockerapps>/_auto_update`。
-- Dockcheck 脚本直接从上游 raw 脚本地址下载：`https://raw.githubusercontent.com/mag37/dockcheck/main/dockcheck.sh`；上游下载失败时会明确失败，不使用 YehBP 内置副本。
-- Linux/NAS 可设置新镜像发布后延迟 N 天再更新，也可选择更新后自动删除 dangling images 和是否启用每日 systemd timer。
-- OpenWrt 始终为手动模式，不创建 cron、procd 或定时任务；安装固定为不延迟更新、不自动清理镜像。
-
-删除 Dockcheck 时会停用并移除 systemd service/timer（如存在），并可选择是否删除 `_auto_update` 目录。
-
-升级 Dockcheck 时会先显示本地与上游版本；仅上游版本严格更高时才替换 Dockcheck 本体。无论 Dockcheck 是否有新版本，都会同步 YehBP 的 wrapper、MAC 检查脚本和模板。升级不会修改 `auto-update.conf`，也不会执行 Dockcheck、更新容器或重启 timer。
-
-菜单 `88` 提供镜像检查和更新操作：
-
-- 检查并更新 docker compose 容器。
-- 只检查全部容器，不更新。
-- 检查/拉取非 compose 容器镜像；不会重建该类容器。
-- 若已有 Dockcheck 任务，交互运行可选择强制终止旧任务后继续，或取消返回菜单；非交互任务不会终止已有任务。
-
-OpenWrt 中菜单 `80` 可安装、删除和升级 Dockcheck；菜单 `88` 可手动检查或更新镜像。安装会补齐 `bash`、`flock`、`findutils`、`python3` 等缺少的依赖，但不会创建 cron、procd 或其他定时任务。
-
-
-需要固定容器 MAC 的服务，应在 compose 网络配置中显式写 `mac_address`；Dockcheck 更新后会检查 compose 期望 MAC 与实际容器 MAC 是否一致。
-
-若 Docker daemon API 低于 `1.44`，YehBP 会在部署单 macvlan 服务前自动将网络级 `mac_address` 转为旧版 Docker 兼容的服务级写法；API `1.44` 及以上保持网络级写法不变。
+菜单 `88` 可手动检查或更新 Docker 镜像；compose 容器可更新，非 compose 容器仅检查/拉取镜像而不重建。
 
 <a id="fakeip-routing"></a>
 
