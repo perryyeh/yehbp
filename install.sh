@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass (Gateway)"
-APP_VERSION="2026.09.01.05"
+APP_VERSION="2026.09.01.06"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -668,9 +668,9 @@ function show_menu() {
     echo "22）安装ddns-go"
     echo "23）安装lucky"
     echo "30）安装/删除/升级 IPTV（rtp2httpd）"
-    echo "80）安装/管理 SOCKS5 代理"
-    echo "81）安装/删除/升级 Dockcheck"
+    echo "80）安装/删除/升级 Dockcheck"
     echo "88）检查/更新docker镜像"
+    echo "89）安装/管理 SOCKS5 代理"
     echo "90）创建macvlan bridge"
     echo "91）删除macvlan bridge"
     echo "92）迁移docker目录"
@@ -4128,7 +4128,7 @@ sync_dockcheck_auto_update_components() {
     fi
     if ! base_dir="$(find_dockcheck_auto_update_base)"; then
         echo "❌ 未找到 Dockcheck 组件。"
-        echo "👉 请先执行 81 → 2 安装 Dockcheck。"
+        echo "👉 请先执行 80 → 2 安装 Dockcheck。"
         return 1
     fi
 
@@ -4274,7 +4274,7 @@ run_dockcheck_auto_update_once() {
     local base_dir mode confirm label non_compose_names name names_csv
     if ! base_dir="$(find_dockcheck_auto_update_base)"; then
         echo "❌ 未找到 Dockcheck 组件。"
-        echo "👉 请先执行 81 → 2 安装 Dockcheck。"
+        echo "👉 请先执行 80 → 2 安装 Dockcheck。"
         return 1
     fi
 
@@ -4875,15 +4875,15 @@ while true; do
         21) manage_mihomo_subscription_menu ;;
         22) install_ddnsgo ;;
         23) install_lucky ;;
-        80) manage_socks5_proxy ;;
+        30) manage_rtp2httpd_menu ;;
+        80) manage_dockcheck_auto_update ;;
+        88) run_dockcheck_auto_update_once ;;
+        89) manage_socks5_proxy ;;
+        90) create_macvlan_bridge ;;
+        91) clean_macvlan_bridge ;;
         92) migrate_docker_datadir ;;
         93) if is_openwrt; then echo "ℹ️ OpenWrt dockerd 日志配置不使用 daemon.json；该功能当前不适用。"; else optimize_docker_logs; fi ;;
         94) if is_openwrt; then echo "ℹ️ OpenWrt 使用 logd/logread，不使用 journald；该功能不适用。"; else optimize_journald_to_volatile; fi ;;
-        30) manage_rtp2httpd_menu ;;
-        90) create_macvlan_bridge ;;
-        91) clean_macvlan_bridge ;;
-        81) manage_dockcheck_auto_update ;;
-        88) run_dockcheck_auto_update_once ;;
         99|exit|quit|q) echo "退出脚本。"; exit 0 ;;
         999|del|delete|uninstall|remove|rm) uninstall_yehbp_cli ;;
         *) echo "无效选项，请重新输入。" ;;

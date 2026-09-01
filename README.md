@@ -56,9 +56,9 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 22 | 安装 ddnsgo                   |
 | 23 | 安装 lucky                    |
 | 30 | 安装/删除/升级 IPTV（rtp2httpd） |
-| 80 | 安装/管理 SOCKS5 代理          |
-| 81 | 安装/删除/升级 Dockcheck       |
+| 80 | 安装/删除/升级 Dockcheck       |
 | 88 | 检查/更新docker镜像            |
+| 89 | 安装/管理 SOCKS5 代理          |
 | 90 | 创建macvlan bridge            |
 | 91 | 删除macvlan bridge            |
 | 92 | 迁移docker目录                 |
@@ -138,9 +138,9 @@ sudo yehbp
 sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbpproxy.conf /usr/local/bin/yehbp.bak-*
 ```
 
-### SOCKS5 下载代理（菜单 80）
+### SOCKS5 下载代理（菜单 89）
 
-菜单 `80` 可保存一个无认证 SOCKS5 代理。输入格式为 `IP或域名:端口`，也可带 `socks5://` 前缀；有效端口为 `1–65535`。配置保存到与 `yehbp` 命令同目录的 `/usr/local/bin/yehbpproxy.conf`，再次添加会直接替换该单一值，删除操作会删除该文件。
+菜单 `89` 可保存一个无认证 SOCKS5 代理。输入格式为 `IP或域名:端口`，也可带 `socks5://` 前缀；有效端口为 `1–65535`。配置保存到与 `yehbp` 命令同目录的 `/usr/local/bin/yehbpproxy.conf`，再次添加会直接替换该单一值，删除操作会删除该文件。
 
 有效配置会用于 YehBP 的版本检查、升级及功能下载，并通过 `socks5h` 让代理端解析下载域名。配置文件不存在或内容无效时，YehBP 不使用代理；已配置有效代理但系统未安装 `curl` 时，为避免绕过代理，下载会取消而非退回直连。
 
@@ -184,7 +184,7 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbpproxy.conf /usr/local/bin/ye
 
 ### 4. Docker 镜像自动更新
 
-菜单 `81` 提供 Dockcheck 管理：
+菜单 `80` 提供 Dockcheck 管理：
 
 - 查看 Dockcheck 状态/版本。
 - 安装 Dockcheck。
@@ -209,7 +209,7 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbpproxy.conf /usr/local/bin/ye
 - 检查/拉取非 compose 容器镜像；不会重建该类容器。
 - 若已有 Dockcheck 任务，交互运行可选择强制终止旧任务后继续，或取消返回菜单；非交互任务不会终止已有任务。
 
-OpenWrt 中菜单 `81` 可安装、删除和升级 Dockcheck；菜单 `88` 可手动检查或更新镜像。安装会补齐 `bash`、`flock`、`findutils`、`python3` 等缺少的依赖，但不会创建 cron、procd 或其他定时任务。
+OpenWrt 中菜单 `80` 可安装、删除和升级 Dockcheck；菜单 `88` 可手动检查或更新镜像。安装会补齐 `bash`、`flock`、`findutils`、`python3` 等缺少的依赖，但不会创建 cron、procd 或其他定时任务。
 
 
 需要固定容器 MAC 的服务，应在 compose 网络配置中显式写 `mac_address`；Dockcheck 更新后会检查 compose 期望 MAC 与实际容器 MAC 是否一致。
@@ -353,7 +353,7 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 | Docker 功能依赖 | `docker`, `docker compose` |
 | 自动更新依赖 | `dockcheck`, `flock`, `python3`, `systemctl`, `regctl` |
 
-其中 Dockcheck 直接从 `mag37/dockcheck` 获取；`regctl` 会在安装 Dockcheck 时下载到 `_auto_update/bin`。选择菜单 81 安装 Dockcheck 时，若缺少 `python3`，YehBP 会按当前系统的包管理器自动安装它。
+其中 Dockcheck 直接从 `mag37/dockcheck` 获取；`regctl` 会在安装 Dockcheck 时下载到 `_auto_update/bin`。选择菜单 80 安装 Dockcheck 时，若缺少 `python3`，YehBP 会按当前系统的包管理器自动安装它。
 
 不同 NAS / Linux 发行版自带命令差异较大，安装前建议先确认基础依赖和 Docker Compose 是否可用。若 Debian/类 Debian NAS 的 APT 被与 YehBP 无关的残缺软件包阻塞，YehBP 会在常规安装失败后：为 `jq` 下载并校验官方独立二进制、为 `ipcalc` 仅下载并安装该单独 `.deb`；不会执行 `apt --fix-broken install`。
 
