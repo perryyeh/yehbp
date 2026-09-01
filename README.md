@@ -67,19 +67,6 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 99 / exit / quit / q | 退出脚本           |
 | 999 / del / delete / uninstall / remove / rm | 删除 `yehbp` |
 
-### 配置Mihomo订阅（菜单 21）
-
-管理 YehBP 安装的 **macvlan 和 host Mihomo**。选择实例后可添加/修改、立即更新、删除订阅或查看日志；更新间隔默认 `0`（不自动刷新）。可选择按当前模式模板覆盖参数，或原样使用订阅；更新成功后只重载 Mihomo，不重启容器。
-
-首次配置会在需要时提示启用容器内自动更新。订阅配置保存在权限为 `0600` 的 `subscription.conf`；未配置时 `subscription.conf` 和 `subscription.log` 不存在。删除订阅会恢复原本地配置并保留 `subscription.sh`。
-
-### 安装/删除/升级 IPTV（rtp2httpd）（菜单 30）
-
-仅支持 **NetworkManager + systemd** 的 Linux/NAS，不支持 OpenWrt。菜单提供安装/替换配置、升级共享二进制和删除配置；安装时需输入组播 VLAN、FCC/DHCP VLAN 及本机 IPv4 监听地址/端口（默认 `5140`）。
-
-二进制从 [stackia/rtp2httpd](https://github.com/stackia/rtp2httpd) 官方 release 下载并校验 SHA-256。删除只移除 YehBP 创建的配置、service 与 VLAN profile，保留共享二进制和既有网络配置。
-
-
 ## 🚀 使用方法
 
 ### 1. 安装 yehbp
@@ -173,12 +160,6 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbpproxy.conf /usr/local/bin/ye
 同一宿主机需要同时运行不同用途的实例时，为每个实例指定不同的容器/目录名称，并确认其端口不会冲突。
 
 安装 Mihomo 时，YehBP 会按所选模式读取 `config.host.yaml` 或 `config.macvlan.yaml` 的 `external-ui` 与 `external-ui-url`，下载 tar.gz 格式的最新 UI，校验归档结构和 `index.html` 后原子替换到该 `external-ui` 目录；UI 下载或校验失败会在启动容器前取消安装。
-
-### 4. Docker 镜像自动更新
-
-菜单 `80` 管理 Dockcheck（状态、安装、删除、升级）；组件安装在所选 `dockerapps/_auto_update`，Dockcheck 直接从上游下载。Linux/NAS 可选定时更新，OpenWrt 仅支持手动模式。
-
-菜单 `88` 可手动检查或更新 Docker 镜像；compose 容器可更新，非 compose 容器仅检查/拉取镜像而不重建。
 
 <a id="fakeip-routing"></a>
 
@@ -308,6 +289,26 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 - 默认使用ipv4计算容器的mac地址，mac地址格式类似02:*:86
 - YehBP 的 IPv4→ULA 默认推导、适用范围和 RFC4193 注意事项见「5.1 ULA：YehBP 为什么这样推导」。
 - 安装macvlan bridge错误请回滚操作，以免流量死循环导致无法进入而重新刷机
+
+## 其他
+
+### 配置Mihomo订阅（菜单 21）
+
+管理 YehBP 安装的 **macvlan 和 host Mihomo**。选择实例后可添加/修改、立即更新、删除订阅或查看日志；更新间隔默认 `0`（不自动刷新）。可选择按当前模式模板覆盖参数，或原样使用订阅；更新成功后只重载 Mihomo，不重启容器。
+
+首次配置会在需要时提示启用容器内自动更新。订阅配置保存在权限为 `0600` 的 `subscription.conf`；未配置时 `subscription.conf` 和 `subscription.log` 不存在。删除订阅会恢复原本地配置并保留 `subscription.sh`。
+
+### 安装/删除/升级 IPTV（rtp2httpd）（菜单 30）
+
+仅支持 **NetworkManager + systemd** 的 Linux/NAS，不支持 OpenWrt。菜单提供安装/替换配置、升级共享二进制和删除配置；安装时需输入组播 VLAN、FCC/DHCP VLAN 及本机 IPv4 监听地址/端口（默认 `5140`）。
+
+二进制从 [stackia/rtp2httpd](https://github.com/stackia/rtp2httpd) 官方 release 下载并校验 SHA-256。删除只移除 YehBP 创建的配置、service 与 VLAN profile，保留共享二进制和既有网络配置。
+
+### Docker 镜像自动更新
+
+菜单 `80` 管理 Dockcheck（状态、安装、删除、升级）；组件安装在所选 `dockerapps/_auto_update`，Dockcheck 直接从上游下载。Linux/NAS 可选定时更新，OpenWrt 仅支持手动模式。
+
+菜单 `88` 可手动检查或更新 Docker 镜像；compose 容器可更新，非 compose 容器仅检查/拉取镜像而不重建。
 
 ## 📦 依赖
 
