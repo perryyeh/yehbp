@@ -377,7 +377,7 @@ mihomo_subscription_show_log() {
 
 manage_mihomo_subscription() {
   echo "🔧 Mihomo 外部完整订阅配置（macvlan / host；容器内更新）"
-  echo "1）添加/修改外部订阅（默认不自动刷新）"
+  echo "1）添加/修改外部订阅"
   echo "2）立即更新外部订阅"
   echo "3）删除外部订阅并恢复本地配置"
   echo "4）查看订阅更新日志"
