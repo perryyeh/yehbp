@@ -20,7 +20,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 需要注意：
 
 - 如果代理流量较大 / 客户端较多，瓶颈在 Mihomo 上，可使用 CPU 性能、网速更高的 x86 安装 Mihomo，或用 macOS 上的 Surge 替代 Mihomo，以获得更好的代理性能。
-- FakeIP 旁路需要 DNS 与数据面路由同时可用：仅能解析到 FakeIP 不代表流量能到达代理入口。IPv4/IPv6 的地址规划、Surge/Mihomo 转发和验证见下方「5. FakeIP 旁路与 IPv6 规划」。
+- FakeIP 旁路需要 DNS 与数据面路由同时可用：仅能解析到 FakeIP 不代表流量能到达代理入口。IPv4/IPv6 的地址规划、Surge/Mihomo 转发和验证见下方「4. FakeIP 旁路与 IPv6 规划」。
 > [!WARNING]
 > 如果主路由不支持静态路由或 LAN RA 路由宣告，客户端即使能解析到 FakeIP，流量也无法正确到达代理入口，FakeIP 旁路方案不可完整工作。
 
@@ -141,7 +141,7 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbpproxy.conf /usr/local/bin/ye
 7. 安装 MosDNS；选择 Surge 作为上游时 DNS 写 `198.18.0.2`，选择 Mihomo 作为上游时 DNS 写 Mihomo 的 局域网IP。
 8. 安装 AdGuardHome，并使用 MosDNS 作为上游 DNS。
 9. 最后创建 macvlan bridge，解决宿主机和容器之间的互通。bridge IPv4 使用 macvlan IPv4 IPRange 的最后一个可用地址；bridge IPv6 使用 Docker IPv6 IPRange 的最后一个地址，宿主机也对该相同 IPv6 IPRange 写入 bridge 路由。手动输入的 IPv6 CIDR/IPRange/Gateway 优先；如 IPv6 IPRange 与 parent 接口现有 RA/on-link 前缀重叠，应确认该路由设计符合预期。
-10. 按下方「[5. FakeIP 旁路与 IPv6 规划](#fakeip-routing)」完成 Surge 或 Mihomo 的 FakeIP 数据面转发与验证。
+10. 按下方「[4. FakeIP 旁路与 IPv6 规划](#fakeip-routing)」完成 Surge 或 Mihomo 的 FakeIP 数据面转发与验证。
 11. 在路由器把 AdGuardHome 的 IP 设置为局域网 DNS。
 
 > [!WARNING]
@@ -163,13 +163,13 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbpproxy.conf /usr/local/bin/ye
 
 <a id="fakeip-routing"></a>
 
-### 5. FakeIP 旁路与 IPv6 规划
+### 4. FakeIP 旁路与 IPv6 规划
 
 FakeIP 的 DNS 返回地址只是代理流量的目标地址；客户端、路由器或宿主机还必须把该地址段的数据流送到 Surge / Mihomo。验证时始终使用当前 DNS 实际返回的 FakeIP，不要写死某次解析结果。
 
 <a id="ula-derivation"></a>
 
-#### 5.1 ULA：YehBP 为什么这样推导
+#### 4.1 ULA：YehBP 为什么这样推导
 
 YehBP 默认把 RFC1918 IPv4 网段映射为独立 ULA `/64`：
 
@@ -187,7 +187,7 @@ YehBP 默认把 RFC1918 IPv4 网段映射为独立 ULA `/64`：
 
 > Fake-IP 地址池与 LAN ULA 是不同概念：LAN ULA 用于稳定的局域网下一跳；Fake-IP 是 DNS 为代理域名返回的目标地址。
 
-#### 5.2 转发到 macOS Surge
+#### 4.2 转发到 macOS Surge
 
 ##### Fake IPv4
 
@@ -238,7 +238,7 @@ Surge 使用 VIF 承载 FakeIP，必须设置 `ipv6-vif = always`。Mac 须开�
 
 如果上述 Surge 链路未验证完成，安装 mosdns 时不要开启 fake IPv6 解析。
 
-#### 5.3 转发到 Mihomo
+#### 4.3 转发到 Mihomo
 
 | 流量 | 路由前缀 | 下一跳 |
 |---|---|---|
@@ -249,7 +249,7 @@ Mihomo 也使用 FakeIP，但与 Surge 不同：它没有 Surge VIF 的 `::1` �
 
 YehBP 创建 macvlan bridge 时，如探测到 Mihomo，会询问是否同时写入宿主机直达 Mihomo 的 FakeIP route；这只优化宿主机访问，不替代 LAN 或 macvlan 客户端所需的路由。
 
-#### 5.4 macvlan 容器：接受 Surge RA 的 Fake IPv6 路由
+#### 4.4 macvlan 容器：接受 Surge RA 的 Fake IPv6 路由
 
 使用 Docker `macvlan` 的容器，在通过 Surge RA 获得非默认 Fake IPv6 路由时，需要显式接受该 RIO。否则容器即使能解析出 Fake IPv6，也可能不会安装指向 Surge 的专用路由，而是错误走默认 IPv6 网关，导致 HTTPS 超时。
 
@@ -274,7 +274,7 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 
 正常结果应命中 Surge RA 宣告的专用下一跳，而不是仅依赖默认 IPv6 网关。
 
-### 6. IPv4 + IPv6 回家
+### 5. IPv4 + IPv6 回家
 ⚠️ 入站协议尽量避免udp。下列方案依赖mihomo入站，请先安装mihomo并配置好入站端口。
 
 | 场景 | 公网ipv4 | 公网ipv6 | 容器可得ipv6 | 入站方式                                                                                           
@@ -287,7 +287,7 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 
 ## 📌 注意事项
 - 默认使用ipv4计算容器的mac地址，mac地址格式类似02:*:86
-- YehBP 的 IPv4→ULA 默认推导、适用范围和 RFC4193 注意事项见「5.1 ULA：YehBP 为什么这样推导」。
+- YehBP 的 IPv4→ULA 默认推导、适用范围和 RFC4193 注意事项见「4.1 ULA：YehBP 为什么这样推导」。
 - 安装macvlan bridge错误请回滚操作，以免流量死循环导致无法进入而重新刷机
 
 ## 其他
