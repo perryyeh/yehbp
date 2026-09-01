@@ -50,7 +50,7 @@ rtp2httpd_is_local_ipv4() {
 
 rtp2httpd_select_parent() {
     local -a interfaces=()
-    local iface sys_path choice
+    local iface sys_path choice ipv4
     while IFS= read -r iface; do
         iface="${iface%%@*}"
         [ "$iface" = "lo" ] && continue
@@ -65,7 +65,9 @@ rtp2httpd_select_parent() {
     [ ${#interfaces[@]} -gt 0 ] || { echo "❌ 未找到可用网卡。"; return 1; }
     echo "请选择承载 IPTV VLAN 的父网卡："
     for i in "${!interfaces[@]}"; do
-        printf '  %d）%s\n' "$((i + 1))" "${interfaces[$i]}"
+        ipv4="$(ip -4 -o addr show dev "${interfaces[$i]}" scope global 2>/dev/null \
+            | awk '{sub(/\/.*/, "", $4); printf "%s%s", sep, $4; sep=", "}')"
+        printf '  %d）%s（IP：%s）\n' "$((i + 1))" "${interfaces[$i]}" "${ipv4:--}"
     done
     echo "  0）返回"
     read -r -p "请输入要操作的序号: " choice
