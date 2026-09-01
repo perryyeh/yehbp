@@ -144,9 +144,6 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbpproxy.conf /usr/local/bin/ye
 10. 按下方「[4. FakeIP 旁路与 IPv6 规划](#fakeip-routing)」完成 Surge 或 Mihomo 的 FakeIP 数据面转发与验证。
 11. 在路由器把 AdGuardHome 的 IP 设置为局域网 DNS。
 
-> [!WARNING]
-> 如果安装 `macvlan bridge` 后将 FakeIP 路由指向本机 Mihomo，且 ddns-go 容器使用 `host` 网络模式，请注释其配置中的 `httpinterface: end0`（或实际物理网口名）；否则可能导致公网 IPv4 获取或 DNS 记录提交异常。
-
 #### 安装时的网络模式选择
 
 菜单 `20`、`21`、`22` 安装容器时会询问网络模式。选择不会自动由“回家”场景推断，应按实际用途确认：
@@ -186,6 +183,13 @@ YehBP 默认把 RFC1918 IPv4 网段映射为独立 ULA `/64`：
 这只是便捷、确定性的映射，不是 RFC4193 随机 Global ID。多站点、跨网络互联或长期正式部署时，建议自行规划 RFC4193 ULA，并在创建 macvlan 时输入完整 IPv6 CIDR。
 
 > Fake-IP 地址池与 LAN ULA 是不同概念：LAN ULA 用于稳定的局域网下一跳；Fake-IP 是 DNS 为代理域名返回的目标地址。
+
+> [!WARNING]
+> 默认使用 IPv4 计算容器的 MAC 地址，格式类似 `02:*:86`。
+>
+> 安装 macvlan bridge 出错时请回滚，以免流量死循环、无法进入设备而需要重新刷机。
+>
+> 如果安装 macvlan bridge 后将 FakeIP 路由指向本机 Mihomo，且 ddns-go 容器使用 `host` 网络模式，请注释其配置中的 `httpinterface: end0`（或实际物理网口名）；否则可能导致公网 IPv4 获取或 DNS 记录提交异常。
 
 #### 4.2 转发到 macOS Surge
 
@@ -284,11 +288,6 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 | 3  | ✅ | ❌ | ❌        | 随意ddns后，路由器加端口转发，仅IPv4。                                                                        |
 | 4  | ❌ | ✅ | ❌        | IPv6入站可做但不推荐，视作行5考虑                                                                            |
 | 5  | ❌ | ❌ | ❌        | 选relay/tunnel方案，比如cloudflare tunnel，frp，tailscale什么的                                           |
-
-> [!WARNING]
-> - 默认使用 IPv4 计算容器的 MAC 地址，格式类似 `02:*:86`。
-> - YehBP 的 IPv4→ULA 默认推导、适用范围和 RFC4193 注意事项见「4.1 ULA：YehBP 为什么这样推导」。
-> - 安装 macvlan bridge 出错时请回滚，以免流量死循环、无法进入设备而需要重新刷机。
 
 ### 6. 其他
 
