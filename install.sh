@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.03.02"
+APP_VERSION="2026.09.03.03"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -652,14 +652,14 @@ function show_menu() {
     echo "1）显示操作系统信息"
     echo "2）显示网卡信息"
     echo "3）显示磁盘信息"
-    echo "4）显示docker信息"
+    echo "4）格式化磁盘并挂载"
+    echo "6）显示docker信息"
     if ! is_openwrt; then
-        echo "5）格式化磁盘并挂载"
         echo "7）安装docker"
     fi
     echo "8）创建macvlan（包括ipv4+ipv6）"
     echo "9）删除macvlan"
-    echo "10）安装portainer面板"
+    echo "25）安装portainer面板"
     echo "11）安装librespeed测速"
     echo "14）安装adguardhome"
     echo "19）安装mosdns"
@@ -4866,12 +4866,12 @@ while true; do
         1) os_info ;;
         2) nic_info ;;
         3) disk_info ;;
-        4) docker_info ;;
-        5) if is_openwrt; then echo "ℹ️ iStoreOS 请使用系统存储管理格式化和挂载磁盘。"; else format_disk; fi ;;
+        4) if is_openwrt; then echo "ℹ️ iStoreOS 请使用系统存储管理格式化和挂载磁盘。"; else format_disk; fi ;;
+        6) docker_info ;;
         7) if is_openwrt; then echo "ℹ️ iStoreOS 请使用系统 dockerd 软件包；当前已检测到 Docker 时无需安装。"; else install_docker; fi ;;
         8) create_macvlan_network ;;
         9) clean_macvlan_network ;;
-        10) install_portainer ;;
+        25) install_portainer ;;
         11) install_librespeed ;;
         14) install_adguardhome ;;
         19) install_mosdns ;;

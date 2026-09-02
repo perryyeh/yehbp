@@ -42,12 +42,12 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 1  | 显示操作系统信息                    |
 | 2  | 显示网卡信息                      |
 | 3  | 显示磁盘信息                      |
-| 4  | 显示 Docker 信息                |
-| 5  | 格式化磁盘并挂载                    |
+| 4  | 格式化磁盘并挂载                    |
+| 6  | 显示 Docker 信息                |
 | 7  | 安装 Docker                   |
 | 8  | 创建macvlan（包括ipv4+ipv6）      |
 | 9  | 删除 macvlan                  |
-| 10 | 安装 Portainer                |
+| 25 | 安装 Portainer                |
 | 11 | 安装 LibreSpeed               |
 | 14 | 安装 AdGuardHome              |
 | 19 | 安装 mosdns                   |
