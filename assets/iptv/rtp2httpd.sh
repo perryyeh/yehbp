@@ -589,18 +589,60 @@ rtp2httpd_delete() {
     done
 }
 
+rtp2httpd_restart() {
+    local choice service instance i
+    local -a selected_services=()
+    if ! command -v systemctl >/dev/null 2>&1; then
+        echo "❌ 重启 rtp2httpd 需要 systemctl。"
+        return 1
+    fi
+    rtp2httpd_list_instances
+    if [ ${#RTP2HTTPD_LIST_SERVICES[@]} -eq 0 ]; then
+        echo "ℹ️ 未找到 rtp2httpd 开机启动服务（rtp2httpd.service 或 rtp2httpd_*.service）。"
+        return 0
+    fi
+    echo "可重启的 rtp2httpd 实例："
+    for i in "${!RTP2HTTPD_LIST_SERVICES[@]}"; do
+        service="${RTP2HTTPD_LIST_SERVICES[$i]}"
+        instance="${service#${RTP2HTTPD_SERVICE_BASE}}"
+        instance="${instance%.service}"
+        instance="${instance#_}"
+        printf '  %d）%s（%s）\n' "$((i + 1))" "${instance:-默认}" "$service"
+    done
+    echo "  0）返回"
+    echo "  a）全部"
+    read -r -p "请输入要操作的序号: " choice
+    if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#RTP2HTTPD_LIST_SERVICES[@]}" ]; then
+        selected_services=("${RTP2HTTPD_LIST_SERVICES[$((choice - 1))]}")
+    elif [[ "$choice" =~ ^[Aa]$ ]]; then
+        selected_services=("${RTP2HTTPD_LIST_SERVICES[@]}")
+    else
+        return 0
+    fi
+
+    for service in "${selected_services[@]}"; do
+        if ! systemctl restart "$service"; then
+            echo "❌ ${service} 重启失败；请检查：journalctl -u ${service}"
+            return 1
+        fi
+        echo "✅ 已重启 ${service}。"
+    done
+}
+
 manage_rtp2httpd() {
     local choice
     printf '\n=== IPTV（rtp2httpd） ===\n'
     echo "1）安装 / 替换配置"
-    echo "2）仅升级 rtp2httpd 二进制"
-    echo "3）删除配置"
+    echo "2）删除配置"
+    echo "3）仅升级 rtp2httpd 二进制"
+    echo "4）重启 rtp2httpd 实例"
     echo "0）返回"
     read -r -p "请输入要操作的序号: " choice
     case "$choice" in
         1) rtp2httpd_install ;;
-        2) rtp2httpd_upgrade ;;
-        3) rtp2httpd_delete ;;
+        2) rtp2httpd_delete ;;
+        3) rtp2httpd_upgrade ;;
+        4) rtp2httpd_restart ;;
         *) return 0 ;;
     esac
 }
