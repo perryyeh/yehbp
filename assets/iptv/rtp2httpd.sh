@@ -103,6 +103,58 @@ rtp2httpd_prompt_igmp_version() {
     done
 }
 
+rtp2httpd_prompt_fcc_ipv4() {
+    local choice address gateway
+    while true; do
+        read -r -p "FCC 地址方式（1=DHCP，2=静态 IPv4；默认 1）: " choice
+        choice="${choice:-1}"
+        case "$choice" in
+            1)
+                RTP2HTTPD_FCC_IPV4_METHOD="dhcp"
+                RTP2HTTPD_FCC_IPV4_ADDRESS=""
+                RTP2HTTPD_FCC_IPV4_GATEWAY=""
+                return 0
+                ;;
+            2) break ;;
+            *) echo "❌ 请输入 1 或 2。" ;;
+        esac
+    done
+
+    while true; do
+        read -r -p "请输入 FCC 静态 IPv4 地址/前缀（例如 192.168.10.2/24，回车退出）: " address
+        [ -n "$address" ] || return 2
+        read -r -p "请输入 FCC IPv4 网关（回车退出）: " gateway
+        [ -n "$gateway" ] || return 2
+        if python3 - "$address" "$gateway" <<'PY'
+import ipaddress
+import sys
+
+try:
+    interface = ipaddress.IPv4Interface(sys.argv[1])
+    gateway = ipaddress.IPv4Address(sys.argv[2])
+    valid = (
+        interface.network.prefixlen < 32
+        and gateway in interface.network
+        and gateway != interface.ip
+        and not interface.ip.is_unspecified
+        and not interface.ip.is_multicast
+        and not gateway.is_unspecified
+        and not gateway.is_multicast
+    )
+except ValueError:
+    valid = False
+sys.exit(0 if valid else 1)
+PY
+        then
+            RTP2HTTPD_FCC_IPV4_METHOD="static"
+            RTP2HTTPD_FCC_IPV4_ADDRESS="$address"
+            RTP2HTTPD_FCC_IPV4_GATEWAY="$gateway"
+            return 0
+        fi
+        echo "❌ 静态地址必须是有效 IPv4 CIDR，网关须与地址在同一网段且不能相同。"
+    done
+}
+
 rtp2httpd_prompt_bind() {
     local value port
     while true; do
@@ -297,6 +349,9 @@ INSTANCE=${RTP2HTTPD_INSTANCE}
 PARENT_IF=${RTP2HTTPD_PARENT_IF}
 MULTICAST_VLAN=${RTP2HTTPD_MULTICAST_VLAN}
 FCC_VLAN=${RTP2HTTPD_FCC_VLAN}
+FCC_IPV4_METHOD=${RTP2HTTPD_FCC_IPV4_METHOD}
+FCC_IPV4_ADDRESS=${RTP2HTTPD_FCC_IPV4_ADDRESS}
+FCC_IPV4_GATEWAY=${RTP2HTTPD_FCC_IPV4_GATEWAY}
 FCC_ROUTE_TABLE=${RTP2HTTPD_FCC_ROUTE_TABLE}
 FCC_ROUTE_PRIORITY=${RTP2HTTPD_FCC_ROUTE_PRIORITY}
 IGMP_VERSION=${RTP2HTTPD_IGMP_VERSION}
@@ -309,7 +364,7 @@ EOF
 }
 
 rtp2httpd_install() {
-    local dockerapps answer mcast_name fcc_name mcast_sysctl_if tmp_conf tmp_service
+    local dockerapps answer mcast_name fcc_name mcast_sysctl_if tmp_conf tmp_service fcc_ipv4_args=()
     rtp2httpd_require_commands || return 1
     select_dockerapps_dir "安装IPTV(rtp2httpd)"
     case $? in 0) dockerapps="$SELECTED_DOCKERAPPS_DIR" ;; 2) return 0 ;; *) return 1 ;; esac
@@ -331,6 +386,8 @@ rtp2httpd_install() {
         echo "❌ 组播和 FCC/DHCP VLAN ID 必须不同。"
         return 1
     fi
+    rtp2httpd_prompt_fcc_ipv4
+    case $? in 0) ;; 2) return 0 ;; *) return 1 ;; esac
     rtp2httpd_prompt_igmp_version || return 0
     rtp2httpd_prompt_bind || return 0
     rtp2httpd_fcc_routing_params || return 1
@@ -366,8 +423,13 @@ rtp2httpd_install() {
         return 1
     fi
     RTP2HTTPD_FCC_PROFILE_UUID="$(nmcli -g connection.uuid connection show "$fcc_name")"
+    if [ "$RTP2HTTPD_FCC_IPV4_METHOD" = "static" ]; then
+        fcc_ipv4_args=(ipv4.method manual ipv4.addresses "$RTP2HTTPD_FCC_IPV4_ADDRESS" ipv4.gateway "$RTP2HTTPD_FCC_IPV4_GATEWAY")
+    else
+        fcc_ipv4_args=(ipv4.method auto)
+    fi
     if ! nmcli connection modify uuid "$RTP2HTTPD_FCC_PROFILE_UUID" \
-        connection.autoconnect yes ipv4.method auto ipv4.never-default no \
+        connection.autoconnect yes "${fcc_ipv4_args[@]}" ipv4.never-default no \
         ipv4.route-table "$RTP2HTTPD_FCC_ROUTE_TABLE" \
         ipv4.routing-rules "priority ${RTP2HTTPD_FCC_ROUTE_PRIORITY} oif ${RTP2HTTPD_PARENT_IF}.${RTP2HTTPD_FCC_VLAN} table ${RTP2HTTPD_FCC_ROUTE_TABLE}" \
         ipv6.method disabled; then

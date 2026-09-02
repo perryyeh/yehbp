@@ -299,7 +299,7 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 
 #### 6.2 安装/删除/升级 IPTV（rtp2httpd）（菜单 30）
 
-仅支持 **NetworkManager + systemd** 的 Linux/NAS，不支持 OpenWrt。菜单提供安装/替换配置、升级共享二进制和删除配置；安装时需输入组播 VLAN、FCC/DHCP VLAN 及本机 IPv4 监听地址/端口（默认 `5140`）。
+仅支持 **NetworkManager + systemd** 的 Linux/NAS，不支持 OpenWrt。菜单提供安装/替换配置、升级共享二进制和删除配置；安装时需输入组播 VLAN、FCC VLAN、FCC 地址方式及本机 IPv4 监听地址/端口（默认 `5140`）。FCC 地址方式默认 DHCP；选择静态 IPv4 时需输入 `地址/前缀` 与同网段网关。
 
 二进制从 [stackia/rtp2httpd](https://github.com/stackia/rtp2httpd) 官方 release 下载并校验 SHA-256。删除只移除 YehBP 创建的配置、service 与 VLAN profile，保留共享二进制和既有网络配置。
 
