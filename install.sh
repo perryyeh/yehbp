@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.03.06"
+APP_VERSION="2026.09.03.07"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -666,11 +666,11 @@ function show_menu() {
     echo "21）配置mihomo订阅"
     echo "22）安装ddns-go"
     echo "23）安装lucky"
-    echo "28）安装portainer面板"
-    echo "29）安装portainer agent"
-    echo "70）安装/删除/升级 IPTV（rtp2httpd）"
-    echo "80）安装/删除/升级 Dockcheck"
-    echo "88）检查/更新docker镜像"
+    echo "60）安装portainer面板"
+    echo "61）安装portainer agent"
+    echo "66）安装/删除/升级 Dockcheck"
+    echo "68）检查/更新docker镜像"
+    echo "80）安装/删除/升级 IPTV（rtp2httpd）"
     echo "89）安装/管理 SOCKS5 代理"
     echo "90）创建macvlan bridge"
     echo "91）删除macvlan bridge"
@@ -4131,7 +4131,7 @@ install_dockcheck_auto_update() {
         auto_prune=false
         enable_timer=n
         timer_calendar="*-*-* 04:30:00"
-        echo "ℹ️ OpenWrt 手动模式：不创建定时任务，固定为不延迟更新、不自动清理镜像；请通过菜单 88 手动检查或更新镜像。"
+        echo "ℹ️ OpenWrt 手动模式：不创建定时任务，固定为不延迟更新、不自动清理镜像；请通过菜单 68 手动检查或更新镜像。"
     else
         read -r -p "新镜像发布后延迟 N 天再更新 [0]: " delay_days
         delay_days="${delay_days:-0}"
@@ -4255,7 +4255,7 @@ sync_dockcheck_auto_update_components() {
     fi
     if ! base_dir="$(find_dockcheck_auto_update_base)"; then
         echo "❌ 未找到 Dockcheck 组件。"
-        echo "👉 请先执行 80 → 2 安装 Dockcheck。"
+        echo "👉 请先执行 66 → 2 安装 Dockcheck。"
         return 1
     fi
 
@@ -4401,7 +4401,7 @@ run_dockcheck_auto_update_once() {
     local base_dir mode confirm label non_compose_names name names_csv
     if ! base_dir="$(find_dockcheck_auto_update_base)"; then
         echo "❌ 未找到 Dockcheck 组件。"
-        echo "👉 请先执行 80 → 2 安装 Dockcheck。"
+        echo "👉 请先执行 66 → 2 安装 Dockcheck。"
         return 1
     fi
 
@@ -4996,8 +4996,8 @@ while true; do
         7) if is_openwrt; then echo "ℹ️ iStoreOS 请使用系统 dockerd 软件包；当前已检测到 Docker 时无需安装。"; else install_docker; fi ;;
         8) create_macvlan_network ;;
         9) clean_macvlan_network ;;
-        28) install_portainer ;;
-        29) install_portainer_agent ;;
+        60) install_portainer ;;
+        61) install_portainer_agent ;;
         11) install_librespeed ;;
         14) install_adguardhome ;;
         19) install_mosdns ;;
@@ -5005,9 +5005,9 @@ while true; do
         21) manage_mihomo_subscription_menu ;;
         22) install_ddnsgo ;;
         23) install_lucky ;;
-        70) manage_rtp2httpd_menu ;;
-        80) manage_dockcheck_auto_update ;;
-        88) run_dockcheck_auto_update_once ;;
+        66) manage_dockcheck_auto_update ;;
+        68) run_dockcheck_auto_update_once ;;
+        80) manage_rtp2httpd_menu ;;
         89) manage_socks5_proxy ;;
         90) create_macvlan_bridge ;;
         91) clean_macvlan_bridge ;;

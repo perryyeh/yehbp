@@ -359,12 +359,12 @@ done
   cd "$BASE_DIR"
   if [ ! -x ./dockcheck.sh ]; then
     echo "❌ 未找到可执行的 Dockcheck 脚本：$BASE_DIR/dockcheck.sh"
-    echo "👉 请重新执行 80 安装 Dockcheck。"
+    echo "👉 请重新执行 66 安装 Dockcheck。"
     exit 1
   fi
   if ! printf '%s\n' test | xargs -P 1 -I{} true >/dev/null 2>&1; then
     echo "❌ 当前 xargs 不支持 Dockcheck 所需的 -P 和 -I 选项。"
-    echo "👉 OpenWrt 请先执行 80 → 2 安装 Dockcheck，以安装 findutils。"
+    echo "👉 OpenWrt 请先执行 66 → 2 安装 Dockcheck，以安装 findutils。"
     exit 1
   fi
 

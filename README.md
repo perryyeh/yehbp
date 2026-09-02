@@ -54,11 +54,11 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 21 | 配置mihomo订阅             |
 | 22 | 安装 ddnsgo                   |
 | 23 | 安装 lucky                    |
-| 28 | 安装 Portainer                |
-| 29 | 安装 Portainer Agent          |
-| 70 | 安装/删除/升级/重启 IPTV（rtp2httpd） |
-| 80 | 安装/删除/升级 Dockcheck       |
-| 88 | 检查/更新docker镜像            |
+| 60 | 安装 Portainer                |
+| 61 | 安装 Portainer Agent          |
+| 66 | 安装/删除/升级 Dockcheck       |
+| 68 | 检查/更新docker镜像            |
+| 80 | 安装/删除/升级/重启 IPTV（rtp2httpd） |
 | 89 | 安装/管理 SOCKS5 代理          |
 | 90 | 创建macvlan bridge            |
 | 91 | 删除macvlan bridge            |
@@ -298,19 +298,19 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 
 首次配置会在需要时提示启用容器内自动更新。订阅配置保存在权限为 `0600` 的 `subscription.conf`；未配置时 `subscription.conf` 和 `subscription.log` 不存在。删除订阅会恢复原本地配置并保留 `subscription.sh`。
 
-#### 6.2 安装/删除/升级/重启 IPTV（rtp2httpd）（菜单 70）
+#### 6.2 安装/删除/升级/重启 IPTV（rtp2httpd）（菜单 80）
 
 仅支持 **NetworkManager + systemd** 的 Linux/NAS，不支持 OpenWrt。菜单提供安装/替换配置、删除配置、升级共享二进制和重启选定实例；安装时需输入组播 VLAN、FCC VLAN、FCC 地址方式及本机 IPv4 监听地址/端口（默认 `5140`）。FCC 地址方式默认 DHCP；选择静态 IPv4 时需输入 `地址/前缀` 与同网段网关。
 
 二进制从 [stackia/rtp2httpd](https://github.com/stackia/rtp2httpd) 官方 release 下载并校验 SHA-256。删除只移除 YehBP 创建的配置、service 与 VLAN profile，保留共享二进制和既有网络配置。
 
-#### 6.3 安装/删除/升级 Dockcheck（菜单 80）
+#### 6.3 安装/删除/升级 Dockcheck（菜单 66）
 
-菜单 `80` 管理 Dockcheck（状态、安装、删除、升级）；组件安装在所选 `dockerapps/_auto_update`，Dockcheck 直接从上游下载。Linux/NAS 可选定时更新，OpenWrt 仅支持手动模式。
+菜单 `66` 管理 Dockcheck（状态、安装、删除、升级）；组件安装在所选 `dockerapps/_auto_update`，Dockcheck 直接从上游下载。Linux/NAS 可选定时更新，OpenWrt 仅支持手动模式。
 
-#### 6.4 检查/更新 Docker 镜像（菜单 88）
+#### 6.4 检查/更新 Docker 镜像（菜单 68）
 
-菜单 `88` 可手动检查或更新 Docker 镜像；compose 容器可更新，非 compose 容器仅检查/拉取镜像而不重建。
+菜单 `68` 可手动检查或更新 Docker 镜像；compose 容器可更新，非 compose 容器仅检查/拉取镜像而不重建。
 
 ## 📦 依赖
 
