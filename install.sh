@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.03.05"
+APP_VERSION="2026.09.03.06"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -668,7 +668,7 @@ function show_menu() {
     echo "23）安装lucky"
     echo "28）安装portainer面板"
     echo "29）安装portainer agent"
-    echo "30）安装/删除/升级 IPTV（rtp2httpd）"
+    echo "70）安装/删除/升级 IPTV（rtp2httpd）"
     echo "80）安装/删除/升级 Dockcheck"
     echo "88）检查/更新docker镜像"
     echo "89）安装/管理 SOCKS5 代理"
@@ -4943,14 +4943,16 @@ manage_rtp2httpd_menu() {
 
     printf '\n=== IPTV（rtp2httpd） ===\n'
     echo "1）安装 / 替换配置"
-    echo "2）仅升级 rtp2httpd 二进制"
-    echo "3）删除配置"
+    echo "2）删除配置"
+    echo "3）仅升级 rtp2httpd 二进制"
+    echo "4）重启 rtp2httpd 实例"
     echo "0）返回"
     read -r -p "请输入要操作的序号: " choice
     case "$choice" in
         1) load_rtp2httpd_asset && rtp2httpd_install ;;
-        2) load_rtp2httpd_asset && rtp2httpd_upgrade ;;
-        3) load_rtp2httpd_asset && rtp2httpd_delete ;;
+        2) load_rtp2httpd_asset && rtp2httpd_delete ;;
+        3) load_rtp2httpd_asset && rtp2httpd_upgrade ;;
+        4) load_rtp2httpd_asset && rtp2httpd_restart ;;
         *) return 0 ;;
     esac
 }
@@ -5003,7 +5005,7 @@ while true; do
         21) manage_mihomo_subscription_menu ;;
         22) install_ddnsgo ;;
         23) install_lucky ;;
-        30) manage_rtp2httpd_menu ;;
+        70) manage_rtp2httpd_menu ;;
         80) manage_dockcheck_auto_update ;;
         88) run_dockcheck_auto_update_once ;;
         89) manage_socks5_proxy ;;
