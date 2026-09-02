@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.03.03"
+APP_VERSION="2026.09.03.04"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -659,7 +659,8 @@ function show_menu() {
     fi
     echo "8）创建macvlan（包括ipv4+ipv6）"
     echo "9）删除macvlan"
-    echo "25）安装portainer面板"
+    echo "28）安装portainer面板"
+    echo "29）安装portainer agent"
     echo "11）安装librespeed测速"
     echo "14）安装adguardhome"
     echo "19）安装mosdns"
@@ -3597,6 +3598,128 @@ EOF
     fi
 }
 
+portainer_agent_secret() {
+    local choice secret
+    while true; do
+        echo "Portainer Agent 认证方式："
+        echo "  1）不设置 AGENT_SECRET（默认）"
+        echo "  2）生成随机 AGENT_SECRET"
+        echo "  3）输入现有 AGENT_SECRET"
+        echo "  0）返回"
+        read -r -p "请输入要操作的序号: " choice
+        choice="${choice:-1}"
+        case "$choice" in
+            1)
+                PORTAINER_AGENT_SECRET=""
+                PORTAINER_AGENT_SECRET_SOURCE="none"
+                return 0
+                ;;
+            2)
+                if command -v openssl >/dev/null 2>&1; then
+                    secret="$(openssl rand -hex 32)" || return 1
+                elif command -v python3 >/dev/null 2>&1; then
+                    secret="$(python3 -c 'import secrets; print(secrets.token_hex(32))')" || return 1
+                else
+                    echo "❌ 生成 AGENT_SECRET 需要 openssl 或 python3。"
+                    return 1
+                fi
+                PORTAINER_AGENT_SECRET="$secret"
+                PORTAINER_AGENT_SECRET_SOURCE="generated"
+                return 0
+                ;;
+            3)
+                read -r -s -p "请输入现有 AGENT_SECRET: " secret
+                echo
+                if [[ ! "$secret" =~ ^[A-Za-z0-9._~+/=-]+$ ]] || [ "${#secret}" -gt 256 ]; then
+                    echo "❌ AGENT_SECRET 仅可包含字母、数字和 . _ ~ + / = -，长度为 1–256。"
+                    continue
+                fi
+                PORTAINER_AGENT_SECRET="$secret"
+                PORTAINER_AGENT_SECRET_SOURCE="existing"
+                return 0
+                ;;
+            0) return 2 ;;
+            *) echo "❌ 请输入 0、1、2 或 3。" ;;
+        esac
+    done
+}
+
+install_portainer_agent() {
+    local dockerapps agent_dir compose_file env_file bak_dir ts docker_root host_ip
+    local -a COMPOSE
+
+    select_dockerapps_dir "portainer agent"
+    case $? in
+      0) dockerapps="$SELECTED_DOCKERAPPS_DIR" ;;
+      2) echo "✅ 已退出 portainer agent 安装。"; return 0 ;;
+      *) return 1 ;;
+    esac
+    portainer_agent_secret
+    case $? in 0) ;; 2) return 0 ;; *) return 1 ;; esac
+
+    if docker compose version >/dev/null 2>&1; then
+        COMPOSE=(docker compose)
+    elif command -v docker-compose >/dev/null 2>&1; then
+        COMPOSE=(docker-compose)
+    else
+        echo "❌ 未找到 docker compose / docker-compose，无法用 compose 管理 Portainer Agent。"
+        return 1
+    fi
+    docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null)"
+    if [ -z "$docker_root" ] || [ ! -d "${docker_root}/volumes" ]; then
+        echo "❌ 无法识别 Docker volume 目录。"
+        return 1
+    fi
+
+    agent_dir="${dockerapps}/portainer_agent"
+    compose_file="${agent_dir}/docker-compose.yml"
+    env_file="${agent_dir}/.env"
+    ts="$(date +%Y%m%d-%H%M%S)"
+    if docker ps -a --format '{{.Names}}' | grep -qx portainer_agent; then
+        echo "🧩 发现旧 Portainer Agent 容器，正在移除..."
+        docker rm -f portainer_agent >/dev/null || return 1
+    fi
+    if [ -d "$agent_dir" ]; then
+        bak_dir="${agent_dir}.bak-${ts}"
+        echo "🔄 检测到现有 Portainer Agent 目录，替换安装：$agent_dir -> $bak_dir"
+        mv "$agent_dir" "$bak_dir" || return 1
+    else
+        echo "⬇️ 首次安装 Portainer Agent：$agent_dir"
+    fi
+    mkdir -p "${agent_dir}/data" || return 1
+
+    {
+        printf '%s\n' 'services:' '  portainer_agent:' '    image: portainer/agent:lts' '    container_name: portainer_agent' '    restart: always' '    ports:' '      - "9001:9001"'
+        if [ -n "$PORTAINER_AGENT_SECRET" ]; then
+            printf '%s\n' '    env_file:' '      - .env'
+        fi
+        printf '%s\n' '    volumes:' '      - /var/run/docker.sock:/var/run/docker.sock' "      - ${docker_root}/volumes:/var/lib/docker/volumes" '      - ./data:/data'
+    } > "$compose_file" || return 1
+    if [ -n "$PORTAINER_AGENT_SECRET" ]; then
+        (umask 077 && printf 'AGENT_SECRET=%s\n' "$PORTAINER_AGENT_SECRET" > "$env_file") || return 1
+        chmod 0600 "$env_file" || return 1
+    fi
+
+    echo "🔎 Portainer Agent compose 校验..."
+    (cd "$agent_dir" && "${COMPOSE[@]}" -p portainer_agent -f docker-compose.yml config >/dev/null) || return 1
+    echo "🚀 使用 compose 启动 Portainer Agent..."
+    (cd "$agent_dir" && "${COMPOSE[@]}" -p portainer_agent -f docker-compose.yml up -d) || return 1
+
+    host_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')"
+    [ -z "$host_ip" ] && host_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    echo "✅ Portainer Agent 已用 compose 启动"
+    echo "  compose 文件：$compose_file"
+    echo "  Agent 地址：${host_ip:-<宿主机IP>}:9001"
+    if [ "$PORTAINER_AGENT_SECRET_SOURCE" = "generated" ]; then
+        echo "  AGENT_SECRET：$PORTAINER_AGENT_SECRET"
+        echo "  ⚠️ 请将此值同步到 Portainer Server 及同一 Server 管理的全部 Agent。"
+    elif [ "$PORTAINER_AGENT_SECRET_SOURCE" = "existing" ]; then
+        echo "  AGENT_SECRET：已使用现有值。"
+    else
+        echo "  AGENT_SECRET：未设置。"
+    fi
+}
+
 # ========== 删除 docker macvlan 网络 ==========
 clean_macvlan_network() {
     echo "🧹 删除 Docker macvlan 网络"
@@ -4871,7 +4994,8 @@ while true; do
         7) if is_openwrt; then echo "ℹ️ iStoreOS 请使用系统 dockerd 软件包；当前已检测到 Docker 时无需安装。"; else install_docker; fi ;;
         8) create_macvlan_network ;;
         9) clean_macvlan_network ;;
-        25) install_portainer ;;
+        28) install_portainer ;;
+        29) install_portainer_agent ;;
         11) install_librespeed ;;
         14) install_adguardhome ;;
         19) install_mosdns ;;
