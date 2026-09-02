@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.03.04"
+APP_VERSION="2026.09.03.05"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -659,8 +659,6 @@ function show_menu() {
     fi
     echo "8）创建macvlan（包括ipv4+ipv6）"
     echo "9）删除macvlan"
-    echo "28）安装portainer面板"
-    echo "29）安装portainer agent"
     echo "11）安装librespeed测速"
     echo "14）安装adguardhome"
     echo "19）安装mosdns"
@@ -668,6 +666,8 @@ function show_menu() {
     echo "21）配置mihomo订阅"
     echo "22）安装ddns-go"
     echo "23）安装lucky"
+    echo "28）安装portainer面板"
+    echo "29）安装portainer agent"
     echo "30）安装/删除/升级 IPTV（rtp2httpd）"
     echo "80）安装/删除/升级 Dockcheck"
     echo "88）检查/更新docker镜像"
