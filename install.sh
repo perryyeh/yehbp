@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.03.14"
+APP_VERSION="2026.09.03.16"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -3872,8 +3872,8 @@ configure_portainer_agent_secret_one() {
 }
 
 configure_portainer_agent_secret() {
-    local -a ids=() names=() selected_indexes=()
-    local id name image status role choice index success=0 failed=0
+    local -a ids=() names=()
+    local id name image status role choice index
 
     if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
         echo "❌ Docker 服务不可用或当前用户无权访问。"
@@ -3896,15 +3896,12 @@ configure_portainer_agent_secret() {
         return 0
     fi
     echo "  0）返回"
-    echo "  a）全部"
     read -r -p "请输入要操作的序号: " choice
     if [ -z "$choice" ] || [ "$choice" = "0" ]; then
         echo "已取消配置。"
         return 0
-    elif [[ "$choice" =~ ^[Aa]$ ]]; then
-        selected_indexes=("${!ids[@]}")
     elif [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#ids[@]}" ]; then
-        selected_indexes=("$((choice - 1))")
+        index=$((choice - 1))
     else
         echo "❌ 无效序号。"
         return 1
@@ -3920,18 +3917,10 @@ configure_portainer_agent_secret() {
         echo "ℹ️ 未设置 AGENT_SECRET，未修改容器。"
         return 0
     fi
-    for index in "${selected_indexes[@]}"; do
-        if configure_portainer_agent_secret_one "${ids[$index]}" "${names[$index]}"; then
-            success=$((success + 1))
-        else
-            failed=$((failed + 1))
-        fi
-    done
-    echo "ℹ️ Portainer AGENT_SECRET 配置完成：成功 ${success} 个，失败 ${failed} 个。"
+    configure_portainer_agent_secret_one "${ids[$index]}" "${names[$index]}" || return 1
     if [ "$PORTAINER_AGENT_SECRET_SOURCE" = "generated" ]; then
         echo "⚠️ 请保存此 AGENT_SECRET，并在同一 Portainer Server 管理的全部 Server/Agent 上配置相同值：$PORTAINER_AGENT_SECRET"
     fi
-    [ "$failed" -eq 0 ]
 }
 
 install_portainer_agent() {
