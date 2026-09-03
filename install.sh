@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.03.19"
+APP_VERSION="2026.09.03.21"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -666,9 +666,7 @@ function show_menu() {
     echo "3）显示磁盘信息"
     echo "4）格式化磁盘并挂载"
     echo "6）显示docker信息"
-    if ! is_openwrt; then
-        echo "7）安装/升级docker"
-    fi
+    echo "7）安装/升级docker"
     echo "8）创建macvlan（包括ipv4+ipv6）"
     echo "9）删除macvlan"
     echo "11）安装librespeed"
@@ -1869,17 +1867,35 @@ delete_docker_container_and_image() {
     fi
 }
 
-docker_has_custom_systemd_unit() {
+docker_is_standard_installation() {
+    local package fragment
+
+    command -v dpkg-query >/dev/null 2>&1 || return 1
+    for package in docker-ce docker-ce-cli containerd.io; do
+        [ "$(dpkg-query -W -f='${db:Status-Status}' "$package" 2>/dev/null)" = "installed" ] || return 1
+    done
     command -v systemctl >/dev/null 2>&1 || return 1
-    [ -e /etc/systemd/system/docker.service ] || [ -e /etc/systemd/system/docker.service.d ]
+    fragment="$(systemctl show -p FragmentPath --value docker.service 2>/dev/null)"
+    case "$fragment" in
+        /lib/systemd/system/docker.service|/usr/lib/systemd/system/docker.service) return 0 ;;
+        *) return 1 ;;
+    esac
 }
 
 install_docker() {
     local action confirm
 
     echo "🔧 安装/升级 Docker"
+    if is_openwrt; then
+        echo "⚠️ 当前系统不支持通过 YehBP 安装标准 Docker，请跟随系统去安装或升级。"
+        return 0
+    fi
     if command -v docker >/dev/null 2>&1; then
         echo "ℹ️ 已检测到 Docker：$(docker --version 2>/dev/null || echo '无法读取版本')"
+        if ! docker_is_standard_installation; then
+            echo "⚠️ 当前 Docker 不是标准 Docker 安装，请跟随系统去升级。"
+            return 0
+        fi
         action="升级"
         read -r -p "是否确认升级 Docker？升级可能重启 Docker 服务和容器。[y/N]: " confirm
     else
@@ -1891,12 +1907,6 @@ install_docker() {
         echo "已取消 Docker ${action}。"
         return 0
     fi
-    if docker_has_custom_systemd_unit; then
-        echo "⚠️ 检测到本机自定义 Docker systemd 单元；为避免覆盖系统定制配置，YehBP 不会升级它。"
-        echo "ℹ️ 请使用该系统提供的 Docker 升级方式。"
-        return 0
-    fi
-
     . /etc/os-release
 
     sudo apt-get update
@@ -5313,7 +5323,7 @@ while true; do
         3) disk_info ;;
         4) if is_openwrt; then echo "ℹ️ iStoreOS 请使用系统存储管理格式化和挂载磁盘。"; else format_disk; fi ;;
         6) docker_info ;;
-        7) if is_openwrt; then echo "ℹ️ iStoreOS 请使用系统 dockerd 软件包；当前已检测到 Docker 时无需安装。"; else install_docker; fi ;;
+        7) install_docker ;;
         8) create_macvlan_network ;;
         9) clean_macvlan_network ;;
         60) install_portainer ;;
