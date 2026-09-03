@@ -56,6 +56,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 23 | 安装 lucky                    |
 | 60 | 安装 Portainer Server（管理服务器） |
 | 61 | 安装 Portainer Agent（受管节点） |
+| 63 | 配置 Portainer AGENT_SECRET      |
 | 66 | 安装/删除/升级 Dockcheck       |
 | 68 | 检查/更新docker镜像            |
 | 69 | 删除 Docker 容器、镜像和 Compose 目录 |
@@ -318,6 +319,10 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 菜单 `69` 列出所有容器（含已停止容器），选择后会二次确认并强制删除该容器。未被其他容器引用的镜像会一并删除；若镜像仍被其他容器引用，会明确列出这些容器并保留镜像，随后继续 Compose 目录处理。
 
 对于具有 Docker Compose `com.docker.compose.project.working_dir` 标签的容器，删除完成后可输入 `y` 删除该 Compose 所在目录。此操作仅删除标签指向的 working_dir，**不会删除**该 Compose 通过 bind mount 引用的其他主机目录，也不会删除 Docker volumes；没有该标签、标签不是安全的绝对路径或目录已不存在时，不会删除任何主机目录。
+
+#### 6.6 配置 Portainer AGENT_SECRET（菜单 63）
+
+菜单 `63` 会列出本机的 Portainer Server 与 Agent 容器，选择一个后可生成或输入 `AGENT_SECRET`。该 Secret 必须在同一 Portainer Server 管理的全部 Server/Agent 使用相同值。为让新增环境变量生效，脚本会备份该容器的 Compose 与 `.env` 配置，写入权限为 `0600` 的 `.env`，再通过 Compose 强制重建选中容器并验证 Secret 已注入；仅支持带完整 Docker Compose 标签的本地部署。
 
 ## 📦 依赖
 

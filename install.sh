@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.03.12"
+APP_VERSION="2026.09.03.13"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -668,6 +668,7 @@ function show_menu() {
     echo "23）安装lucky"
     echo "60）安装 Portainer Server（管理服务器）"
     echo "61）安装 Portainer Agent（受管节点）"
+    echo "63）配置 Portainer AGENT_SECRET"
     echo "66）安装/删除/升级 Dockcheck"
     echo "68）检查/更新docker镜像"
     echo "69）删除 Docker 容器、镜像和 Compose 目录"
@@ -3751,6 +3752,171 @@ portainer_agent_secret() {
     done
 }
 
+# 仅处理 YehBP 生成的单服务 Compose 文件：若尚未使用 .env，则在
+# container_name 后插入 env_file。不会猜测或改写其他 YAML 结构。
+portainer_enable_agent_secret_env_file() {
+    local compose_file="$1" service="$2" tmp
+
+    [[ "$service" =~ ^[A-Za-z0-9_.-]+$ ]] || return 1
+    if awk -v service="$service" '
+        $0 == "  " service ":" { in_service=1; next }
+        in_service && $0 ~ /^  [A-Za-z0-9_.-]+:$/ { in_service=0 }
+        in_service && $0 ~ /^    env_file:[[:space:]]*$/ { found=1 }
+        END { exit !found }
+    ' "$compose_file"; then
+        if awk -v service="$service" '
+            $0 == "  " service ":" { in_service=1; next }
+            in_service && $0 ~ /^  [A-Za-z0-9_.-]+:$/ { in_service=0 }
+            in_service && $0 ~ /^      -[[:space:]]*\.env[[:space:]]*$/ { found=1 }
+            END { exit !found }
+        ' "$compose_file"; then
+            return 0
+        fi
+        echo "❌ $compose_file 的 $service 已使用非 .env 的 env_file；为避免错误改写，未修改配置。"
+        return 1
+    fi
+
+    tmp="$(mktemp "${compose_file}.tmp.XXXXXX")" || return 1
+    if ! awk -v service="$service" '
+        $0 == "  " service ":" { in_service=1 }
+        in_service && $0 ~ /^  [A-Za-z0-9_.-]+:$/ && $0 != "  " service ":" { in_service=0 }
+        { print }
+        in_service && !inserted && $0 ~ /^    container_name:[[:space:]]/ {
+            print "    env_file:"
+            print "      - .env"
+            inserted=1
+        }
+        END { exit !inserted }
+    ' "$compose_file" > "$tmp"; then
+        rm -f "$tmp"
+        echo "❌ 未找到 $service 的 container_name；仅支持 YehBP 生成的 Portainer Compose 配置。"
+        return 1
+    fi
+    mv "$tmp" "$compose_file" || { rm -f "$tmp"; return 1; }
+}
+
+configure_portainer_agent_secret() {
+    local -a ids=() names=() images=() roles=()
+    local id name image status role choice index compose_dir compose_file service project env_file
+    local compose_backup env_backup env_tmp ts old_env_exists actual_env
+    local -a COMPOSE
+
+    if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+        echo "❌ Docker 服务不可用或当前用户无权访问。"
+        return 1
+    fi
+    while IFS=$'\t' read -r id name image status; do
+        case "$image" in
+            *portainer/portainer-ce*|*portainer/portainer-ee*) role="Server" ;;
+            *portainer/agent*) role="Agent" ;;
+            *) continue ;;
+        esac
+        ids+=("$id")
+        names+=("$name")
+        images+=("$image")
+        roles+=("$role")
+        printf '%d）%s | %s | 镜像：%s | 状态：%s\n' "${#ids[@]}" "$name" "$role" "$image" "$status"
+    done < <(docker ps -a --no-trunc --format '{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}')
+    if [ ${#ids[@]} -eq 0 ]; then
+        echo "ℹ️ 未发现 Portainer Server 或 Agent 容器。"
+        return 0
+    fi
+
+    read -r -p "请选择要配置的 Portainer 容器（0 或回车取消）: " choice
+    if [ -z "$choice" ] || [ "$choice" = "0" ]; then
+        echo "已取消配置。"
+        return 0
+    fi
+    if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "${#ids[@]}" ]; then
+        echo "❌ 无效序号。"
+        return 1
+    fi
+    index=$((choice - 1))
+    id="${ids[$index]}"; name="${names[$index]}"
+    compose_dir="$(docker inspect -f '{{with index .Config.Labels "com.docker.compose.project.working_dir"}}{{.}}{{end}}' "$id" 2>/dev/null || true)"
+    compose_file="$(docker inspect -f '{{with index .Config.Labels "com.docker.compose.project.config_files"}}{{.}}{{end}}' "$id" 2>/dev/null || true)"
+    service="$(docker inspect -f '{{with index .Config.Labels "com.docker.compose.service"}}{{.}}{{end}}' "$id" 2>/dev/null || true)"
+    project="$(docker inspect -f '{{with index .Config.Labels "com.docker.compose.project"}}{{.}}{{end}}' "$id" 2>/dev/null || true)"
+    [ -n "$compose_file" ] || compose_file="${compose_dir}/docker-compose.yml"
+    if [[ "$compose_dir" != /* ]] || [ ! -d "$compose_dir" ] || [[ "$compose_file" != "$compose_dir"/* ]] || [ ! -f "$compose_file" ] || [ -z "$service" ] || [ -z "$project" ]; then
+        echo "❌ 选中的容器不是具有完整 Compose 标签的本地部署；为确保 Secret 可持久化，未修改。"
+        return 1
+    fi
+    if docker compose version >/dev/null 2>&1; then
+        COMPOSE=(docker compose)
+    elif command -v docker-compose >/dev/null 2>&1; then
+        COMPOSE=(docker-compose)
+    else
+        echo "❌ 未找到 docker compose / docker-compose。"
+        return 1
+    fi
+
+    portainer_agent_secret
+    case $? in
+        0) ;;
+        2) echo "已取消配置。"; return 0 ;;
+        *) return 1 ;;
+    esac
+    if [ -z "$PORTAINER_AGENT_SECRET" ]; then
+        echo "ℹ️ 未设置 AGENT_SECRET，未修改容器。"
+        return 0
+    fi
+
+    ts="$(date +%Y%m%d-%H%M%S)"
+    env_file="${compose_dir}/.env"
+    compose_backup="${compose_file}.bak-${ts}"
+    env_backup="${env_file}.bak-${ts}"
+    cp -a "$compose_file" "$compose_backup" || return 1
+    old_env_exists=0
+    if [ -f "$env_file" ]; then
+        cp -a "$env_file" "$env_backup" || return 1
+        old_env_exists=1
+    fi
+    portainer_enable_agent_secret_env_file "$compose_file" "$service" || return 1
+    env_tmp="$(mktemp "${env_file}.tmp.XXXXXX")" || return 1
+    if ! {
+        umask 077
+        if [ -f "$env_file" ]; then
+            grep -v '^AGENT_SECRET=' "$env_file" > "$env_tmp" || true
+        else
+            : > "$env_tmp"
+        fi
+        printf 'AGENT_SECRET=%s\n' "$PORTAINER_AGENT_SECRET" >> "$env_tmp"
+        chmod 0600 "$env_tmp"
+        mv "$env_tmp" "$env_file"
+    }; then
+        rm -f "$env_tmp"
+        cp -a "$compose_backup" "$compose_file"
+        [ "$old_env_exists" -eq 1 ] && cp -a "$env_backup" "$env_file" || rm -f "$env_file"
+        echo "❌ 写入 .env 失败，已恢复 Compose 配置。"
+        return 1
+    fi
+    if ! (cd "$compose_dir" && "${COMPOSE[@]}" -p "$project" -f "$compose_file" config >/dev/null); then
+        cp -a "$compose_backup" "$compose_file"
+        [ "$old_env_exists" -eq 1 ] && cp -a "$env_backup" "$env_file" || rm -f "$env_file"
+        echo "❌ Compose 校验失败，已恢复配置文件。"
+        return 1
+    fi
+    echo "🔄 正在重建 $name 以应用 AGENT_SECRET..."
+    if ! (cd "$compose_dir" && "${COMPOSE[@]}" -p "$project" -f "$compose_file" up -d --force-recreate "$service"); then
+        cp -a "$compose_backup" "$compose_file"
+        [ "$old_env_exists" -eq 1 ] && cp -a "$env_backup" "$env_file" || rm -f "$env_file"
+        echo "❌ 重建失败，已恢复配置文件；请检查容器状态。"
+        return 1
+    fi
+    actual_env="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$name" 2>/dev/null || true)"
+    if ! docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null | grep -qx true || ! printf '%s\n' "$actual_env" | grep -q '^AGENT_SECRET='; then
+        echo "❌ 容器重建后未运行或未检测到 AGENT_SECRET；配置备份保留在 ${compose_backup}。"
+        return 1
+    fi
+    echo "✅ 已为 $name 配置 AGENT_SECRET 并重建容器。"
+    echo "🧩 已备份 Compose 配置：$compose_backup"
+    [ "$old_env_exists" -eq 1 ] && echo "🧩 已备份原 .env：$env_backup"
+    if [ "$PORTAINER_AGENT_SECRET_SOURCE" = "generated" ]; then
+        echo "⚠️ 请保存此 AGENT_SECRET，并在同一 Portainer Server 管理的全部 Server/Agent 上配置相同值：$PORTAINER_AGENT_SECRET"
+    fi
+}
+
 install_portainer_agent() {
     local dockerapps agent_dir compose_file env_file bak_dir ts docker_root host_ip
     local -a COMPOSE
@@ -5105,6 +5271,7 @@ while true; do
         9) clean_macvlan_network ;;
         60) install_portainer ;;
         61) install_portainer_agent ;;
+        63) configure_portainer_agent_secret ;;
         11) install_librespeed ;;
         14) install_adguardhome ;;
         19) install_mosdns ;;
