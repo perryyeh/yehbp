@@ -3795,44 +3795,11 @@ portainer_enable_agent_secret_env_file() {
     mv "$tmp" "$compose_file" || { rm -f "$tmp"; return 1; }
 }
 
-configure_portainer_agent_secret() {
-    local -a ids=() names=() images=() roles=()
-    local id name image status role choice index compose_dir compose_file service project env_file
+configure_portainer_agent_secret_one() {
+    local id="$1" name="$2" compose_dir compose_file service project env_file
     local compose_backup env_backup env_tmp ts old_env_exists actual_env
     local -a COMPOSE
 
-    if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
-        echo "❌ Docker 服务不可用或当前用户无权访问。"
-        return 1
-    fi
-    while IFS=$'\t' read -r id name image status; do
-        case "$image" in
-            *portainer/portainer-ce*|*portainer/portainer-ee*) role="Server" ;;
-            *portainer/agent*) role="Agent" ;;
-            *) continue ;;
-        esac
-        ids+=("$id")
-        names+=("$name")
-        images+=("$image")
-        roles+=("$role")
-        printf '%d）%s | %s | 镜像：%s | 状态：%s\n' "${#ids[@]}" "$name" "$role" "$image" "$status"
-    done < <(docker ps -a --no-trunc --format '{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}')
-    if [ ${#ids[@]} -eq 0 ]; then
-        echo "ℹ️ 未发现 Portainer Server 或 Agent 容器。"
-        return 0
-    fi
-
-    read -r -p "请选择要配置的 Portainer 容器（0 或回车取消）: " choice
-    if [ -z "$choice" ] || [ "$choice" = "0" ]; then
-        echo "已取消配置。"
-        return 0
-    fi
-    if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "${#ids[@]}" ]; then
-        echo "❌ 无效序号。"
-        return 1
-    fi
-    index=$((choice - 1))
-    id="${ids[$index]}"; name="${names[$index]}"
     compose_dir="$(docker inspect -f '{{with index .Config.Labels "com.docker.compose.project.working_dir"}}{{.}}{{end}}' "$id" 2>/dev/null || true)"
     compose_file="$(docker inspect -f '{{with index .Config.Labels "com.docker.compose.project.config_files"}}{{.}}{{end}}' "$id" 2>/dev/null || true)"
     service="$(docker inspect -f '{{with index .Config.Labels "com.docker.compose.service"}}{{.}}{{end}}' "$id" 2>/dev/null || true)"
@@ -3851,16 +3818,6 @@ configure_portainer_agent_secret() {
         return 1
     fi
 
-    portainer_agent_secret
-    case $? in
-        0) ;;
-        2) echo "已取消配置。"; return 0 ;;
-        *) return 1 ;;
-    esac
-    if [ -z "$PORTAINER_AGENT_SECRET" ]; then
-        echo "ℹ️ 未设置 AGENT_SECRET，未修改容器。"
-        return 0
-    fi
 
     ts="$(date +%Y%m%d-%H%M%S)"
     env_file="${compose_dir}/.env"
@@ -3912,9 +3869,69 @@ configure_portainer_agent_secret() {
     echo "✅ 已为 $name 配置 AGENT_SECRET 并重建容器。"
     echo "🧩 已备份 Compose 配置：$compose_backup"
     [ "$old_env_exists" -eq 1 ] && echo "🧩 已备份原 .env：$env_backup"
+}
+
+configure_portainer_agent_secret() {
+    local -a ids=() names=() selected_indexes=()
+    local id name image status role choice index success=0 failed=0
+
+    if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+        echo "❌ Docker 服务不可用或当前用户无权访问。"
+        return 1
+    fi
+    echo "🔐 配置 Portainer AGENT_SECRET"
+    echo "检测到以下 Portainer 容器："
+    while IFS=$'\t' read -r id name image status; do
+        case "$image" in
+            *portainer/portainer-ce*|*portainer/portainer-ee*) role="Server" ;;
+            *portainer/agent*) role="Agent" ;;
+            *) continue ;;
+        esac
+        ids+=("$id")
+        names+=("$name")
+        printf '  %d）%s | %s | 镜像：%s | 状态：%s\n' "${#ids[@]}" "$name" "$role" "$image" "$status"
+    done < <(docker ps -a --no-trunc --format '{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}')
+    if [ ${#ids[@]} -eq 0 ]; then
+        echo "ℹ️ 未发现 Portainer Server 或 Agent 容器。"
+        return 0
+    fi
+    echo "  0）返回"
+    echo "  a）全部"
+    read -r -p "请输入要操作的序号: " choice
+    if [ -z "$choice" ] || [ "$choice" = "0" ]; then
+        echo "已取消配置。"
+        return 0
+    elif [[ "$choice" =~ ^[Aa]$ ]]; then
+        selected_indexes=("${!ids[@]}")
+    elif [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#ids[@]}" ]; then
+        selected_indexes=("$((choice - 1))")
+    else
+        echo "❌ 无效序号。"
+        return 1
+    fi
+
+    portainer_agent_secret
+    case $? in
+        0) ;;
+        2) echo "已取消配置。"; return 0 ;;
+        *) return 1 ;;
+    esac
+    if [ -z "$PORTAINER_AGENT_SECRET" ]; then
+        echo "ℹ️ 未设置 AGENT_SECRET，未修改容器。"
+        return 0
+    fi
+    for index in "${selected_indexes[@]}"; do
+        if configure_portainer_agent_secret_one "${ids[$index]}" "${names[$index]}"; then
+            success=$((success + 1))
+        else
+            failed=$((failed + 1))
+        fi
+    done
+    echo "ℹ️ Portainer AGENT_SECRET 配置完成：成功 ${success} 个，失败 ${failed} 个。"
     if [ "$PORTAINER_AGENT_SECRET_SOURCE" = "generated" ]; then
         echo "⚠️ 请保存此 AGENT_SECRET，并在同一 Portainer Server 管理的全部 Server/Agent 上配置相同值：$PORTAINER_AGENT_SECRET"
     fi
+    [ "$failed" -eq 0 ]
 }
 
 install_portainer_agent() {

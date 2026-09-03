@@ -322,7 +322,7 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 
 #### 6.6 配置 Portainer AGENT_SECRET（菜单 63）
 
-菜单 `63` 会列出本机的 Portainer Server 与 Agent 容器，选择一个后可生成或输入 `AGENT_SECRET`。该 Secret 必须在同一 Portainer Server 管理的全部 Server/Agent 使用相同值。为让新增环境变量生效，脚本会备份该容器的 Compose 与 `.env` 配置，写入权限为 `0600` 的 `.env`，再通过 Compose 强制重建选中容器并验证 Secret 已注入；仅支持带完整 Docker Compose 标签的本地部署。
+菜单 `63` 会先显示“配置 Portainer AGENT_SECRET”并列出本机检测到的 Portainer Server 与 Agent 容器，支持选择单个序号、`a` 全部或 `0` 返回。选择 `a` 时会使用同一个 `AGENT_SECRET` 依次配置全部容器，并在最后汇总成功/失败数量。该 Secret 必须在同一 Portainer Server 管理的全部 Server/Agent 使用相同值。为让新增环境变量生效，脚本会备份每个容器的 Compose 与 `.env` 配置，写入权限为 `0600` 的 `.env`，再通过 Compose 强制重建选中容器并验证 Secret 已注入；仅支持带完整 Docker Compose 标签的本地部署。
 
 ## 📦 依赖
 
