@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.03.16"
+APP_VERSION="2026.09.03.17"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -212,6 +212,13 @@ fetch_remote_yehbp_version() {
     fi
 }
 
+read_yehbp_script_version() {
+    local script="$1"
+
+    [ -r "$script" ] || return 1
+    sed -nE 's/^APP_VERSION="([^"[:space:]]+)".*/\1/p' "$script" | head -n1
+}
+
 version_gt() {
     # Return 0 if $1 is strictly greater than $2 for versions like YYYY.MM.DD.NN.
     local a="$1" b="$2" i ai bi
@@ -375,7 +382,7 @@ uninstall_yehbp_cli() {
 }
 
 check_yehbp_update() {
-    local tmp remote_version ans
+    local tmp remote_version downloaded_version ans
 
     echo "🔎 正在检测新版本（最多等待 10 秒；检测失败则下次再试）…"
     remote_version="$(fetch_remote_yehbp_version)"
@@ -411,6 +418,11 @@ check_yehbp_update() {
             echo "❌ 下载新版脚本失败，继续使用当前版本。"
             return 0
         }
+        downloaded_version="$(read_yehbp_script_version "$tmp")"
+        if [ "$downloaded_version" != "$remote_version" ]; then
+            echo "❌ 下载脚本版本与远端 VERSION 不一致（期望 ${remote_version}，实际 ${downloaded_version:-无法识别}）；已取消升级，请稍后重试。"
+            return 0
+        fi
         install_yehbp_from_file "$tmp" no-backup || {
             echo "❌ 升级失败，继续使用当前版本。"
             return 0
