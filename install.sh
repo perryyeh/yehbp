@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.03.23"
+APP_VERSION="2026.09.03.24"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -1709,7 +1709,11 @@ function format_disk() {
   echo "📝 当前磁盘列表："
   lsblk -o NAME,SIZE,FSTYPE,MOUNTPOINT
 
-  read -p "请输入需要格式化的磁盘名称（例如 sda，不含 /dev/）: " disk_name
+  read -r -p "请输入需要格式化的磁盘名称（例如 sda，不含 /dev/；回车退出）: " disk_name
+  if [ -z "$disk_name" ]; then
+    echo "ℹ️ 已取消格式化。"
+    return 0
+  fi
   disk_path="/dev/$disk_name"
 
   # 检查磁盘是否存在
