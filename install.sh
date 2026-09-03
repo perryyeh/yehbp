@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.03.17"
+APP_VERSION="2026.09.03.18"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -132,7 +132,7 @@ manage_socks5_proxy() {
 
 download_yehbp_script() {
     local dst="$1"
-    local url="${RAW_INSTALL_URL}"
+    local url="${RAW_INSTALL_URL}?cache_bust=$(date +%s)"
 
     echo "ℹ️ 下载超时限制 60s，超时则本次不更新。"
 
@@ -199,7 +199,7 @@ PY
 }
 
 fetch_remote_yehbp_version() {
-    local url="${RAW_VERSION_URL}"
+    local url="${RAW_VERSION_URL}?cache_bust=$(date +%s)"
 
     if ! require_curl_for_configured_proxy; then
         return 1
