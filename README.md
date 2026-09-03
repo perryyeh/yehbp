@@ -300,9 +300,9 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 
 首次配置会在需要时提示启用容器内自动更新。订阅配置保存在权限为 `0600` 的 `subscription.conf`；未配置时 `subscription.conf` 和 `subscription.log` 不存在。删除订阅会恢复原本地配置并保留 `subscription.sh`。
 
-#### 6.2 安装/删除/升级/重启 IPTV（rtp2httpd）（菜单 80）
+#### 6.2 查看/安装/删除/升级/重启 IPTV（rtp2httpd）（菜单 80）
 
-仅支持 **NetworkManager + systemd** 的 Linux/NAS，不支持 OpenWrt。菜单提供安装/替换配置、删除配置、升级共享二进制和重启选定实例；安装时需输入组播 VLAN、FCC VLAN、FCC 地址方式及本机 IPv4 监听地址/端口（默认 `5140`）。FCC 地址方式默认 DHCP；选择静态 IPv4 时需输入 `地址/前缀` 与同网段网关。
+仅支持 **NetworkManager + systemd** 的 Linux/NAS，不支持 OpenWrt。菜单可查看一个或全部实例的配置，并提供安装/替换配置、删除配置、升级共享二进制和重启选定实例；安装时需输入组播 VLAN、FCC VLAN、FCC 地址方式及本机 IPv4 监听地址/端口（默认 `5140`）。FCC 地址方式默认 DHCP；选择静态 IPv4 时需输入 `地址/前缀` 与同网段网关。
 
 二进制从 [stackia/rtp2httpd](https://github.com/stackia/rtp2httpd) 官方 release 下载并校验 SHA-256。删除只移除 YehBP 创建的配置、service 与 VLAN profile，保留共享二进制和既有网络配置。
 

@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.03.13"
+APP_VERSION="2026.09.03.14"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -4636,7 +4636,7 @@ manage_dockcheck_auto_update() {
     echo "1）查看 Dockcheck 状态/版本"
     echo "2）安装 Dockcheck"
     echo "3）删除 Dockcheck"
-    echo "4）升级 Dockcheck"
+    echo "4）升级Dockcheck版本"
     echo "0）返回"
     read -r -p "请输入要操作的序号: " choice
     case "$choice" in
@@ -5215,17 +5215,19 @@ manage_rtp2httpd_menu() {
     local choice
 
     printf '\n=== IPTV（rtp2httpd） ===\n'
-    echo "1）安装 / 替换配置"
-    echo "2）删除配置"
-    echo "3）仅升级 rtp2httpd 二进制"
-    echo "4）重启 rtp2httpd 实例"
+    echo "1）查看配置"
+    echo "2）安装 / 替换配置"
+    echo "3）删除配置"
+    echo "4）升级rtp2httpd版本"
+    echo "5）重启 rtp2httpd 实例"
     echo "0）返回"
     read -r -p "请输入要操作的序号: " choice
     case "$choice" in
-        1) load_rtp2httpd_asset && rtp2httpd_install ;;
-        2) load_rtp2httpd_asset && rtp2httpd_delete ;;
-        3) load_rtp2httpd_asset && rtp2httpd_upgrade ;;
-        4) load_rtp2httpd_asset && rtp2httpd_restart ;;
+        1) load_rtp2httpd_asset && rtp2httpd_show_config ;;
+        2) load_rtp2httpd_asset && rtp2httpd_install ;;
+        3) load_rtp2httpd_asset && rtp2httpd_delete ;;
+        4) load_rtp2httpd_asset && rtp2httpd_upgrade ;;
+        5) load_rtp2httpd_asset && rtp2httpd_restart ;;
         *) return 0 ;;
     esac
 }
