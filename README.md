@@ -54,7 +54,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 21 | 配置mihomo订阅             |
 | 22 | 安装 ddnsgo                   |
 | 23 | 安装 lucky                    |
-| 60 | 安装 Portainer 管理服务器       |
+| 60 | 安装 Portainer Server（管理服务器） |
 | 61 | 安装 Portainer Agent（受管节点） |
 | 66 | 安装/删除/升级 Dockcheck       |
 | 68 | 检查/更新docker镜像            |
