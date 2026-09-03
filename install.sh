@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.03.09"
+APP_VERSION="2026.09.03.10"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -3530,7 +3530,7 @@ install_lucky() {
 }
 
 install_portainer() {
-    local dockerapps portainer_dir compose_file bak_dir ts host_ip
+    local dockerapps portainer_dir compose_file env_file bak_dir ts host_ip
     local -a COMPOSE
 
     select_dockerapps_dir "portainer"
@@ -3539,6 +3539,8 @@ install_portainer() {
       2) echo "✅ 已退出 portainer 安装。"; return 0 ;;
       *) return 1 ;;
     esac
+    portainer_agent_secret
+    case $? in 0) ;; 2) return 0 ;; *) return 1 ;; esac
 
     if docker compose version >/dev/null 2>&1; then
         COMPOSE=(docker compose)
@@ -3551,6 +3553,7 @@ install_portainer() {
 
     portainer_dir="${dockerapps}/portainer"
     compose_file="${portainer_dir}/docker-compose.yml"
+    env_file="${portainer_dir}/.env"
     ts="$(date +%Y%m%d-%H%M%S)"
 
     if docker ps -a --format '{{.Names}}' | grep -qx portainer; then
@@ -3568,18 +3571,17 @@ install_portainer() {
 
     mkdir -p "$portainer_dir" || return 1
 
-    cat > "$compose_file" <<EOF
-services:
-  portainer:
-    image: portainer/portainer-ce:lts
-    container_name: portainer
-    restart: always
-    ports:
-      - "9443:9443"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./:/data
-EOF
+    {
+        printf '%s\n' 'services:' '  portainer:' '    image: portainer/portainer-ce:lts' '    container_name: portainer' '    restart: always'
+        if [ -n "$PORTAINER_AGENT_SECRET" ]; then
+            printf '%s\n' '    env_file:' '      - .env'
+        fi
+        printf '%s\n' '    ports:' '      - "9443:9443"' '    volumes:' '      - /var/run/docker.sock:/var/run/docker.sock' '      - ./:/data'
+    } > "$compose_file" || return 1
+    if [ -n "$PORTAINER_AGENT_SECRET" ]; then
+        (umask 077 && printf 'AGENT_SECRET=%s\n' "$PORTAINER_AGENT_SECRET" > "$env_file") || return 1
+        chmod 0600 "$env_file" || return 1
+    fi
 
     echo "🔎 Portainer compose 校验..."
     (cd "$portainer_dir" && "${COMPOSE[@]}" -p portainer -f docker-compose.yml config >/dev/null) || return 1
