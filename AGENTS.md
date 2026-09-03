@@ -5,6 +5,7 @@
 - Version bump rule:
   - Any code/script/behavior change must bump both `VERSION` and `APP_VERSION`.
   - Documentation-only changes, including README/HERMES/docs/comments-only edits, do not require a version bump.
+  - When a code/script change adds, removes, renumbers, renames, reorders, or changes the behavior of a user-facing menu item, inspect and update the README menu table in the same change.
   - Version format is `YYYY.MM.DD.NN` using the current local date.
   - If the existing version date is today, increment today's suffix by 1, e.g. `2026.06.23.01` → `2026.06.23.02`.
   - If the existing version date is not today, reset suffix to `.01`, e.g. `2026.06.22.03` → `2026.06.23.01`.
