@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.03.24"
+APP_VERSION="2026.09.03.25"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -683,15 +683,15 @@ function show_menu() {
     echo "66）安装/删除/升级 Dockcheck"
     echo "68）检查/更新docker镜像"
     echo "69）删除 Docker 容器、镜像和 Compose 目录"
-    echo "80）安装/删除/升级 IPTV（rtp2httpd）"
-    echo "89）安装/管理 SOCKS5 代理"
-    echo "90）创建macvlan bridge"
-    echo "91）删除macvlan bridge"
     echo "70）迁移 Docker 目录"
     if ! is_openwrt; then
         echo "71）优化 Docker 日志"
         echo "72）优化 journald 日志"
     fi
+    echo "80）安装/删除/升级 IPTV（rtp2httpd）"
+    echo "89）安装/管理 SOCKS5 代理"
+    echo "90）创建macvlan bridge"
+    echo "91）删除macvlan bridge"
     echo "99）退出（也可输入 exit / quit / q）"
     echo "999）删除 ${APP_NAME}（也可输入 del / delete / uninstall / remove / rm）"
     echo "============================"

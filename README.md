@@ -44,7 +44,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 3  | 显示磁盘信息                      |
 | 4  | 格式化磁盘并挂载                    |
 | 6  | 显示 Docker 信息                |
-| 7  | 安装 Docker                   |
+| 7  | 安装/升级 Docker              |
 | 8  | 创建macvlan（包括ipv4+ipv6）      |
 | 9  | 删除 macvlan                  |
 | 11 | 安装 LibreSpeed               |
@@ -60,13 +60,13 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 66 | 安装/删除/升级 Dockcheck       |
 | 68 | 检查/更新docker镜像            |
 | 69 | 删除 Docker 容器、镜像和 Compose 目录 |
+| 70 | 迁移 Docker 目录               |
+| 71 | 优化 Docker 日志               |
+| 72 | 优化 journald 日志             |
 | 80 | 安装/删除/升级/重启 IPTV（rtp2httpd） |
 | 89 | 安装/管理 SOCKS5 代理          |
 | 90 | 创建macvlan bridge            |
 | 91 | 删除macvlan bridge            |
-| 70 | 迁移 Docker 目录               |
-| 71 | 优化 Docker 日志               |
-| 72 | 优化 journald 日志             |
 | 99 / exit / quit / q | 退出脚本           |
 | 999 / del / delete / uninstall / remove / rm | 删除 `yehbp` |
 
