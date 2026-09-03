@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.03.07"
+APP_VERSION="2026.09.03.08"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -666,18 +666,18 @@ function show_menu() {
     echo "21）配置mihomo订阅"
     echo "22）安装ddns-go"
     echo "23）安装lucky"
-    echo "60）安装portainer面板"
-    echo "61）安装portainer agent"
+    echo "60）安装 Portainer 管理服务器"
+    echo "61）安装 Portainer Agent（受管节点）"
     echo "66）安装/删除/升级 Dockcheck"
     echo "68）检查/更新docker镜像"
     echo "80）安装/删除/升级 IPTV（rtp2httpd）"
     echo "89）安装/管理 SOCKS5 代理"
     echo "90）创建macvlan bridge"
     echo "91）删除macvlan bridge"
-    echo "92）迁移docker目录"
+    echo "70）迁移 Docker 目录"
     if ! is_openwrt; then
-        echo "93）优化docker日志"
-        echo "94）优化journald日志"
+        echo "71）优化 Docker 日志"
+        echo "72）优化 journald 日志"
     fi
     echo "99）退出（也可输入 exit / quit / q）"
     echo "999）删除 ${APP_NAME}（也可输入 del / delete / uninstall / remove / rm）"
@@ -4456,7 +4456,7 @@ run_dockcheck_auto_update_once() {
 }
 
 # =====================
-#  功能 92：迁移 Docker 目录
+#  功能 70：迁移 Docker 目录
 # =====================
 migrate_docker_datadir_openwrt() {
     local current_root new_root old_uci_root old_backup config_backup confirm root_dir
@@ -5011,9 +5011,9 @@ while true; do
         89) manage_socks5_proxy ;;
         90) create_macvlan_bridge ;;
         91) clean_macvlan_bridge ;;
-        92) migrate_docker_datadir ;;
-        93) if is_openwrt; then echo "ℹ️ OpenWrt dockerd 日志配置不使用 daemon.json；该功能当前不适用。"; else optimize_docker_logs; fi ;;
-        94) if is_openwrt; then echo "ℹ️ OpenWrt 使用 logd/logread，不使用 journald；该功能不适用。"; else optimize_journald_to_volatile; fi ;;
+        70) migrate_docker_datadir ;;
+        71) if is_openwrt; then echo "ℹ️ OpenWrt dockerd 日志配置不使用 daemon.json；该功能当前不适用。"; else optimize_docker_logs; fi ;;
+        72) if is_openwrt; then echo "ℹ️ OpenWrt 使用 logd/logread，不使用 journald；该功能不适用。"; else optimize_journald_to_volatile; fi ;;
         99|exit|quit|q) echo "退出脚本。"; exit 0 ;;
         999|del|delete|uninstall|remove|rm) uninstall_yehbp_cli ;;
         *) echo "无效选项，请重新输入。" ;;

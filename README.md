@@ -54,17 +54,17 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 21 | 配置mihomo订阅             |
 | 22 | 安装 ddnsgo                   |
 | 23 | 安装 lucky                    |
-| 60 | 安装 Portainer                |
-| 61 | 安装 Portainer Agent          |
+| 60 | 安装 Portainer 管理服务器       |
+| 61 | 安装 Portainer Agent（受管节点） |
 | 66 | 安装/删除/升级 Dockcheck       |
 | 68 | 检查/更新docker镜像            |
 | 80 | 安装/删除/升级/重启 IPTV（rtp2httpd） |
 | 89 | 安装/管理 SOCKS5 代理          |
 | 90 | 创建macvlan bridge            |
 | 91 | 删除macvlan bridge            |
-| 92 | 迁移docker目录                 |
-| 93 | 优化docker日志                 |
-| 94 | 优化journald日志               |
+| 70 | 迁移 Docker 目录               |
+| 71 | 优化 Docker 日志               |
+| 72 | 优化 journald 日志             |
 | 99 / exit / quit / q | 退出脚本           |
 | 999 / del / delete / uninstall / remove / rm | 删除 `yehbp` |
 
