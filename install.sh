@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.03.18"
+APP_VERSION="2026.09.03.19"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -667,11 +667,11 @@ function show_menu() {
     echo "4）格式化磁盘并挂载"
     echo "6）显示docker信息"
     if ! is_openwrt; then
-        echo "7）安装docker"
+        echo "7）安装/升级docker"
     fi
     echo "8）创建macvlan（包括ipv4+ipv6）"
     echo "9）删除macvlan"
-    echo "11）安装librespeed测速"
+    echo "11）安装librespeed"
     echo "14）安装adguardhome"
     echo "19）安装mosdns"
     echo "20）安装mihomo"
@@ -1869,7 +1869,34 @@ delete_docker_container_and_image() {
     fi
 }
 
-function install_docker() {
+docker_has_custom_systemd_unit() {
+    command -v systemctl >/dev/null 2>&1 || return 1
+    [ -e /etc/systemd/system/docker.service ] || [ -e /etc/systemd/system/docker.service.d ]
+}
+
+install_docker() {
+    local action confirm
+
+    echo "🔧 安装/升级 Docker"
+    if command -v docker >/dev/null 2>&1; then
+        echo "ℹ️ 已检测到 Docker：$(docker --version 2>/dev/null || echo '无法读取版本')"
+        action="升级"
+        read -r -p "是否确认升级 Docker？升级可能重启 Docker 服务和容器。[y/N]: " confirm
+    else
+        echo "ℹ️ 未检测到 Docker。"
+        action="安装"
+        read -r -p "是否确认安装 Docker？[y/N]: " confirm
+    fi
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        echo "已取消 Docker ${action}。"
+        return 0
+    fi
+    if docker_has_custom_systemd_unit; then
+        echo "⚠️ 检测到本机自定义 Docker systemd 单元；为避免覆盖系统定制配置，YehBP 不会升级它。"
+        echo "ℹ️ 请使用该系统提供的 Docker 升级方式。"
+        return 0
+    fi
+
     . /etc/os-release
 
     sudo apt-get update
@@ -1898,7 +1925,7 @@ function install_docker() {
     sudo systemctl enable docker
     sudo systemctl start docker
 
-    echo "✅ Docker 安装完成，版本信息："
+    echo "✅ Docker ${action}完成，版本信息："
     docker --version
 }
 
