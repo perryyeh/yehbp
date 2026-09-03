@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.03.21"
+APP_VERSION="2026.09.03.22"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -1882,6 +1882,20 @@ docker_is_standard_installation() {
     esac
 }
 
+docker_show_available_upgrades() {
+    local package installed candidate found=1
+
+    for package in docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; do
+        installed="$(dpkg-query -W -f='${Version}' "$package" 2>/dev/null || true)"
+        candidate="$(apt-cache policy "$package" 2>/dev/null | sed -n 's/^  Candidate: //p' | head -n1)"
+        if [ -n "$installed" ] && [ -n "$candidate" ] && [ "$candidate" != "(none)" ] && [ "$candidate" != "$installed" ]; then
+            printf '  - %s：%s → %s\n' "$package" "$installed" "$candidate"
+            found=0
+        fi
+    done
+    return "$found"
+}
+
 install_docker() {
     local action confirm
 
@@ -1897,6 +1911,12 @@ install_docker() {
             return 0
         fi
         action="升级"
+        echo "ℹ️ 正在检查 Docker 可升级组件…"
+        sudo apt-get update || return 1
+        if ! docker_show_available_upgrades; then
+            echo "✅ Docker 相关组件已是最新版本，无需升级。"
+            return 0
+        fi
         read -r -p "是否确认升级 Docker？升级可能重启 Docker 服务和容器。[y/N]: " confirm
     else
         echo "ℹ️ 未检测到 Docker。"
