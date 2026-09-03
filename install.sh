@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.03.11"
+APP_VERSION="2026.09.03.12"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -1808,16 +1808,18 @@ delete_docker_container_and_image() {
 
     other_containers="$(docker ps -a --filter "ancestor=$image_id" --format '{{.Names}}' | grep -vxF -- "$name" || true)"
     echo "⚠️ 将强制删除容器：$name"
-    echo "⚠️ 将删除镜像：${image}（${image_id}）"
     if [ -n "$other_containers" ]; then
         echo "⚠️ 以下其他容器也引用该镜像：${other_containers//$'\n'/、}"
+        echo "ℹ️ 将保留镜像：${image}"
+    else
+        echo "⚠️ 将删除镜像：${image}（${image_id}）"
     fi
     if [ -n "$compose_dir" ]; then
         echo "ℹ️ 检测到 Compose working_dir：$compose_dir"
     else
         echo "ℹ️ 该容器没有 Compose working_dir 标签；不会删除任何主机配置目录。"
     fi
-    read -r -p "确认删除容器和镜像？[y/N]: " confirm
+    read -r -p "确认删除容器及可删除的镜像？[y/N]: " confirm
     if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
         echo "已取消删除。"
         return 0
@@ -1825,11 +1827,15 @@ delete_docker_container_and_image() {
 
     docker rm -f "$id" || return 1
     echo "✅ 已删除容器：$name"
-    docker image rm -f "$image_id" || {
-        echo "❌ 容器已删除，但镜像删除失败：$image_id"
-        return 1
-    }
-    echo "✅ 已删除镜像：$image"
+    if [ -n "$other_containers" ]; then
+        echo "ℹ️ 镜像仍被其他容器引用，已保留：$image"
+    else
+        docker image rm -f "$image_id" || {
+            echo "❌ 容器已删除，但镜像删除失败：$image_id"
+            return 1
+        }
+        echo "✅ 已删除镜像：$image"
+    fi
 
     if [ -z "$compose_dir" ]; then
         return 0
