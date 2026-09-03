@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.03.10"
+APP_VERSION="2026.09.03.11"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -670,6 +670,7 @@ function show_menu() {
     echo "61）安装 Portainer Agent（受管节点）"
     echo "66）安装/删除/升级 Dockcheck"
     echo "68）检查/更新docker镜像"
+    echo "69）删除 Docker 容器、镜像和 Compose 目录"
     echo "80）安装/删除/升级 IPTV（rtp2httpd）"
     echo "89）安装/管理 SOCKS5 代理"
     echo "90）创建macvlan bridge"
@@ -1750,6 +1751,104 @@ function format_disk() {
 }
 
 function docker_info() { docker info; }
+
+# 删除一个容器及其镜像；若该容器由 Docker Compose 创建，可选择删除 Compose
+# working_dir 本身。不会根据挂载点、卷或环境变量推断并删除任何其他目录。
+delete_docker_container_and_image() {
+    local -a container_ids=() container_names=() container_images=() container_statuses=()
+    local id name image status choice confirm image_id compose_dir delete_dir_choice other_containers
+    local i selected_index
+
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "❌ 未找到 docker 命令。"
+        return 1
+    fi
+    if ! docker info >/dev/null 2>&1; then
+        echo "❌ Docker 服务不可用或当前用户无权访问。"
+        return 1
+    fi
+
+    echo "=== Docker 容器（含已停止容器） ==="
+    while IFS=$'\t' read -r id name image status; do
+        [ -n "$id" ] || continue
+        container_ids+=("$id")
+        container_names+=("$name")
+        container_images+=("$image")
+        container_statuses+=("$status")
+        printf '%d）%s | 镜像：%s | 状态：%s | ID：%.12s\n' \
+            "${#container_ids[@]}" "$name" "$image" "$status" "$id"
+    done < <(docker ps -a --no-trunc --format '{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}')
+    if [ ${#container_ids[@]} -eq 0 ]; then
+        echo "ℹ️ 未发现 Docker 容器。"
+        return 0
+    fi
+
+    read -r -p "请选择要删除的容器序号（0 或回车取消）: " choice
+    if [ -z "$choice" ] || [ "$choice" = "0" ]; then
+        echo "已取消删除。"
+        return 0
+    fi
+    if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "${#container_ids[@]}" ]; then
+        echo "❌ 无效序号。"
+        return 1
+    fi
+
+    selected_index=$((choice - 1))
+    id="${container_ids[$selected_index]}"
+    name="${container_names[$selected_index]}"
+    image="$(docker inspect -f '{{.Config.Image}}' "$id" 2>/dev/null)" || {
+        echo "❌ 无法读取容器 $name 的镜像信息；容器可能已被其他操作删除。"
+        return 1
+    }
+    image_id="$(docker image inspect -f '{{.Id}}' "$image" 2>/dev/null)" || {
+        echo "❌ 未找到容器 $name 使用的镜像 $image；为避免只删除部分资源，已取消。"
+        return 1
+    }
+    compose_dir="$(docker inspect -f '{{with index .Config.Labels "com.docker.compose.project.working_dir"}}{{.}}{{end}}' "$id" 2>/dev/null || true)"
+
+    other_containers="$(docker ps -a --filter "ancestor=$image_id" --format '{{.Names}}' | grep -vxF -- "$name" || true)"
+    echo "⚠️ 将强制删除容器：$name"
+    echo "⚠️ 将删除镜像：${image}（${image_id}）"
+    if [ -n "$other_containers" ]; then
+        echo "⚠️ 以下其他容器也引用该镜像：${other_containers//$'\n'/、}"
+    fi
+    if [ -n "$compose_dir" ]; then
+        echo "ℹ️ 检测到 Compose working_dir：$compose_dir"
+    else
+        echo "ℹ️ 该容器没有 Compose working_dir 标签；不会删除任何主机配置目录。"
+    fi
+    read -r -p "确认删除容器和镜像？[y/N]: " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        echo "已取消删除。"
+        return 0
+    fi
+
+    docker rm -f "$id" || return 1
+    echo "✅ 已删除容器：$name"
+    docker image rm -f "$image_id" || {
+        echo "❌ 容器已删除，但镜像删除失败：$image_id"
+        return 1
+    }
+    echo "✅ 已删除镜像：$image"
+
+    if [ -z "$compose_dir" ]; then
+        return 0
+    fi
+    if [[ "$compose_dir" != /* ]] || [ "$compose_dir" = "/" ] || [ ! -d "$compose_dir" ]; then
+        echo "⚠️ Compose working_dir 不存在或不安全，未删除目录：$compose_dir"
+        return 0
+    fi
+    read -r -p "是否删除 Compose 所在目录 ${compose_dir}？这不会删除其挂载的其他目录或卷。[y/N]: " delete_dir_choice
+    if [[ "$delete_dir_choice" =~ ^[Yy]$ ]]; then
+        rm -rf -- "$compose_dir" || {
+            echo "❌ 删除 Compose 目录失败：$compose_dir"
+            return 1
+        }
+        echo "✅ 已删除 Compose 所在目录：$compose_dir"
+    else
+        echo "ℹ️ 已保留 Compose 所在目录：$compose_dir"
+    fi
+}
 
 function install_docker() {
     . /etc/os-release
@@ -5009,6 +5108,7 @@ while true; do
         23) install_lucky ;;
         66) manage_dockcheck_auto_update ;;
         68) run_dockcheck_auto_update_once ;;
+        69) delete_docker_container_and_image ;;
         80) manage_rtp2httpd_menu ;;
         89) manage_socks5_proxy ;;
         90) create_macvlan_bridge ;;

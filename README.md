@@ -58,6 +58,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 61 | 安装 Portainer Agent（受管节点） |
 | 66 | 安装/删除/升级 Dockcheck       |
 | 68 | 检查/更新docker镜像            |
+| 69 | 删除 Docker 容器、镜像和 Compose 目录 |
 | 80 | 安装/删除/升级/重启 IPTV（rtp2httpd） |
 | 89 | 安装/管理 SOCKS5 代理          |
 | 90 | 创建macvlan bridge            |
@@ -311,6 +312,12 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 #### 6.4 检查/更新 Docker 镜像（菜单 68）
 
 菜单 `68` 可手动检查或更新 Docker 镜像；compose 容器可更新，非 compose 容器仅检查/拉取镜像而不重建。
+
+#### 6.5 删除 Docker 容器、镜像和 Compose 目录（菜单 69）
+
+菜单 `69` 列出所有容器（含已停止容器），选择后会二次确认并强制删除该容器及其镜像。若镜像仍被其他容器引用，会明确列出这些容器；删除镜像后这些容器不能再基于该镜像新建或重建。
+
+对于具有 Docker Compose `com.docker.compose.project.working_dir` 标签的容器，删除完成后可输入 `y` 删除该 Compose 所在目录。此操作仅删除标签指向的 working_dir，**不会删除**该 Compose 通过 bind mount 引用的其他主机目录，也不会删除 Docker volumes；没有该标签、标签不是安全的绝对路径或目录已不存在时，不会删除任何主机目录。
 
 ## 📦 依赖
 
