@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.03.22"
+APP_VERSION="2026.09.03.23"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -94,7 +94,8 @@ manage_socks5_proxy() {
     local current input normalized ans
 
     current="$(configured_socks5_proxy 2>/dev/null || true)"
-    echo "📡 SOCKS5 代理配置：${SOCKS5_PROXY_CONFIG}"
+    echo "📡 安装/管理 SOCKS5 代理"
+    echo "配置文件：${SOCKS5_PROXY_CONFIG}"
     if [ -n "$current" ]; then
         echo "当前代理：$current"
     elif [ -e "$SOCKS5_PROXY_CONFIG" ]; then
@@ -1697,13 +1698,14 @@ repo_offer_delete_backup() {
 
 # ========== 功能函数 ==========
 
-function os_info() { cat /etc/os-release; }
+function os_info() { echo "🖥️ 显示操作系统信息"; cat /etc/os-release; }
 
-function nic_info() { ip addr; }
+function nic_info() { echo "🌐 显示网卡信息"; ip addr; }
 
-function disk_info() { lsblk -o NAME,SIZE,FSTYPE,UUID,MOUNTPOINT; }
+function disk_info() { echo "💾 显示磁盘信息"; lsblk -o NAME,SIZE,FSTYPE,UUID,MOUNTPOINT; }
 
 function format_disk() {
+  echo "💽 格式化磁盘并挂载"
   echo "📝 当前磁盘列表："
   lsblk -o NAME,SIZE,FSTYPE,MOUNTPOINT
 
@@ -1761,7 +1763,7 @@ function format_disk() {
   fi
 }
 
-function docker_info() { docker info; }
+function docker_info() { echo "🐳 显示 Docker 信息"; docker info; }
 
 # 删除一个容器及其镜像；若该容器由 Docker Compose 创建，可选择删除 Compose
 # working_dir 本身。不会根据挂载点、卷或环境变量推断并删除任何其他目录。
@@ -1770,6 +1772,7 @@ delete_docker_container_and_image() {
     local id name image status choice confirm image_id compose_dir delete_dir_choice other_containers
     local i selected_index
 
+    echo "🗑️ 删除 Docker 容器、镜像和 Compose 目录"
     if ! command -v docker >/dev/null 2>&1; then
         echo "❌ 未找到 docker 命令。"
         return 1
@@ -3708,6 +3711,7 @@ install_portainer() {
     local dockerapps portainer_dir compose_file env_file bak_dir ts host_ip
     local -a COMPOSE
 
+    echo "🧩 安装 Portainer Server"
     select_dockerapps_dir "portainer"
     case $? in
       0) dockerapps="$SELECTED_DOCKERAPPS_DIR" ;;
@@ -3944,11 +3948,11 @@ configure_portainer_agent_secret() {
     local -a ids=() names=()
     local id name image status role choice index
 
+    echo "🔐 配置 Portainer AGENT_SECRET"
     if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
         echo "❌ Docker 服务不可用或当前用户无权访问。"
         return 1
     fi
-    echo "🔐 配置 Portainer AGENT_SECRET"
     echo "检测到以下 Portainer 容器："
     while IFS=$'\t' read -r id name image status; do
         case "$image" in
@@ -3996,6 +4000,7 @@ install_portainer_agent() {
     local dockerapps agent_dir compose_file env_file bak_dir ts docker_root host_ip
     local -a COMPOSE
 
+    echo "🧩 安装 Portainer Agent"
     select_dockerapps_dir "portainer agent"
     case $? in
       0) dockerapps="$SELECTED_DOCKERAPPS_DIR" ;;
@@ -4245,12 +4250,13 @@ clean_macvlan_bridge_openwrt() {
 }
 
 clean_macvlan_bridge() {
+    echo "🧹 删除 macvlan bridge"
     if is_openwrt; then
         clean_macvlan_bridge_openwrt
         return $?
     fi
 
-    echo "🧹 删除 macvlan bridge（支持多个）"
+    echo "ℹ️ 支持多个 macvlan bridge。"
 
     # 找 macvlan_* 的 systemd 服务
     local svc_files=()
@@ -4903,6 +4909,7 @@ migrate_docker_datadir_openwrt() {
 }
 
 migrate_docker_datadir() {
+    echo "📦 迁移 Docker 目录"
     if is_openwrt; then
         migrate_docker_datadir_openwrt
         return $?
@@ -5085,6 +5092,7 @@ EOF
 #  功能 71：优化 Docker 日志（设置轮转）
 # =====================
 optimize_docker_logs() {
+    echo "🪵 优化 Docker 日志"
     # 前置校验
     if [ -z "${BASH_VERSION:-}" ]; then exec /usr/bin/env bash "$0" "$@"; fi
     if [ "${EUID:-$(id -u)}" -ne 0 ]; then echo "请以 root 权限运行（sudo bash $0）"; return 1; fi
@@ -5207,6 +5215,7 @@ EOF
 #  功能 72：优化 systemd-journald（日记只写内存）
 # =====================
 optimize_journald_to_volatile() {
+    echo "📜 优化 journald 日志"
     # 前置校验
     if [ -z "${BASH_VERSION:-}" ]; then exec /usr/bin/env bash "$0" "$@"; fi
     if [ "${EUID:-$(id -u)}" -ne 0 ]; then echo "请以 root 权限运行（sudo bash $0）"; return 1; fi
@@ -5289,7 +5298,7 @@ load_rtp2httpd_asset() {
 manage_rtp2httpd_menu() {
     local choice
 
-    printf '\n=== IPTV（rtp2httpd） ===\n'
+    printf '\n📺 安装/删除/升级 IPTV（rtp2httpd）\n'
     echo "1）查看配置"
     echo "2）安装 / 替换配置"
     echo "3）删除配置"
@@ -5341,7 +5350,7 @@ while true; do
         1) os_info ;;
         2) nic_info ;;
         3) disk_info ;;
-        4) if is_openwrt; then echo "ℹ️ iStoreOS 请使用系统存储管理格式化和挂载磁盘。"; else format_disk; fi ;;
+        4) if is_openwrt; then echo "💽 格式化磁盘并挂载"; echo "ℹ️ iStoreOS 请使用系统存储管理格式化和挂载磁盘。"; else format_disk; fi ;;
         6) docker_info ;;
         7) install_docker ;;
         8) create_macvlan_network ;;
@@ -5364,8 +5373,8 @@ while true; do
         90) create_macvlan_bridge ;;
         91) clean_macvlan_bridge ;;
         70) migrate_docker_datadir ;;
-        71) if is_openwrt; then echo "ℹ️ OpenWrt dockerd 日志配置不使用 daemon.json；该功能当前不适用。"; else optimize_docker_logs; fi ;;
-        72) if is_openwrt; then echo "ℹ️ OpenWrt 使用 logd/logread，不使用 journald；该功能不适用。"; else optimize_journald_to_volatile; fi ;;
+        71) if is_openwrt; then echo "🪵 优化 Docker 日志"; echo "ℹ️ OpenWrt dockerd 日志配置不使用 daemon.json；该功能当前不适用。"; else optimize_docker_logs; fi ;;
+        72) if is_openwrt; then echo "📜 优化 journald 日志"; echo "ℹ️ OpenWrt 使用 logd/logread，不使用 journald；该功能当前不适用。"; else optimize_journald_to_volatile; fi ;;
         99|exit|quit|q) echo "退出脚本。"; exit 0 ;;
         999|del|delete|uninstall|remove|rm) uninstall_yehbp_cli ;;
         *) echo "无效选项，请重新输入。" ;;
