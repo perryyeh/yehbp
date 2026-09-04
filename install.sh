@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.05.02"
+APP_VERSION="2026.09.05.03"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -3458,14 +3458,16 @@ install_mihomo() {
     echo "✅ 已选择 mihomo 配置模板：$config_template -> config.yaml"
     install_mihomo_external_ui "$config_template" || return 1
 
-    # 6) 替换compose配置中的容器相关字段
-    if [ "$CONTAINER_NAME" != "$DEFAULT_CONTAINER_NAME" ]; then
+    # 6) 模板中的服务、容器和主机名固定为 mihomo。host 模式的默认
+    # 名称虽为 mihomoin，仍必须从这个模板原始名称替换。
+    local TEMPLATE_CONTAINER_NAME="mihomo"
+    if [ "$CONTAINER_NAME" != "$TEMPLATE_CONTAINER_NAME" ]; then
         # 1. 替换services下一级的服务名称
-        sed -i "s/^  $DEFAULT_CONTAINER_NAME:/  $CONTAINER_NAME:/" docker-compose.yml
+        sed -i "s/^  $TEMPLATE_CONTAINER_NAME:/  $CONTAINER_NAME:/" docker-compose.yml
         # 2. 替换container_name
-        sed -i "s/container_name: $DEFAULT_CONTAINER_NAME/container_name: $CONTAINER_NAME/" docker-compose.yml
+        sed -i "s/container_name: $TEMPLATE_CONTAINER_NAME/container_name: $CONTAINER_NAME/" docker-compose.yml
         # 3. 替换hostname
-        sed -i "s/hostname: $DEFAULT_CONTAINER_NAME/hostname: $CONTAINER_NAME/" docker-compose.yml
+        sed -i "s/hostname: $TEMPLATE_CONTAINER_NAME/hostname: $CONTAINER_NAME/" docker-compose.yml
         echo "✅ 已自定义容器名称/目录为：$CONTAINER_NAME"
     fi
 
