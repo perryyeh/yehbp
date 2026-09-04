@@ -92,12 +92,12 @@ mihomo_subscription_install_replace_template() {
   local replace template tmp
   case "$MIHOMO_SUBSCRIPTION_MODE" in
     macvlan)
-      replace="$MIHOMO_SUBSCRIPTION_DIR/config.replace.macvlan.yaml"
-      template="config.replace.macvlan.yaml"
+      replace="$MIHOMO_SUBSCRIPTION_DIR/subscription.macvlan.yaml"
+      template="subscription.macvlan.yaml"
       ;;
     host)
-      replace="$MIHOMO_SUBSCRIPTION_DIR/config.replace.host.yaml"
-      template="config.replace.host.yaml"
+      replace="$MIHOMO_SUBSCRIPTION_DIR/subscription.host.yaml"
+      template="subscription.host.yaml"
       ;;
     *)
       echo "❌ 未知 Mihomo 安装模式：${MIHOMO_SUBSCRIPTION_MODE:-<空>}"
