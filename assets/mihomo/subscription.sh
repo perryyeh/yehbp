@@ -208,9 +208,25 @@ mihomo_subscription_enable_runtime() {
   fi
 
   # Legacy YehBP templates have one service image stanza. Replace it with the
-  # current build/image/entrypoint fields, removing a legacy entrypoint if any.
+  # current build/image/entrypoint fields. A legacy entrypoint can be an inline
+  # value or a YAML sequence; remove the key and all of its indented children.
   if ! awk '
-    /^[[:space:]]+entrypoint:[[:space:]]*/ { next }
+    function leading_indent(line) {
+      match(line, /^[[:space:]]*/)
+      return RLENGTH
+    }
+    /^[[:space:]]+entrypoint:[[:space:]]*/ {
+      entrypoint_indent = leading_indent($0)
+      skipping_entrypoint = 1
+      next
+    }
+    {
+      if (skipping_entrypoint) {
+        if ($0 ~ /^[[:space:]]*$/) next
+        if (leading_indent($0) > entrypoint_indent) next
+        skipping_entrypoint = 0
+      }
+    }
     /^[[:space:]]+image:[[:space:]]*/ && !done {
       match($0, /^[[:space:]]*/)
       indent = substr($0, RSTART, RLENGTH)
