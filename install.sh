@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.03.25"
+APP_VERSION="2026.09.04.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -816,6 +816,27 @@ network = ipaddress.IPv4Network(sys.argv[1], strict=False)
 if network.num_addresses < 4:
     raise SystemExit("IPv4 IPRange 至少需要 4 个地址以分配 bridge 地址")
 print(network.broadcast_address - 1)
+PY
+}
+
+# 返回 macvlan IPv4 IPRange 的安全默认值。
+# IPv4 Subnet 宽于 /24 时，保留首个 /24 给网关、DHCP 与静态主机，
+# 将下一个 /24 作为 Docker 容器专用地址池；/24 或更细时直接使用 CIDR。
+# 例：10.86.0.0/22 → 10.86.1.0/24；10.86.8.0/24 → 10.86.8.0/24。
+default_macvlan_ipv4_range() {
+  python3 - "$1" <<'PY'
+import ipaddress
+import sys
+
+network = ipaddress.IPv4Network(sys.argv[1], strict=False)
+if network.prefixlen >= 24:
+    print(network)
+else:
+    first_24 = ipaddress.IPv4Network((network.network_address, 24))
+    candidate = ipaddress.IPv4Network((int(first_24.network_address) + 256, 24))
+    if not candidate.subnet_of(network):
+        raise SystemExit("CIDR 中没有可用的下一个 /24 IPRange")
+    print(candidate)
 PY
 }
 
@@ -2124,9 +2145,14 @@ create_macvlan_network() {
   read -r -p "请输入 macvlan IPv4 子网CIDR (回车使用推荐 $auto_cidr): " cidr
   [ -z "$cidr" ] && cidr="$auto_cidr"
 
+  local default_iprange
+  default_iprange="$(default_macvlan_ipv4_range "$cidr")" || {
+    echo "❌ 无法根据 IPv4 CIDR 推算 macvlan IPRange：$cidr"
+    return 1
+  }
   echo "⚠️ 提示：IPRange 应为 macvlan 专用网段（建议 /24 或更小），不要与 DHCP/静态地址重叠。"
-  read -r -p "请输入 macvlan IPv4 range (回车使用 $cidr): " iprange
-  [ -z "$iprange" ] && iprange="$cidr"
+  read -r -p "请输入 macvlan IPv4 range (回车使用 $default_iprange): " iprange
+  [ -z "$iprange" ] && iprange="$default_iprange"
 
   iprangev4="$(echo "$iprange" | cut -d'/' -f1)"
   subnet4="$(echo "$iprange" | cut -d'/' -f2)"
