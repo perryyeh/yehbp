@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.04.27"
+APP_VERSION="2026.09.04.28"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -1468,6 +1468,28 @@ prompt_ipv4_last_octet() {
  echo "$v"
 }
 
+# 下载并校验 GitHub 归档。避免将中断的网络流直接交给 tar，导致短暂
+# TLS reset 被误报为解压错误。curl 兼容性优先，使用显式循环而非依赖
+# --retry-all-errors。
+repo_download_archive() {
+  local url="$1" archive="$2" attempt=1
+
+  while [ "$attempt" -le 3 ]; do
+    rm -f "$archive"
+    if yehbp_curl --connect-timeout 15 --max-time 120 --fail --location --silent --show-error "$url" -o "$archive" && \
+       tar -tzf "$archive" >/dev/null 2>&1; then
+      return 0
+    fi
+    rm -f "$archive"
+    if [ "$attempt" -lt 3 ]; then
+      echo "⚠️ 归档下载失败，2 秒后重试（$attempt/3）…"
+      sleep 2
+    fi
+    attempt=$((attempt + 1))
+  done
+  return 1
+}
+
 # 仓库更新
 repo_stage_update() {
   local name="$1"
@@ -1500,7 +1522,10 @@ repo_stage_update() {
     rm -rf "$tmp" "$NEXT_DIR" 2>/dev/null || true
     mkdir -p "$tmp" || return 1
 
-    if yehbp_curl -L "$tar_url" | tar -xz -C "$tmp" --strip-components=1; then
+    local archive="$tmp/.repo.tar.gz"
+    if repo_download_archive "$tar_url" "$archive" && \
+       tar -xzf "$archive" -C "$tmp" --strip-components=1; then
+      rm -f "$archive"
       mv "$tmp" "$NEXT_DIR"
       WORK_DIR="$NEXT_DIR"
       NEED_SWITCH=1
@@ -1515,14 +1540,22 @@ repo_stage_update() {
 
   # 首次部署（无 next）
   echo "⬇️ [$name] 首次部署，使用 tar.gz 克隆到正式目录：$TARGET_DIR"
-  mkdir -p "$TARGET_DIR" || return 1
+  local tmp="${base%/}/${dir_name}.tmp-${ts}"
+  local archive
+  rm -rf "$tmp" 2>/dev/null || true
+  mkdir -p "$tmp" || return 1
+  archive="$tmp/.repo.tar.gz"
 
-  if yehbp_curl -L "$tar_url" | tar -xz -C "$TARGET_DIR" --strip-components=1; then
+  if repo_download_archive "$tar_url" "$archive" && \
+     tar -xzf "$archive" -C "$tmp" --strip-components=1; then
+    rm -f "$archive"
+    mv "$tmp" "$TARGET_DIR"
     WORK_DIR="$TARGET_DIR"
     NEED_SWITCH=0
     return 0
   fi
 
+  rm -rf "$tmp" 2>/dev/null || true
   echo "❌ [$name] tar 下载失败"
   return 1
 }
