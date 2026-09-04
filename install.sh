@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.04.01"
+APP_VERSION="2026.09.04.02"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -2299,14 +2299,22 @@ create_macvlan_network() {
   # 创建 docker macvlan 网络
   echo "🔨 正在创建 docker macvlan 网络：$network_name ..."
   if [ -n "$gateway6" ] && [ -n "$cidr6" ]; then
-    docker network create -d macvlan \
+    if ! docker network create -d macvlan \
       --subnet="$cidr"  --ip-range="$iprange"  --gateway="$gateway" \
       --ipv6 --subnet="$cidr6" --ip-range="$iprange6" --gateway="$gateway6" \
-      -o parent="$networkcard" "$network_name"
+      -o parent="$networkcard" "$network_name"; then
+      echo "❌ macvlan 网络创建失败：$network_name"
+      echo "ℹ️ 若错误为 gateway/subnet 已被占用，Docker 不支持两个相同 IPv4 Subnet/Gateway 的 macvlan 网络并存；请先迁空并删除旧网络，再以新 parent 重建。"
+      return 1
+    fi
   else
-    docker network create -d macvlan \
+    if ! docker network create -d macvlan \
       --subnet="$cidr" --ip-range="$iprange" --gateway="$gateway" \
-      -o parent="$networkcard" "$network_name"
+      -o parent="$networkcard" "$network_name"; then
+      echo "❌ macvlan 网络创建失败：$network_name"
+      echo "ℹ️ 若错误为 gateway/subnet 已被占用，Docker 不支持两个相同 IPv4 Subnet/Gateway 的 macvlan 网络并存；请先迁空并删除旧网络，再以新 parent 重建。"
+      return 1
+    fi
   fi
 
   echo "✅ macvlan 网络创建完成：$network_name"
