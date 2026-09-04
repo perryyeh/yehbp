@@ -313,24 +313,46 @@ mihomo_subscription_run_update() {
 }
 
 mihomo_subscription_add_or_replace() {
-  local url hours apply_template backup conf
+  local url hours apply_template backup conf existing_url existing_hours existing_apply apply_template_default
   mihomo_subscription_select_target || return $?
   mihomo_subscription_enable_runtime || return 1
   mihomo_subscription_install_scheduler || return 1
   backup="$MIHOMO_SUBSCRIPTION_DIR/config.macvlan.backup.yaml"
   conf="$MIHOMO_SUBSCRIPTION_DIR/subscription.conf"
 
+  existing_url=""
+  existing_hours=""
+  existing_apply=""
   if [ -f "$conf" ]; then
-    echo "当前已配置外部完整订阅（URL 为敏感信息，不显示）。"
+    existing_url="$(sed -n 's/^URL=//p' "$conf" | sed -n '1p')"
+    existing_hours="$(sed -n 's/^INTERVAL_HOURS=//p' "$conf" | sed -n '1p')"
+    existing_apply="$(sed -n 's/^APPLY_TEMPLATE=//p' "$conf" | sed -n '1p')"
   fi
-  read -r -p "请输入完整 Mihomo YAML 订阅 URL: " url
+
+  if [ -n "$existing_url" ]; then
+    read -r -p "订阅 URL（回车保留当前值：$existing_url）: " url
+    url="${url:-$existing_url}"
+  else
+    read -r -p "请输入完整 Mihomo YAML 订阅 URL: " url
+  fi
   [[ "$url" =~ ^https?://[^[:space:]\']+$ ]] || { echo "❌ URL 无效，仅接受不含空格或单引号的 http(s) URL。"; return 1; }
-  read -r -p "更新间隔（小时；0 为不自动刷新，回车默认 0）: " hours
-  hours="${hours:-0}"
+  if [[ "$existing_hours" =~ ^[0-9]+$ ]]; then
+    read -r -p "更新间隔（小时；0 为不自动刷新，回车保留 $existing_hours）: " hours
+    hours="${hours:-$existing_hours}"
+  else
+    read -r -p "更新间隔（小时；0 为不自动刷新，回车默认 0）: " hours
+    hours="${hours:-0}"
+  fi
   [[ "$hours" =~ ^[0-9]+$ ]] || { echo "❌ 更新间隔必须是 0 或正整数小时。"; return 1; }
-  read -r -p "是否用模板覆盖订阅内容？[Y/n]: " apply_template
+  case "$existing_apply" in
+    0) apply_template_default="n" ;;
+    1) apply_template_default="y" ;;
+    *) apply_template_default="n" ;;
+  esac
+  read -r -p "是否用模板覆盖订阅内容？[y/n，回车默认 $apply_template_default]: " apply_template
   case "$apply_template" in
-    ""|y|Y|yes|YES) apply_template=1 ;;
+    "") [ "$apply_template_default" = y ] && apply_template=1 || apply_template=0 ;;
+    y|Y|yes|YES) apply_template=1 ;;
     n|N|no|NO) apply_template=0 ;;
     *) echo "❌ 请输入 y 或 n。"; return 1 ;;
   esac
@@ -343,7 +365,7 @@ mihomo_subscription_add_or_replace() {
   mihomo_subscription_install_script || return 1
   [ "$apply_template" -eq 0 ] || mihomo_subscription_install_replace_template || return 1
   umask 077
-  printf 'URL=%q\nINTERVAL_HOURS=%s\nAPPLY_TEMPLATE=%s\nTEMPLATE_MODE=%s\n' \
+  printf 'URL=%s\nINTERVAL_HOURS=%s\nAPPLY_TEMPLATE=%s\nTEMPLATE_MODE=%s\n' \
     "$url" "$hours" "$apply_template" "$MIHOMO_SUBSCRIPTION_MODE" >"$conf"
   chmod 0600 "$conf"
 
