@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.04.04"
+APP_VERSION="2026.09.04.05"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -675,8 +675,8 @@ function show_menu() {
     echo "19）安装mosdns"
     echo "20）安装mihomo"
     echo "21）配置mihomo订阅"
-    echo "22）安装ddns-go"
-    echo "23）安装lucky"
+    echo "25）安装ddns-go"
+    echo "26）安装lucky"
     echo "60）安装 Portainer Server（管理服务器）"
     echo "61）安装 Portainer Agent（受管节点）"
     echo "63）配置 Portainer AGENT_SECRET"
@@ -5454,8 +5454,8 @@ while true; do
         19) install_mosdns ;;
         20) install_mihomo ;;
         21) manage_mihomo_subscription_menu ;;
-        22) install_ddnsgo ;;
-        23) install_lucky ;;
+        25) install_ddnsgo ;;
+        26) install_lucky ;;
         66) manage_dockcheck_auto_update ;;
         68) run_dockcheck_auto_update_once ;;
         69) delete_docker_container_and_image ;;

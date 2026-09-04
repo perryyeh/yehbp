@@ -52,8 +52,8 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 19 | 安装 mosdns                   |
 | 20 | 安装 mihomo                   |
 | 21 | 配置mihomo订阅             |
-| 22 | 安装 ddnsgo                   |
-| 23 | 安装 lucky                    |
+| 25 | 安装 ddnsgo                   |
+| 26 | 安装 lucky                    |
 | 60 | 安装 Portainer Server（管理服务器） |
 | 61 | 安装 Portainer Agent（受管节点） |
 | 63 | 配置 Portainer AGENT_SECRET      |
@@ -149,13 +149,13 @@ sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbpproxy.conf /usr/local/bin/ye
 
 #### 安装时的网络模式选择
 
-菜单 `20`、`21`、`22` 安装容器时会询问网络模式。选择不会自动由“回家”场景推断，应按实际用途确认：
+菜单 `20`、`25`、`26` 安装容器时会询问网络模式。选择不会自动由“回家”场景推断，应按实际用途确认：
 
 | 容器 / 菜单 | 默认模式 | `host` | `macvlan` |
 |---|---|---|---|
 | Mihomo / `20` | `macvlan` | 使用宿主机网络，适合提供在外回家入口；会占用宿主机 `7890`、`7891`、`7892`、`9090` 等端口。 | 独立 LAN IP/MAC，适合旁路由出站代理。 |
-| ddns-go / `22` | `host` | 直接使用宿主机的 IPv4/IPv6，适合双栈 DDNS；会占用宿主机 `9876` 端口。 | 独立 LAN IP/MAC，适合仅 IPv4 的环境。 |
-| Lucky / `23` | `host` | 直接使用宿主机网络，适合 IPv4 + IPv6；会占用宿主机 `16601` 端口。 | 独立 LAN IP/MAC，适合仅 IPv4 的环境。 |
+| ddns-go / `25` | `host` | 直接使用宿主机的 IPv4/IPv6，适合双栈 DDNS；会占用宿主机 `9876` 端口。 | 独立 LAN IP/MAC，适合仅 IPv4 的环境。 |
+| Lucky / `26` | `host` | 直接使用宿主机网络，适合 IPv4 + IPv6；会占用宿主机 `16601` 端口。 | 独立 LAN IP/MAC，适合仅 IPv4 的环境。 |
 
 同一宿主机需要同时运行不同用途的实例时，为每个实例指定不同的容器/目录名称，并确认其端口不会冲突。
 
@@ -286,8 +286,8 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 
 | 场景 | 公网ipv4 | 公网ipv6 | 容器可得ipv6 | 入站方式                                                                                           
 |----|---|---|----------|------------------------------------------------------------------------------------------------|
-| 1  | ✅ | ✅ | ✅        | 输入22，安装和mihomo共用ip【局域网ipv4+公网ipv6】的ddnsgo来更新ipv4+ipv6。ipv4在路由器上端口转发到mihomo，ipv6在路由器上开放ipv6端口入站 |
-| 2  | ❌ | ✅ | ✅        | 输入22，安装和mihomo共用ip【局域网ipv6】的ddnsgo来更新ipv6。 IPv4考虑relay(比如lucky), ipv6在路由器上开放ipv6端口入站           |
+| 1  | ✅ | ✅ | ✅        | 输入25，安装和mihomo共用ip【局域网ipv4+公网ipv6】的ddnsgo来更新ipv4+ipv6。ipv4在路由器上端口转发到mihomo，ipv6在路由器上开放ipv6端口入站 |
+| 2  | ❌ | ✅ | ✅        | 输入25，安装和mihomo共用ip【局域网ipv6】的ddnsgo来更新ipv6。 IPv4考虑relay(比如lucky), ipv6在路由器上开放ipv6端口入站           |
 | 3  | ✅ | ❌ | ❌        | 随意ddns后，路由器加端口转发，仅IPv4。                                                                        |
 | 4  | ❌ | ✅ | ❌        | IPv6入站可做但不推荐，视作行5考虑                                                                            |
 | 5  | ❌ | ❌ | ❌        | 选relay/tunnel方案，比如cloudflare tunnel，frp，tailscale什么的                                           |
