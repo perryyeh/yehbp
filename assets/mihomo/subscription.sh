@@ -164,6 +164,12 @@ mihomo_subscription_enable_runtime() {
     echo "❌ 当前实例已有自定义 build 运行时，但不具备订阅自动更新依赖；为避免覆盖自定义镜像，未修改。"
     return 1
   fi
+  # A block-style Compose entrypoint is custom startup logic (often multi-NIC
+  # routing). It must never be rewritten by the subscription manager.
+  if grep -Eq '^[[:space:]]+entrypoint:[[:space:]]*$' "$compose_file"; then
+    echo "❌ 当前实例使用自定义多行 entrypoint；订阅功能不会覆盖启动或网络逻辑。请先迁移到 entrypoint.d hook 模板。"
+    return 1
+  fi
   if [ -e "$dir/Dockerfile" ] || [ -e "$dir/entrypoint.sh" ]; then
     echo "❌ 当前实例含有未识别的 Dockerfile 或 entrypoint.sh；为避免覆盖本地自定义文件，未修改。"
     return 1
