@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.04.22"
+APP_VERSION="2026.09.04.23"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -1290,13 +1290,33 @@ env_require_vars() {
 }
 
 remove_compose_endpoint_ra_sysctl() {
-  local compose_file="${1:-docker-compose.yml}"
+  local compose_file="${1:-docker-compose.yml}" tmp
   [ -f "$compose_file" ] || return 0
 
-  sed -i '/driver_opts:/{
-    N
-    /com\.docker\.network\.endpoint\.sysctls: net\.ipv6\.conf\.IFNAME\.accept_ra_rt_info_max_plen=128/d
-  }' "$compose_file"
+  # Endpoint sysctls are a comma-separated list. Remove only the unsupported
+  # RA route-information limit and retain compatible settings such as
+  # accept_ra=2. YehBP templates place this list directly below driver_opts.
+  tmp="$(mktemp "${compose_file}.endpoint-sysctl.XXXXXX")" || return 1
+  if ! awk '
+    /^[[:space:]]+driver_opts:[[:space:]]*$/ {
+      parent = $0
+      if ((getline child) <= 0) { print parent; next }
+      if (child ~ /com\.docker\.network\.endpoint\.sysctls:/) {
+        gsub(/,net\.ipv6\.conf\.IFNAME\.accept_ra_rt_info_max_plen=128/, "", child)
+        gsub(/net\.ipv6\.conf\.IFNAME\.accept_ra_rt_info_max_plen=128,/, "", child)
+        gsub(/net\.ipv6\.conf\.IFNAME\.accept_ra_rt_info_max_plen=128/, "", child)
+        if (child ~ /com\.docker\.network\.endpoint\.sysctls:[[:space:]]*$/) next
+      }
+      print parent
+      print child
+      next
+    }
+    { print }
+  ' "$compose_file" >"$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  mv "$tmp" "$compose_file"
 }
 
 remove_unsupported_compose_endpoint_sysctls() {
@@ -1307,7 +1327,7 @@ remove_unsupported_compose_endpoint_sysctls() {
   # container process starts.
   if ! sysctl -n net.ipv6.conf.default.accept_ra_rt_info_max_plen >/dev/null 2>&1; then
     remove_compose_endpoint_ra_sysctl "$compose_file"
-    echo "ℹ️ 宿主机不支持 accept_ra_rt_info_max_plen，已移除该 endpoint sysctl。"
+    echo "ℹ️ 宿主机不支持 accept_ra_rt_info_max_plen，已移除该字段并保留兼容的 endpoint sysctl。"
   fi
 }
 
