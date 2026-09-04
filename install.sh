@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.04.26"
+APP_VERSION="2026.09.04.27"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -4695,10 +4695,14 @@ find_dockcheck_auto_update_base() {
         for choice in "${!candidates[@]}"; do
             echo "  $((choice + 1))）${candidates[$choice]}" >&2
         done
-        read -r -p "请选择 Dockcheck 安装目录（回车取消）：" choice
+        echo "  0）返回" >&2
+        read -r -p "请选择 Dockcheck 安装目录: " choice
         if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#candidates[@]}" ]; then
             printf '%s\n' "${candidates[$((choice - 1))]}"
             return 0
+        fi
+        if [ -z "$choice" ] || [ "$choice" = "0" ]; then
+            return 2
         fi
         return 1
     fi
@@ -4722,13 +4726,18 @@ find_dockcheck_auto_update_base() {
 }
 
 sync_dockcheck_auto_update_components() {
-    local base_dir tmp_dir dockcheck_source dockcheck_update local_version remote_version
+    local base_dir tmp_dir dockcheck_source dockcheck_update local_version remote_version rc
 
     if [ "${EUID:-$(id -u)}" -ne 0 ]; then
         echo "❌ 需要 root 权限，请使用 sudo 运行。"
         return 1
     fi
-    if ! base_dir="$(find_dockcheck_auto_update_base)"; then
+    base_dir="$(find_dockcheck_auto_update_base)"
+    rc=$?
+    if [ "$rc" -eq 2 ]; then
+        return 0
+    fi
+    if [ "$rc" -ne 0 ]; then
         echo "❌ 未找到 Dockcheck 组件。"
         echo "👉 请先执行 65 → 2 安装 Dockcheck。"
         return 1
@@ -4806,9 +4815,14 @@ sync_dockcheck_auto_update_components() {
 }
 
 show_dockcheck_auto_update_status() {
-    local base_dir local_version timer_enabled timer_active
+    local base_dir local_version timer_enabled timer_active rc
 
-    if ! base_dir="$(find_dockcheck_auto_update_base)"; then
+    base_dir="$(find_dockcheck_auto_update_base)"
+    rc=$?
+    if [ "$rc" -eq 2 ]; then
+        return 0
+    fi
+    if [ "$rc" -ne 0 ]; then
         echo "ℹ️ Dockcheck 尚未安装。"
         return 0
     fi
@@ -4873,8 +4887,13 @@ run_dockcheck_auto_update_once() {
         return 1
     fi
 
-    local base_dir mode confirm label non_compose_names name names_csv
-    if ! base_dir="$(find_dockcheck_auto_update_base)"; then
+    local base_dir mode confirm label non_compose_names name names_csv rc
+    base_dir="$(find_dockcheck_auto_update_base)"
+    rc=$?
+    if [ "$rc" -eq 2 ]; then
+        return 0
+    fi
+    if [ "$rc" -ne 0 ]; then
         echo "❌ 未找到 Dockcheck 组件。"
         echo "👉 请先执行 65 → 2 安装 Dockcheck。"
         return 1
