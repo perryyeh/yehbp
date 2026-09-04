@@ -140,19 +140,17 @@ mihomo_subscription_runtime_ready() {
   fi
   docker exec "$MIHOMO_SUBSCRIPTION_CONTAINER" sh -c '
     test -x /root/.config/mihomo/entrypoint.sh &&
-    command -v curl >/dev/null &&
-    command -v python3 >/dev/null &&
-    python3 -c "import yaml"
+    test -x /root/.config/mihomo/entrypoint.d/30-subscription-schedule.sh
   ' >/dev/null 2>&1
 }
 
 # Convert a pre-container-scheduler YehBP macvlan deployment in place.  This
-# preserves config.yaml, .env, container name, network fields and all other
-# Compose settings; only the legacy image stanza becomes the current local
-# runtime.  The original Compose file is restored and brought back up if the
-# rebuilt container is not healthy.
+# preserves config.yaml, .env, container name, network fields and the official
+# image; it only adds the stable entrypoint and subscription hook. The original
+# Compose file is restored and brought back up if the rebuilt container is not
+# healthy.
 mihomo_subscription_enable_runtime() {
-  local confirm dir compose_file compose_backup compose_candidate stage dockerfile entrypoint
+  local confirm dir compose_file compose_backup compose_candidate stage entrypoint scheduler
   local -a compose
 
   mihomo_subscription_runtime_ready && return 0
@@ -177,8 +175,8 @@ mihomo_subscription_enable_runtime() {
     echo "❌ 当前实例使用自定义多行 entrypoint；订阅功能不会覆盖启动或网络逻辑。请先迁移到 entrypoint.d hook 模板。"
     return 1
   fi
-  if [ -e "$dir/Dockerfile" ] || [ -e "$dir/entrypoint.sh" ]; then
-    echo "❌ 当前实例含有未识别的 Dockerfile 或 entrypoint.sh；为避免覆盖本地自定义文件，未修改。"
+  if [ -e "$dir/entrypoint.sh" ]; then
+    echo "❌ 当前实例含有未识别的 entrypoint.sh；为避免覆盖本地自定义文件，未修改。"
     return 1
   fi
 
@@ -205,32 +203,29 @@ mihomo_subscription_enable_runtime() {
     rm -f "$compose_backup" "$compose_candidate"
     return 1
   }
-  dockerfile="$stage/Dockerfile"
   entrypoint="$stage/entrypoint.sh"
+  scheduler="$stage/30-subscription-schedule.sh"
   cp "$compose_file" "$compose_backup" || { rm -rf "$stage"; rm -f "$compose_backup" "$compose_candidate"; return 1; }
 
   if ! yehbp_curl --connect-timeout 10 --max-time 60 -fsSL \
-      "https://raw.githubusercontent.com/perryyeh/mihomo/main/Dockerfile" -o "$dockerfile" || \
-     ! yehbp_curl --connect-timeout 10 --max-time 60 -fsSL \
       "https://raw.githubusercontent.com/perryyeh/mihomo/main/entrypoint.sh" -o "$entrypoint" || \
-     ! grep -qx 'FROM metacubex/mihomo:latest' "$dockerfile" || ! sh -n "$entrypoint"; then
+     ! yehbp_curl --connect-timeout 10 --max-time 60 -fsSL \
+      "https://raw.githubusercontent.com/perryyeh/mihomo/main/entrypoint.d/30-subscription-schedule.sh" -o "$scheduler" || \
+     ! sh -n "$entrypoint" || ! sh -n "$scheduler"; then
     echo "❌ 自动更新运行时下载或校验失败，未修改该实例。"
     rm -rf "$stage"
     rm -f "$compose_backup" "$compose_candidate"
     return 1
   fi
 
-  # Legacy YehBP templates have one service image stanza. Replace it with the
-  # current build/image/entrypoint fields, removing a legacy entrypoint if any.
+  # Legacy YehBP templates have one service image stanza. Add only the stable
+  # entrypoint; the official Mihomo image remains unchanged.
   if ! awk '
     /^[[:space:]]+entrypoint:[[:space:]]*/ { next }
     /^[[:space:]]+image:[[:space:]]*/ && !done {
       match($0, /^[[:space:]]*/)
       indent = substr($0, RSTART, RLENGTH)
-      print indent "build:"
-      print indent "  context: ."
-      print indent "  dockerfile: Dockerfile"
-      print indent "image: yehbp-mihomo:latest"
+      print
       print indent "entrypoint: [\"/root/.config/mihomo/entrypoint.sh\"]"
       done = 1
       next
@@ -251,8 +246,9 @@ mihomo_subscription_enable_runtime() {
     return 1
   fi
 
-  mv "$dockerfile" "$dir/Dockerfile" && chmod 0644 "$dir/Dockerfile" && \
+  mkdir -p "$dir/entrypoint.d" && \
     mv "$entrypoint" "$dir/entrypoint.sh" && chmod 0755 "$dir/entrypoint.sh" && \
+    mv "$scheduler" "$dir/entrypoint.d/30-subscription-schedule.sh" && chmod 0755 "$dir/entrypoint.d/30-subscription-schedule.sh" && \
     mv "$compose_candidate" "$compose_file" || {
       echo "❌ 写入自动更新运行时失败，正在恢复原 Compose。"
       cp "$compose_backup" "$compose_file" || true
@@ -263,7 +259,7 @@ mihomo_subscription_enable_runtime() {
   rm -rf "$stage"
 
   echo "🔄 正在重建 Mihomo 容器以启用自动更新…"
-  if (cd "$dir" && "${compose[@]}" -f "$compose_file" up -d --build) && \
+  if (cd "$dir" && "${compose[@]}" -f "$compose_file" up -d) && \
      mihomo_subscription_wait_for_mihomo && mihomo_subscription_runtime_ready; then
     rm -f "$compose_backup"
     echo "✅ 已配置容器内自动更新。"
@@ -273,7 +269,7 @@ mihomo_subscription_enable_runtime() {
   echo "❌ 自动更新运行时未能正常启动，正在恢复原 Compose 和容器。"
   cp "$compose_backup" "$compose_file" && (cd "$dir" && "${compose[@]}" -f "$compose_file" up -d) || \
     echo "⚠️ 原 Compose 自动恢复失败，请检查：$compose_file"
-  rm -f "$dir/Dockerfile" "$dir/entrypoint.sh" "$compose_backup" "$compose_candidate"
+  rm -f "$dir/entrypoint.sh" "$dir/entrypoint.d/30-subscription-schedule.sh" "$compose_backup" "$compose_candidate"
   return 1
 }
 
