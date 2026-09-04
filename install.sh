@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.04.28"
+APP_VERSION="2026.09.05.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -3413,8 +3413,13 @@ install_mihomo() {
     mkdir -p "$dockerapps" || return 1
     cd "$dockerapps" || return 1
 
-    # 3) 自定义容器/目录名称（回车用默认mihomo）
-    local DEFAULT_CONTAINER_NAME="mihomo"
+    # 3) 自定义容器/目录名称（默认值按网络模式区分）
+    local DEFAULT_CONTAINER_NAME
+    if [ "$MIHOMO_NETWORK_MODE" = "host" ]; then
+        DEFAULT_CONTAINER_NAME="mihomoin"
+    else
+        DEFAULT_CONTAINER_NAME="mihomo"
+    fi
     local CONTAINER_NAME
     read -r -p "请输入容器名称（回车默认使用 '$DEFAULT_CONTAINER_NAME'）: " CONTAINER_NAME
     CONTAINER_NAME=${CONTAINER_NAME:-$DEFAULT_CONTAINER_NAME}
