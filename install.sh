@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.04.08"
+APP_VERSION="2026.09.04.09"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -2817,10 +2817,10 @@ EOF
     compose_deploy_with_repo_switch "librespeed" "$CONTAINER_NAME" "docker-compose.yml" || return 1
 
     echo "✅ LibreSpeed 已启动"
-    echo "访问地址：http://${librespeed}"
     echo "容器名称：${CONTAINER_NAME}"
+    echo "访问地址：http://${librespeed}"
     if [ -n "$librespeed6" ]; then
-        echo "IPv6 地址：${librespeed6}"
+        echo "IPv6 地址：http://[${librespeed6}]"
     else
         echo "IPv6：未启用（所选 macvlan 未开启 IPv6 或无 IPv6 子网）"
     fi
