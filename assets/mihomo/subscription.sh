@@ -94,6 +94,28 @@ mihomo_subscription_install_script() {
   chmod 0700 "$tmp" && mv "$tmp" "$script"
 }
 
+# Always refresh the scheduler when adding or replacing a subscription. This
+# lets existing instances migrate away from obsolete startup hooks without
+# touching their Compose, config.yaml, network, or subscription settings.
+mihomo_subscription_install_scheduler() {
+  local scheduler tmp
+  scheduler="$MIHOMO_SUBSCRIPTION_DIR/entrypoint.d/30-subscription-schedule.sh"
+  [ -d "$MIHOMO_SUBSCRIPTION_DIR/entrypoint.d" ] || {
+    echo "❌ 未找到 Mihomo entrypoint.d，无法刷新订阅调度器。"
+    return 1
+  }
+  tmp="$(mktemp "$MIHOMO_SUBSCRIPTION_DIR/entrypoint.d/.30-subscription-schedule.XXXXXX")" || return 1
+  if ! yehbp_curl --connect-timeout 10 --max-time 60 -fsSL \
+      "https://raw.githubusercontent.com/perryyeh/mihomo/main/entrypoint.d/30-subscription-schedule.sh" -o "$tmp" || \
+     ! sh -n "$tmp"; then
+    rm -f "$tmp"
+    echo "❌ 无法下载或校验 Mihomo 订阅调度器。"
+    return 1
+  fi
+  chmod 0755 "$tmp" && mv "$tmp" "$scheduler" || return 1
+  echo "✅ 已刷新 Mihomo 订阅调度器。"
+}
+
 # Templates are owned by the Mihomo template repository, like the updater.
 # Refresh the selected one on every template-based operation so YehBP never
 # carries a second, potentially stale copy.
@@ -294,6 +316,7 @@ mihomo_subscription_add_or_replace() {
   local url hours apply_template backup conf
   mihomo_subscription_select_target || return $?
   mihomo_subscription_enable_runtime || return 1
+  mihomo_subscription_install_scheduler || return 1
   backup="$MIHOMO_SUBSCRIPTION_DIR/config.macvlan.backup.yaml"
   conf="$MIHOMO_SUBSCRIPTION_DIR/subscription.conf"
 
