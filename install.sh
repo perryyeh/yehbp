@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.04.06"
+APP_VERSION="2026.09.04.07"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -679,9 +679,10 @@ function show_menu() {
     echo "26）安装lucky"
     echo "60）安装 Portainer Server（管理服务器）"
     echo "61）安装 Portainer Agent（受管节点）"
-    echo "63）配置 Portainer AGENT_SECRET"
-    echo "66）安装/删除/升级 Dockcheck"
-    echo "68）检查/更新docker镜像"
+    echo "62）配置 Portainer AGENT_SECRET"
+    echo "65）安装/删除/升级 Dockcheck"
+    echo "66）检查/更新docker镜像"
+    echo "68）恢复/启动 Docker Compose 容器"
     echo "69）删除 Docker 容器、镜像和 Compose 目录"
     echo "70）迁移 Docker 目录"
     if ! is_openwrt; then
@@ -4704,7 +4705,7 @@ sync_dockcheck_auto_update_components() {
     fi
     if ! base_dir="$(find_dockcheck_auto_update_base)"; then
         echo "❌ 未找到 Dockcheck 组件。"
-        echo "👉 请先执行 66 → 2 安装 Dockcheck。"
+        echo "👉 请先执行 65 → 2 安装 Dockcheck。"
         return 1
     fi
 
@@ -4850,7 +4851,7 @@ run_dockcheck_auto_update_once() {
     local base_dir mode confirm label non_compose_names name names_csv
     if ! base_dir="$(find_dockcheck_auto_update_base)"; then
         echo "❌ 未找到 Dockcheck 组件。"
-        echo "👉 请先执行 66 → 2 安装 Dockcheck。"
+        echo "👉 请先执行 65 → 2 安装 Dockcheck。"
         return 1
     fi
 
@@ -4902,6 +4903,103 @@ run_dockcheck_auto_update_once() {
             ;;
         *) return 0 ;;
     esac
+}
+
+# =====================
+#  功能 68：恢复/启动 Docker Compose 容器
+# =====================
+restore_docker_compose_project() {
+    local rc root_dir dir compose_file file choice action confirm
+    local -a project_dirs=() compose_files=() compose_names=() COMPOSE=()
+    local -a compose_candidates=(compose.yaml compose.yml docker-compose.yaml docker-compose.yml)
+
+    echo "🔄 恢复/启动 Docker Compose 容器"
+    if [ "${EUID:-$(id -u)}" -ne 0 ]; then
+        echo "❌ 需要 root 权限，请使用 sudo 运行。"
+        return 1
+    fi
+
+    select_dockerapps_dir "Docker Compose 项目" "恢复/启动"
+    rc=$?
+    case "$rc" in
+        0) ;;
+        2) echo "ℹ️ 已退出恢复/启动。"; return 0 ;;
+        *) return 1 ;;
+    esac
+    root_dir="${SELECTED_DOCKERAPPS_DIR%/}"
+    [ -d "$root_dir" ] || { echo "❌ dockerapps 目录不存在：$root_dir"; return 1; }
+
+    # 仅遍历 dockerapps 的下一级目录，不递归搜索，避免误操作嵌套项目。
+    for dir in "$root_dir"/*; do
+        [ -d "$dir" ] || continue
+        compose_file=""
+        for file in "${compose_candidates[@]}"; do
+            if [ -f "$dir/$file" ]; then
+                compose_file="$file"
+                break
+            fi
+        done
+        [ -n "$compose_file" ] || continue
+        project_dirs+=("$dir")
+        compose_files+=("$compose_file")
+        compose_names+=("$(basename "$dir")")
+    done
+
+    if [ ${#project_dirs[@]} -eq 0 ]; then
+        echo "ℹ️ 在 $root_dir 的下一级目录中未发现 Compose 文件。"
+        return 0
+    fi
+
+    echo "发现以下 Docker Compose 项目："
+    for i in "${!project_dirs[@]}"; do
+        printf '  %d）%s ｜ 文件：%s\n' "$((i + 1))" "${compose_names[$i]}" "${compose_files[$i]}"
+    done
+    echo "  0）返回"
+    read -r -p "请输入要操作的序号: " choice
+    [ -n "$choice" ] && [ "$choice" != "0" ] || return 0
+    if [[ ! "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "${#project_dirs[@]}" ]; then
+        echo "❌ 无效选择。"
+        return 1
+    fi
+    local index=$((choice - 1))
+    dir="${project_dirs[$index]}"
+    compose_file="${compose_files[$index]}"
+
+    if docker compose version >/dev/null 2>&1; then
+        COMPOSE=(docker compose)
+    elif command -v docker-compose >/dev/null 2>&1; then
+        COMPOSE=(docker-compose)
+    else
+        echo "❌ 未找到 docker compose / docker-compose。"
+        return 1
+    fi
+
+    echo "🔎 校验 Compose 配置：$dir/$compose_file"
+    (cd "$dir" && "${COMPOSE[@]}" -f "$compose_file" config) || {
+        echo "❌ Compose 配置校验失败，未变更容器。"
+        return 1
+    }
+
+    echo "1）按当前 Compose/.env 恢复或启动（配置有变化时自动重建）"
+    echo "2）强制重新创建全部服务（即使配置未变化）"
+    echo "0）返回"
+    read -r -p "请选择操作: " action
+    case "$action" in
+        1) echo "⚠️ 缺失容器会创建；配置变更的容器可能短暂中断并重建。" ;;
+        2) echo "⚠️ 将停止并重新创建该项目的全部容器，服务会短暂中断。" ;;
+        *) return 0 ;;
+    esac
+    read -r -p "确认继续？[y/N]: " confirm
+    [[ "$confirm" =~ ^[Yy]$ ]] || { echo "ℹ️ 已取消。"; return 0; }
+
+    if [ "$action" = "2" ]; then
+        (cd "$dir" && "${COMPOSE[@]}" -f "$compose_file" up -d --no-build --force-recreate)
+    else
+        (cd "$dir" && "${COMPOSE[@]}" -f "$compose_file" up -d --no-build)
+    fi || { echo "❌ Compose 恢复/启动失败。"; return 1; }
+
+    echo "✅ Compose 项目已处理：${compose_names[$index]}"
+    (cd "$dir" && "${COMPOSE[@]}" -f "$compose_file" ps) || true
 }
 
 # =====================
@@ -5452,7 +5550,7 @@ while true; do
         9) clean_macvlan_network ;;
         60) install_portainer ;;
         61) install_portainer_agent ;;
-        63) configure_portainer_agent_secret ;;
+        62) configure_portainer_agent_secret ;;
         11) install_librespeed ;;
         14) install_adguardhome ;;
         19) install_mosdns ;;
@@ -5460,8 +5558,9 @@ while true; do
         21) manage_mihomo_subscription_menu ;;
         25) install_ddnsgo ;;
         26) install_lucky ;;
-        66) manage_dockcheck_auto_update ;;
-        68) run_dockcheck_auto_update_once ;;
+        65) manage_dockcheck_auto_update ;;
+        66) run_dockcheck_auto_update_once ;;
+        68) restore_docker_compose_project ;;
         69) delete_docker_container_and_image ;;
         80) manage_rtp2httpd_menu ;;
         89) manage_socks5_proxy ;;
