@@ -307,7 +307,7 @@ mihomo_subscription_add_or_replace() {
   read -r -p "更新间隔（小时；0 为不自动刷新，回车默认 0）: " hours
   hours="${hours:-0}"
   [[ "$hours" =~ ^[0-9]+$ ]] || { echo "❌ 更新间隔必须是 0 或正整数小时。"; return 1; }
-  read -r -p "是否刷新并应用订阅模板？（模板中的同名字段将覆盖订阅源内容）[Y/n]: " apply_template
+  read -r -p "是否用模板覆盖订阅内容？[Y/n]: " apply_template
   case "$apply_template" in
     ""|y|Y|yes|YES) apply_template=1 ;;
     n|N|no|NO) apply_template=0 ;;
