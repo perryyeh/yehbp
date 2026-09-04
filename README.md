@@ -317,7 +317,7 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 
 #### 6.5 恢复/启动 Docker Compose 容器（菜单 68）
 
-菜单 `68` 先选择一个 `dockerapps` 根目录，然后只列出其下一级目录内的 `compose.yaml`、`compose.yml`、`docker-compose.yaml` 或 `docker-compose.yml` 项目，不递归深入。选择项目后会先执行 `docker compose config` 校验；可选择按当前 Compose/.env 恢复或启动（配置变化时自动重建受影响容器），或强制重新创建该项目全部服务。不会 build 镜像，也不会删除 orphan 容器。
+菜单 `68` 先列出正在运行且可定位 Compose 工作目录的容器，选择后会校验当前 Compose/.env。若该项目已有运行容器，才会询问是否强制重新创建全部服务；若没有运行容器，则直接按当前 Compose/.env 创建或启动。选择 `m` 可改为选择一个 `dockerapps` 根目录，再只列出其下一级目录内的 `compose.yaml`、`compose.yml`、`docker-compose.yaml` 或 `docker-compose.yml` 项目，不递归深入。不会 build 镜像，也不会删除 orphan 容器。
 
 #### 6.6 删除 Docker 容器、镜像和 Compose 目录（菜单 69）
 

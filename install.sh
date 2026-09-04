@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.04.07"
+APP_VERSION="2026.09.04.08"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -4908,63 +4908,26 @@ run_dockcheck_auto_update_once() {
 # =====================
 #  功能 68：恢复/启动 Docker Compose 容器
 # =====================
+find_standard_compose_file() {
+    local dir="$1" file
+    local -a candidates=(compose.yaml compose.yml docker-compose.yaml docker-compose.yml)
+    for file in "${candidates[@]}"; do
+        [ -f "$dir/$file" ] && { printf '%s' "$file"; return 0; }
+    done
+    return 1
+}
+
 restore_docker_compose_project() {
-    local rc root_dir dir compose_file file choice action confirm
+    local rc root_dir dir compose_file file choice confirm running_names container_id container_name container_image working_dir
+    local i index
     local -a project_dirs=() compose_files=() compose_names=() COMPOSE=()
-    local -a compose_candidates=(compose.yaml compose.yml docker-compose.yaml docker-compose.yml)
+    local -a running_dirs=() running_files=() running_names_list=() running_images=()
 
     echo "🔄 恢复/启动 Docker Compose 容器"
     if [ "${EUID:-$(id -u)}" -ne 0 ]; then
         echo "❌ 需要 root 权限，请使用 sudo 运行。"
         return 1
     fi
-
-    select_dockerapps_dir "Docker Compose 项目" "恢复/启动"
-    rc=$?
-    case "$rc" in
-        0) ;;
-        2) echo "ℹ️ 已退出恢复/启动。"; return 0 ;;
-        *) return 1 ;;
-    esac
-    root_dir="${SELECTED_DOCKERAPPS_DIR%/}"
-    [ -d "$root_dir" ] || { echo "❌ dockerapps 目录不存在：$root_dir"; return 1; }
-
-    # 仅遍历 dockerapps 的下一级目录，不递归搜索，避免误操作嵌套项目。
-    for dir in "$root_dir"/*; do
-        [ -d "$dir" ] || continue
-        compose_file=""
-        for file in "${compose_candidates[@]}"; do
-            if [ -f "$dir/$file" ]; then
-                compose_file="$file"
-                break
-            fi
-        done
-        [ -n "$compose_file" ] || continue
-        project_dirs+=("$dir")
-        compose_files+=("$compose_file")
-        compose_names+=("$(basename "$dir")")
-    done
-
-    if [ ${#project_dirs[@]} -eq 0 ]; then
-        echo "ℹ️ 在 $root_dir 的下一级目录中未发现 Compose 文件。"
-        return 0
-    fi
-
-    echo "发现以下 Docker Compose 项目："
-    for i in "${!project_dirs[@]}"; do
-        printf '  %d）%s ｜ 文件：%s\n' "$((i + 1))" "${compose_names[$i]}" "${compose_files[$i]}"
-    done
-    echo "  0）返回"
-    read -r -p "请输入要操作的序号: " choice
-    [ -n "$choice" ] && [ "$choice" != "0" ] || return 0
-    if [[ ! "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "${#project_dirs[@]}" ]; then
-        echo "❌ 无效选择。"
-        return 1
-    fi
-    local index=$((choice - 1))
-    dir="${project_dirs[$index]}"
-    compose_file="${compose_files[$index]}"
-
     if docker compose version >/dev/null 2>&1; then
         COMPOSE=(docker compose)
     elif command -v docker-compose >/dev/null 2>&1; then
@@ -4974,31 +4937,102 @@ restore_docker_compose_project() {
         return 1
     fi
 
+    # 优先列出运行中的 Compose 容器；工作目录和 Compose 文件均需存在才允许操作。
+    while IFS=$'\t' read -r container_id container_name container_image; do
+        [ -n "$container_id" ] || continue
+        working_dir="$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$container_id" 2>/dev/null || true)"
+        [ -n "$working_dir" ] && [ "$working_dir" != "<no value>" ] && [ -d "$working_dir" ] || continue
+        compose_file="$(find_standard_compose_file "$working_dir" || true)"
+        [ -n "$compose_file" ] || continue
+        running_dirs+=("$working_dir")
+        running_files+=("$compose_file")
+        running_names_list+=("$container_name")
+        running_images+=("$container_image")
+    done < <(docker ps --format '{{.ID}}\t{{.Names}}\t{{.Image}}')
+
+    if [ ${#running_dirs[@]} -gt 0 ]; then
+        echo "=== 正在运行的 Docker Compose 容器 ==="
+        for i in "${!running_dirs[@]}"; do
+            printf '%d）%s ｜ 镜像：%s\n' "$((i + 1))" "${running_names_list[$i]}" "${running_images[$i]}"
+        done
+    else
+        echo "ℹ️ 未发现可定位 Compose 工作目录的运行中容器。"
+    fi
+    echo "m）不在列表里：选择 dockerapps 目录"
+    echo "0）返回"
+    read -r -p "请输入要操作的序号: " choice
+    [ -n "$choice" ] && [ "$choice" != "0" ] || return 0
+
+    if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#running_dirs[@]}" ]; then
+        index=$((choice - 1))
+        dir="${running_dirs[$index]}"
+        compose_file="${running_files[$index]}"
+    elif [[ "$choice" =~ ^[Mm]$ ]]; then
+        select_dockerapps_dir "Docker Compose 项目" "恢复/启动"
+        rc=$?
+        case "$rc" in
+            0) ;;
+            2) echo "ℹ️ 已退出恢复/启动。"; return 0 ;;
+            *) return 1 ;;
+        esac
+        root_dir="${SELECTED_DOCKERAPPS_DIR%/}"
+        [ -d "$root_dir" ] || { echo "❌ dockerapps 目录不存在：$root_dir"; return 1; }
+
+        # 仅遍历 dockerapps 的下一级目录，不递归搜索，避免误操作嵌套项目。
+        for dir in "$root_dir"/*; do
+            [ -d "$dir" ] || continue
+            compose_file="$(find_standard_compose_file "$dir" || true)"
+            [ -n "$compose_file" ] || continue
+            project_dirs+=("$dir")
+            compose_files+=("$compose_file")
+            compose_names+=("$(basename "$dir")")
+        done
+        if [ ${#project_dirs[@]} -eq 0 ]; then
+            echo "ℹ️ 在 $root_dir 的下一级目录中未发现 Compose 文件。"
+            return 0
+        fi
+        echo "发现以下 Docker Compose 项目："
+        for i in "${!project_dirs[@]}"; do
+            printf '  %d）%s ｜ 文件：%s\n' "$((i + 1))" "${compose_names[$i]}" "${compose_files[$i]}"
+        done
+        echo "  0）返回"
+        read -r -p "请输入要操作的序号: " choice
+        [ -n "$choice" ] && [ "$choice" != "0" ] || return 0
+        if [[ ! "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "${#project_dirs[@]}" ]; then
+            echo "❌ 无效选择。"
+            return 1
+        fi
+        index=$((choice - 1))
+        dir="${project_dirs[$index]}"
+        compose_file="${compose_files[$index]}"
+    else
+        echo "❌ 无效选择。"
+        return 1
+    fi
+
     echo "🔎 校验 Compose 配置：$dir/$compose_file"
-    (cd "$dir" && "${COMPOSE[@]}" -f "$compose_file" config) || {
+    (cd "$dir" && "${COMPOSE[@]}" -f "$compose_file" config >/dev/null) || {
         echo "❌ Compose 配置校验失败，未变更容器。"
         return 1
     }
 
-    echo "1）按当前 Compose/.env 恢复或启动（配置有变化时自动重建）"
-    echo "2）强制重新创建全部服务（即使配置未变化）"
-    echo "0）返回"
-    read -r -p "请选择操作: " action
-    case "$action" in
-        1) echo "⚠️ 缺失容器会创建；配置变更的容器可能短暂中断并重建。" ;;
-        2) echo "⚠️ 将停止并重新创建该项目的全部容器，服务会短暂中断。" ;;
-        *) return 0 ;;
-    esac
-    read -r -p "确认继续？[y/N]: " confirm
-    [[ "$confirm" =~ ^[Yy]$ ]] || { echo "ℹ️ 已取消。"; return 0; }
-
-    if [ "$action" = "2" ]; then
+    running_names="$(cd "$dir" && "${COMPOSE[@]}" -f "$compose_file" ps -q 2>/dev/null | while IFS= read -r container_id; do
+        [ -n "$container_id" ] || continue
+        docker inspect -f '{{if .State.Running}}{{.Name}}{{end}}' "$container_id" 2>/dev/null | sed 's#^/##'
+    done)"
+    if [ -n "$running_names" ]; then
+        echo "⚠️ 该 Compose 项目已有运行中的容器："
+        printf '%s\n' "$running_names" | sed 's/^/  - /'
+        echo "⚠️ 强制重建会停止并重新创建该项目全部服务，服务将短暂中断。"
+        read -r -p "是否强制重新构建？[y/N]: " confirm
+        [[ "$confirm" =~ ^[Yy]$ ]] || { echo "ℹ️ 已取消。"; return 0; }
         (cd "$dir" && "${COMPOSE[@]}" -f "$compose_file" up -d --no-build --force-recreate)
     else
+        echo "▶️ 未检测到该项目的运行中容器，按当前 Compose/.env 创建/启动。"
         (cd "$dir" && "${COMPOSE[@]}" -f "$compose_file" up -d --no-build)
     fi || { echo "❌ Compose 恢复/启动失败。"; return 1; }
 
-    echo "✅ Compose 项目已处理：${compose_names[$index]}"
+    echo "✅ Compose 项目已处理：$(basename "$dir")"
     (cd "$dir" && "${COMPOSE[@]}" -f "$compose_file" ps) || true
 }
 
