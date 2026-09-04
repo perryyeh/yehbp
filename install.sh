@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.04.12"
+APP_VERSION="2026.09.04.13"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -4951,7 +4951,7 @@ restore_docker_compose_project() {
         running_files+=("$compose_file")
         running_names_list+=("$container_name")
         running_images+=("$container_image")
-    done < <(docker ps --format '{{.ID}}\t{{.Names}}\t{{.Image}}')
+    done < <(docker ps --format '{{.ID}}\t{{.Names}}\t{{.Image}}' | sort -f -t $'\t' -k2,2)
 
     if [ ${#running_dirs[@]} -gt 0 ]; then
         echo "=== 正在运行的 Docker Compose 容器 ==="
