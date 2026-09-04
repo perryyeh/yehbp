@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.04.23"
+APP_VERSION="2026.09.04.24"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -167,9 +167,9 @@ download_yehbp_asset() {
 
     mkdir -p "$(dirname "$dst")" || return 1
     require_curl_for_configured_proxy || return 1
-    yehbp_curl --connect-timeout 10 --max-time 60 -fsSL "$url" -o "$dst" || {
+    yehbp_curl --connect-timeout 10 --max-time 30 -fsSL "$url" -o "$dst" || {
         rm -f "$dst"
-        echo "❌ 下载失败（60s 超时或网络错误）：$src；请重试。"
+        echo "❌ 下载失败（30s 超时或网络错误）：$src；请重试。"
         return 1
     }
 }
@@ -5581,8 +5581,29 @@ load_mihomo_subscription_asset() {
 }
 
 manage_mihomo_subscription_menu() {
+    local choice
+
+    echo "🔧 Mihomo 外部订阅配置"
+    echo "1）添加/修改外部订阅"
+    echo "2）立即更新外部订阅"
+    echo "3）删除外部订阅并恢复本地配置"
+    echo "4）查看订阅更新日志"
+    echo "0）返回"
+    read -r -p "请输入要操作的序号: " choice
+    case "$choice" in
+        0|"") return 0 ;;
+        1|2|3|4) ;;
+        *) echo "❌ 无效选项。"; return 1 ;;
+    esac
+
+    echo "ℹ️ 正在下载 Mihomo 外部订阅功能脚本（最多等待 30 秒）…"
     load_mihomo_subscription_asset || return 1
-    manage_mihomo_subscription
+    case "$choice" in
+        1) mihomo_subscription_add_or_replace ;;
+        2) mihomo_subscription_manual_update ;;
+        3) mihomo_subscription_delete ;;
+        4) mihomo_subscription_show_log ;;
+    esac
 }
 
 # ========== 主循环 ==========
