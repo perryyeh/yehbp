@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.04.16"
+APP_VERSION="2026.09.04.17"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -3414,7 +3414,8 @@ install_mihomo() {
           "MACVLAN_NET=${SELECTED_MACVLAN}" \
           "ipv4=${mihomo}" \
           "ipv6=${mihomo6}" \
-          "macaddress=${mihomomac}"
+          "macaddress=${mihomomac}" \
+          "gateway=${gateway}"
 
         echo "✅ 已生成 .env 文件："
         cat .env
