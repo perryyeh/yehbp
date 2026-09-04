@@ -59,7 +59,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 63 | 配置 Portainer AGENT_SECRET      |
 | 66 | 安装/删除/升级 Dockcheck       |
 | 68 | 检查/更新docker镜像            |
-| 69 | 删除 Docker 容器、镜像和 Compose 目录 |
+| 69 | 删除 Docker 容器及可选资源（容器/镜像/目录） |
 | 70 | 迁移 Docker 目录               |
 | 71 | 优化 Docker 日志               |
 | 72 | 优化 journald 日志             |

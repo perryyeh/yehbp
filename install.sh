@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.04.02"
+APP_VERSION="2026.09.04.03"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -1790,14 +1790,14 @@ function format_disk() {
 
 function docker_info() { echo "🐳 显示 Docker 信息"; docker info; }
 
-# 删除一个容器及其镜像；若该容器由 Docker Compose 创建，可选择删除 Compose
-# working_dir 本身。不会根据挂载点、卷或环境变量推断并删除任何其他目录。
+# 删除一个容器，并按用户明确选择决定是否同时删除无引用镜像及 Compose
+# working_dir。本函数绝不根据挂载点、卷或环境变量推断其他目录。
 delete_docker_container_and_image() {
     local -a container_ids=() container_names=() container_images=() container_statuses=()
-    local id name image status choice confirm image_id compose_dir delete_dir_choice other_containers
-    local i selected_index
+    local id name image status choice delete_mode confirm image_id compose_dir other_containers
+    local i selected_index delete_dir=0
 
-    echo "🗑️ 删除 Docker 容器、镜像和 Compose 目录"
+    echo "🗑️ 删除 Docker 容器及可选资源"
     if ! command -v docker >/dev/null 2>&1; then
         echo "❌ 未找到 docker 命令。"
         return 1
@@ -1839,26 +1839,51 @@ delete_docker_container_and_image() {
         echo "❌ 无法读取容器 $name 的镜像信息；容器可能已被其他操作删除。"
         return 1
     }
-    image_id="$(docker image inspect -f '{{.Id}}' "$image" 2>/dev/null)" || {
-        echo "❌ 未找到容器 $name 使用的镜像 $image；为避免只删除部分资源，已取消。"
-        return 1
-    }
-    compose_dir="$(docker inspect -f '{{with index .Config.Labels "com.docker.compose.project.working_dir"}}{{.}}{{end}}' "$id" 2>/dev/null || true)"
 
-    other_containers="$(docker ps -a --filter "ancestor=$image_id" --format '{{.Names}}' | grep -vxF -- "$name" || true)"
+    echo "请选择删除范围："
+    echo "  1）仅删除容器（迁移推荐）"
+    echo "  2）删除容器 + 无其他引用时删除镜像"
+    echo "  3）删除容器 + 无其他引用时删除镜像 + 删除 Compose 目录（永久删除）"
+    echo "  0）取消"
+    read -r -p "请选择删除范围（0-3）: " delete_mode
+    case "$delete_mode" in
+        1|2|3) ;;
+        ""|0) echo "已取消删除。"; return 0 ;;
+        *) echo "❌ 无效删除范围。"; return 1 ;;
+    esac
+
+    if [ "$delete_mode" -ge 2 ]; then
+        image_id="$(docker image inspect -f '{{.Id}}' "$image" 2>/dev/null)" || {
+            echo "❌ 未找到容器 $name 使用的镜像 $image；为避免只删除部分资源，已取消。"
+            return 1
+        }
+        other_containers="$(docker ps -a --filter "ancestor=$image_id" --format '{{.Names}}' | grep -vxF -- "$name" || true)"
+    fi
+    if [ "$delete_mode" -eq 3 ]; then
+        compose_dir="$(docker inspect -f '{{with index .Config.Labels "com.docker.compose.project.working_dir"}}{{.}}{{end}}' "$id" 2>/dev/null || true)"
+        if [ -n "$compose_dir" ] && [[ "$compose_dir" == /* ]] && [ "$compose_dir" != "/" ] && [ -d "$compose_dir" ]; then
+            delete_dir=1
+        elif [ -n "$compose_dir" ]; then
+            echo "⚠️ Compose working_dir 不存在或不安全，目录不会删除：$compose_dir"
+        else
+            echo "ℹ️ 该容器没有 Compose working_dir 标签，目录不会删除。"
+        fi
+    fi
+
     echo "⚠️ 将强制删除容器：$name"
-    if [ -n "$other_containers" ]; then
-        echo "⚠️ 以下其他容器也引用该镜像：${other_containers//$'\n'/、}"
-        echo "ℹ️ 将保留镜像：${image}"
-    else
-        echo "⚠️ 将删除镜像：${image}（${image_id}）"
-    fi
-    if [ -n "$compose_dir" ]; then
-        echo "ℹ️ 检测到 Compose working_dir：$compose_dir"
-    else
-        echo "ℹ️ 该容器没有 Compose working_dir 标签；不会删除任何主机配置目录。"
-    fi
-    read -r -p "确认删除容器及可删除的镜像？[y/N]: " confirm
+    case "$delete_mode" in
+        1) echo "ℹ️ 仅删除容器；镜像和 Compose 目录将保留。" ;;
+        2|3)
+            if [ -n "$other_containers" ]; then
+                echo "⚠️ 以下其他容器也引用该镜像：${other_containers//$'\n'/、}"
+                echo "ℹ️ 将保留镜像：$image"
+            else
+                echo "⚠️ 将删除镜像：$image（$image_id）"
+            fi
+            [ "$delete_dir" -eq 1 ] && echo "⚠️ 将删除 Compose 目录：$compose_dir"
+            ;;
+    esac
+    read -r -p "确认按上述范围删除？[y/N]: " confirm
     if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
         echo "已取消删除。"
         return 0
@@ -1866,32 +1891,23 @@ delete_docker_container_and_image() {
 
     docker rm -f "$id" || return 1
     echo "✅ 已删除容器：$name"
-    if [ -n "$other_containers" ]; then
-        echo "ℹ️ 镜像仍被其他容器引用，已保留：$image"
-    else
-        docker image rm -f "$image_id" || {
-            echo "❌ 容器已删除，但镜像删除失败：$image_id"
-            return 1
-        }
-        echo "✅ 已删除镜像：$image"
+    if [ "$delete_mode" -ge 2 ]; then
+        if [ -n "$other_containers" ]; then
+            echo "ℹ️ 镜像仍被其他容器引用，已保留：$image"
+        else
+            docker image rm -f "$image_id" || {
+                echo "❌ 容器已删除，但镜像删除失败：$image_id"
+                return 1
+            }
+            echo "✅ 已删除镜像：$image"
+        fi
     fi
-
-    if [ -z "$compose_dir" ]; then
-        return 0
-    fi
-    if [[ "$compose_dir" != /* ]] || [ "$compose_dir" = "/" ] || [ ! -d "$compose_dir" ]; then
-        echo "⚠️ Compose working_dir 不存在或不安全，未删除目录：$compose_dir"
-        return 0
-    fi
-    read -r -p "是否删除 Compose 所在目录 ${compose_dir}？这不会删除其挂载的其他目录或卷。[y/N]: " delete_dir_choice
-    if [[ "$delete_dir_choice" =~ ^[Yy]$ ]]; then
+    if [ "$delete_dir" -eq 1 ]; then
         rm -rf -- "$compose_dir" || {
             echo "❌ 删除 Compose 目录失败：$compose_dir"
             return 1
         }
         echo "✅ 已删除 Compose 所在目录：$compose_dir"
-    else
-        echo "ℹ️ 已保留 Compose 所在目录：$compose_dir"
     fi
 }
 
