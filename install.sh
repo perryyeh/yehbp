@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.04.17"
+APP_VERSION="2026.09.04.18"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -2798,7 +2798,7 @@ install_librespeed() {
 
     # 8) 写 .env（compose 读取）
     cat > .env <<EOF
-MACVLAN_NET=${SELECTED_MACVLAN}
+MACVLAN=${SELECTED_MACVLAN}
 ipv4=${librespeed}
 ipv6=${librespeed6}
 macaddress=${librespeedmac}
@@ -2904,7 +2904,7 @@ install_adguardhome() {
 
     # 8) 写 .env（字段不变；但 confdir 用 WORK_DIR，避免 next 启动还挂旧目录）
     write_env_file "$WORK_DIR/.env" \
-      "MACVLAN_NET=${SELECTED_MACVLAN}" \
+      "MACVLAN=${SELECTED_MACVLAN}" \
       "ipv4=${adguard}" \
       "ipv6=${adguard6}" \
       "macaddress=${adguardmac}"
@@ -2927,7 +2927,7 @@ install_adguardhome() {
     fi
 
     # 8) .env 基本校验（统一用抽象函数）
-    local required_vars=(MACVLAN_NET ipv4 macaddress)
+    local required_vars=(MACVLAN ipv4 macaddress)
     [ "$USE_IPV6" -eq 1 ] && required_vars+=(ipv6)
 
     env_require_vars ".env" "${required_vars[@]}" || {
@@ -3154,7 +3154,7 @@ install_mosdns() {
 
     # 11) 写 .env（compose 读取）
     cat > .env <<EOF
-MACVLAN_NET=${SELECTED_MACVLAN}
+MACVLAN=${SELECTED_MACVLAN}
 ipv4=${mosdns}
 ipv6=${mosdns6}
 macaddress=${mosdnsmac}
@@ -3171,7 +3171,7 @@ EOF
 
 
     # 8) .env 基本校验
-    local required_vars=(MACVLAN_NET ipv4 macaddress)
+    local required_vars=(MACVLAN ipv4 macaddress)
     [ "$USE_IPV6" -eq 1 ] && required_vars+=(ipv6)
 
     env_require_vars ".env" "${required_vars[@]}" || {
@@ -3411,7 +3411,7 @@ install_mihomo() {
     # 8) macvlan 模式写 .env；host 模式清掉旧 .env，避免误导
     if [ "$MIHOMO_NETWORK_MODE" = "macvlan" ]; then
         write_env_file "$WORK_DIR/.env" \
-          "MACVLAN_NET=${SELECTED_MACVLAN}" \
+          "MACVLAN=${SELECTED_MACVLAN}" \
           "ipv4=${mihomo}" \
           "ipv6=${mihomo6}" \
           "macaddress=${mihomomac}" \
@@ -3426,7 +3426,7 @@ install_mihomo() {
             return 1
         fi
 
-        local required_vars=(MACVLAN_NET ipv4 macaddress)
+        local required_vars=(MACVLAN ipv4 macaddress)
         [ "$USE_IPV6" -eq 1 ] && required_vars+=(ipv6)
 
         env_require_vars ".env" "${required_vars[@]}" || {
@@ -3579,7 +3579,7 @@ install_ddnsgo() {
     # 7) macvlan 模式写 .env；host 模式清掉旧 .env，避免误导
     if [ "$DDNSGO_NETWORK_MODE" = "macvlan" ]; then
         write_env_file "$WORK_DIR/.env" \
-          "MACVLAN_NET=${SELECTED_MACVLAN}" \
+          "MACVLAN=${SELECTED_MACVLAN}" \
           "ipv4=${ddnsgo_ip}" \
           "ipv6=${ddnsgo6}" \
           "macaddress=${ddnsgomac}"
@@ -3588,7 +3588,7 @@ install_ddnsgo() {
         cat .env
         echo
 
-        local required_vars=(MACVLAN_NET ipv4 macaddress)
+        local required_vars=(MACVLAN ipv4 macaddress)
         [ "$USE_IPV6" -eq 1 ] && required_vars+=(ipv6)
 
         env_require_vars ".env" "${required_vars[@]}" || {
@@ -3741,7 +3741,7 @@ install_lucky() {
     # 7) macvlan 模式写 .env；host 模式清掉旧 .env，避免误导
     if [ "$LUCKY_NETWORK_MODE" = "macvlan" ]; then
         write_env_file "$WORK_DIR/.env" \
-          "MACVLAN_NET=${SELECTED_MACVLAN}" \
+          "MACVLAN=${SELECTED_MACVLAN}" \
           "ipv4=${lucky}" \
           "ipv6=${lucky6}" \
           "macaddress=${luckymac}"
@@ -3750,7 +3750,7 @@ install_lucky() {
         cat .env
         echo
 
-        local required_vars=(MACVLAN_NET ipv4 macaddress)
+        local required_vars=(MACVLAN ipv4 macaddress)
         [ "$USE_IPV6" -eq 1 ] && required_vars+=(ipv6)
 
         env_require_vars ".env" "${required_vars[@]}" || {
