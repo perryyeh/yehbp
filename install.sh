@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.04.10"
+APP_VERSION="2026.09.04.11"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -1887,7 +1887,7 @@ delete_docker_container_and_image() {
     echo "  2）删除容器 + 无其他引用时删除镜像"
     echo "  3）删除容器 + 无其他引用时删除镜像 + 删除 Compose 目录（永久删除）"
     echo "  0）取消"
-    read -r -p "请选择删除范围（0-3）: " delete_mode
+    read -r -p "请选择「$name」删除范围（0-3）: " delete_mode
     case "$delete_mode" in
         1|2|3) ;;
         ""|0) echo "已取消删除。"; return 0 ;;
