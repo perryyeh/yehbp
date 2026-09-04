@@ -21,7 +21,9 @@ mihomo_subscription_list_targets() {
         ;;
     esac
     printf '%s|%s|%s|%s\n' "$name" "$dir" "$image" "$mode"
-  done < <(docker ps -a --format '{{.ID}}|{{.Names}}|{{.Image}}')
+  # 订阅操作只能作用于实际运行的实例。停止的历史备份容器即使仍保留
+  # config bind mount，也不能作为订阅目标。
+  done < <(docker ps --format '{{.ID}}|{{.Names}}|{{.Image}}')
 }
 
 mihomo_subscription_select_target() {

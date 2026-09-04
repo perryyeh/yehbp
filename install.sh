@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.05.01"
+APP_VERSION="2026.09.05.02"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -1712,8 +1712,16 @@ compose_deploy_with_repo_switch() {
     return 1
   fi
 
-  DEPLOY_BACKUP_CONTAINER="$backup_cname"
-  [ -n "$backup_cname" ] && echo "✅ [$name] 新容器启动成功，旧容器已备份：$backup_cname" && echo "🧩 确认稳定后可手动 docker rm -f ${DEPLOY_BACKUP_CONTAINER}删除"
+  if [ -n "$backup_cname" ]; then
+    if docker rm -f "$backup_cname" >/dev/null 2>&1; then
+      echo "🗑️ [$name] 新容器启动成功，已删除旧容器备份：$backup_cname"
+    else
+      # 新容器已通过最终健康检查；删除失败不应将成功部署误报为失败，
+      # 但必须给出残留容器名称供用户处理。
+      DEPLOY_BACKUP_CONTAINER="$backup_cname"
+      echo "⚠️ [$name] 新容器启动成功，但旧容器备份未能删除：$backup_cname"
+    fi
+  fi
 
   return 0
 }
