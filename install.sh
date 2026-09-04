@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.04.05"
+APP_VERSION="2026.09.04.06"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -1790,10 +1790,11 @@ function format_disk() {
 
 function docker_info() { echo "🐳 显示 Docker 信息"; docker info; }
 
-# 输出容器网络模式；macvlan 容器同时列出所有 macvlan IPv4 地址。
+# 输出容器所连接网络的 driver；macvlan 额外显示对应 IPv4 地址。
+# Docker Go template 中必须使用单反斜杠转义，才能实际输出 TAB/LF 分隔符。
 describe_container_network() {
     local id="$1" network_mode net_name net_ip network_driver
-    local has_macvlan=0 has_bridge=0 mode="" macvlan_ips=""
+    local -a network_descriptions=()
 
     network_mode="$(docker inspect -f '{{.HostConfig.NetworkMode}}' "$id" 2>/dev/null)" || return 1
     case "$network_mode" in
@@ -1808,18 +1809,19 @@ describe_container_network() {
         network_driver="$(docker network inspect -f '{{.Driver}}' "$net_name" 2>/dev/null || true)"
         case "$network_driver" in
             macvlan)
-                has_macvlan=1
-                [ -n "$net_ip" ] && macvlan_ips="${macvlan_ips:+${macvlan_ips}、}${net_ip}"
+                network_descriptions+=("macvlan${net_ip:+ ｜ IP：${net_ip}}")
                 ;;
-            bridge) has_bridge=1 ;;
+            bridge)
+                network_descriptions+=("bridge")
+                ;;
+            *)
+                network_descriptions+=("${network_driver:-未知}")
+                ;;
         esac
-    done < <(docker inspect -f '{{range $name, $network := .NetworkSettings.Networks}}{{printf "%s\\t%s\\n" $name $network.IPAddress}}{{end}}' "$id" 2>/dev/null)
+    done < <(docker inspect -f '{{range $name, $network := .NetworkSettings.Networks}}{{printf "%s\t%s\n" $name $network.IPAddress}}{{end}}' "$id" 2>/dev/null)
 
-    if [ "$has_macvlan" -eq 1 ]; then
-        printf 'macvlan'
-        [ -n "$macvlan_ips" ] && printf ' ｜ IP：%s' "$macvlan_ips"
-    elif [ "$has_bridge" -eq 1 ]; then
-        printf 'bridge'
+    if [ ${#network_descriptions[@]} -gt 0 ]; then
+        printf '%s\n' "${network_descriptions[@]}"
     else
         printf '%s' "${network_mode:-未知}"
     fi
@@ -1829,7 +1831,7 @@ describe_container_network() {
 # working_dir。本函数绝不根据挂载点、卷或环境变量推断其他目录。
 delete_docker_container_and_image() {
     local -a container_ids=() container_names=() container_images=() container_statuses=()
-    local id name image status choice delete_mode confirm image_id compose_dir other_containers network_summary
+    local id name image status choice delete_mode confirm image_id compose_dir other_containers network_summary network_line
     local i selected_index delete_dir=0
 
     echo "🗑️ 删除 Docker 容器及可选资源"
@@ -1852,7 +1854,9 @@ delete_docker_container_and_image() {
         network_summary="$(describe_container_network "$id" 2>/dev/null || printf '未知')"
         printf '%d）%s ｜ 镜像：%s ｜ ID：%.12s\n' \
             "${#container_ids[@]}" "$name" "$image" "$id"
-        printf '   └─模式：%s\n' "$network_summary"
+        while IFS= read -r network_line; do
+            printf '   └─模式：%s\n' "$network_line"
+        done <<< "$network_summary"
     done < <(docker ps -a --no-trunc --format '{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}')
     if [ ${#container_ids[@]} -eq 0 ]; then
         echo "ℹ️ 未发现 Docker 容器。"
