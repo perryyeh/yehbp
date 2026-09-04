@@ -1,18 +1,25 @@
 # YehBP Mihomo complete-subscription manager. This file is sourced by install.sh.
 
 mihomo_subscription_list_targets() {
-  local id name image dir mode
+  local id name image dir mode network_mode network_driver
   while IFS='|' read -r id name image; do
     [[ "$image" == *mihomo* || "$name" == *mihomo* ]] || continue
     dir="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/root/.config/mihomo"}}{{.Source}}{{end}}{{end}}' "$id" 2>/dev/null || true)"
     [ -n "$dir" ] && [ -d "$dir" ] && [ -f "$dir/config.yaml" ] || continue
-    if [ -f "$dir/config.macvlan.yaml" ]; then
-      mode="macvlan"
-    elif [ -f "$dir/config.host.yaml" ]; then
-      mode="host"
-    else
-      continue
-    fi
+    network_mode="$(docker inspect -f '{{.HostConfig.NetworkMode}}' "$id" 2>/dev/null || true)"
+    case "$network_mode" in
+      host)
+        mode="host"
+        ;;
+      ''|default|none)
+        continue
+        ;;
+      *)
+        network_driver="$(docker network inspect -f '{{.Driver}}' "$network_mode" 2>/dev/null || true)"
+        [ "$network_driver" = "macvlan" ] || continue
+        mode="macvlan"
+        ;;
+    esac
     printf '%s|%s|%s|%s\n' "$name" "$dir" "$image" "$mode"
   done < <(docker ps -a --format '{{.ID}}|{{.Names}}|{{.Image}}')
 }
