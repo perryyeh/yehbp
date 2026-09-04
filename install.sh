@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.04.09"
+APP_VERSION="2026.09.04.10"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -2946,18 +2946,18 @@ install_adguardhome() {
     #     （注意：第二个参数是容器名，必须和 compose 里的 container_name 一致）
     compose_deploy_with_repo_switch "adguardhome" "$CONTAINER_NAME" "${compose_files[@]}" || return 1
 
-    echo "✅ AdGuardHome 已启动：${adguard}"
-    echo "  macvlan 网络: ${SELECTED_MACVLAN}"
-    echo "  MAC        : ${adguardmac}"
-    echo "  上游 mosdns : ${mosdns}"
+    echo "✅ AdGuardHome 已启动"
     echo "  容器名称   : ${CONTAINER_NAME}"
+    echo "  IPv4 地址  : ${adguard}"
     echo "  管理地址   : http://${adguard}/"
     if [ "$USE_IPV6" -eq 1 ]; then
-        echo "  IPv6       : ${adguard6}"
         echo "  IPv6 管理  : http://[${adguard6}]/"
     else
         echo "  IPv6       : 未启用（所选 macvlan 未开启 IPv6 或无 IPv6 子网）"
     fi
+    echo "  macvlan 网络: ${SELECTED_MACVLAN}"
+    echo "  MAC        : ${adguardmac}"
+    echo "  上游 mosdns : ${mosdns}"
 
     # 11) 可选删除目录备份（带挂载检查）
     repo_offer_delete_backup "adguardhome" "$BAK_DIR" "adguardhome"
@@ -3188,16 +3188,17 @@ EOF
     # 10）一步部署：校验 -> 停旧备份 -> 起新 -> next->正式 -> 正式再up -> 失败回滚
     compose_deploy_with_repo_switch "mosdns" "$CONTAINER_NAME" "${compose_files[@]}" || return 1
 
-    echo "✅ mosdns 已启动：${mosdns}"
-    echo "  上游 mihomo / surge : ${mihomo}"
-    echo "  macvlan 网络: ${SELECTED_MACVLAN}"
-    echo "  MAC        : ${mosdnsmac}"
+    echo "✅ mosdns 已启动"
     echo "  容器名称   : ${CONTAINER_NAME}"
+    echo "  IPv4 地址  : ${mosdns}"
     if [ "$USE_IPV6" -eq 1 ]; then
         echo "  IPv6       : ${mosdns6}"
     else
         echo "  IPv6       : 未启用（所选 macvlan 未开启 IPv6 或无 IPv6 子网）"
     fi
+    echo "  上游 mihomo / surge : ${mihomo}"
+    echo "  macvlan 网络: ${SELECTED_MACVLAN}"
+    echo "  MAC        : ${mosdnsmac}"
 
     # 12) 可选删除备份（带挂载检查）
     repo_offer_delete_backup "mosdns" "$BAK_DIR" "mosdns"
@@ -3450,8 +3451,8 @@ install_mihomo() {
 
     # 11) 输出访问地址
     echo "✅ mihomo 已启动"
-    echo "网络模式：${MIHOMO_NETWORK_MODE}"
     echo "容器名称：${CONTAINER_NAME}"
+    echo "网络模式：${MIHOMO_NETWORK_MODE}"
     if [ "$MIHOMO_NETWORK_MODE" = "macvlan" ]; then
         echo "macvlan 网络：${SELECTED_MACVLAN}"
         echo "IPv4 地址：${mihomo}"
@@ -3611,8 +3612,8 @@ install_ddnsgo() {
     # 10) ddns-go 管理界面地址（默认监听 9876）
     local ddns_port=9876
     echo "✅ ddns-go 已启动"
-    echo "网络模式：${DDNSGO_NETWORK_MODE}"
     echo "容器名称：${CONTAINER_NAME}"
+    echo "网络模式：${DDNSGO_NETWORK_MODE}"
 
     if [ "$DDNSGO_NETWORK_MODE" = "macvlan" ]; then
         echo "macvlan 网络：${SELECTED_MACVLAN}"
@@ -3773,8 +3774,8 @@ install_lucky() {
     # 10) Lucky Web 面板
     local lucky_port=16601
     echo "✅ Lucky 已启动"
-    echo "网络模式：${LUCKY_NETWORK_MODE}"
     echo "容器名称：${CONTAINER_NAME}"
+    echo "网络模式：${LUCKY_NETWORK_MODE}"
 
     if [ "$LUCKY_NETWORK_MODE" = "macvlan" ]; then
         echo "macvlan 网络：${SELECTED_MACVLAN}"
@@ -3867,6 +3868,7 @@ install_portainer() {
     host_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')"
     [ -z "$host_ip" ] && host_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
     echo "✅ Portainer 已用 compose 启动"
+    echo "  容器名称：portainer"
     echo "  compose 文件：$compose_file"
     if [ -n "$host_ip" ]; then
         echo "  访问地址：https://${host_ip}:9443"
@@ -4157,6 +4159,7 @@ install_portainer_agent() {
     host_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')"
     [ -z "$host_ip" ] && host_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
     echo "✅ Portainer Agent 已用 compose 启动"
+    echo "  容器名称：portainer_agent"
     echo "  compose 文件：$compose_file"
     echo "  Agent 地址：${host_ip:-<宿主机IP>}:9001"
     if [ "$PORTAINER_AGENT_SECRET_SOURCE" = "generated" ]; then
