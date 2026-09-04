@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.04.11"
+APP_VERSION="2026.09.04.12"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -1858,7 +1858,7 @@ delete_docker_container_and_image() {
         while IFS= read -r network_line; do
             printf '   └─模式：%s\n' "$network_line"
         done <<< "$network_summary"
-    done < <(docker ps -a --no-trunc --format '{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}')
+    done < <(docker ps -a --no-trunc --format '{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}' | sort -f -t $'\t' -k2,2)
     if [ ${#container_ids[@]} -eq 0 ]; then
         echo "ℹ️ 未发现 Docker 容器。"
         return 0
