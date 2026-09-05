@@ -209,7 +209,12 @@ YehBP 默认把 RFC1918 IPv4 网段映射为独立 ULA `/64`：
 
 ##### Fake IPv6：Surge VIF 与 LAN RIO
 
-Surge 使用 VIF 承载 FakeIP，必须设置 `ipv6-vif = always`。Mac 须开启 `net.inet6.ip6.forwarding=1`；Mac 开机、Surge 重启或主网卡变化后，需要确认当前 VIF、本机路由和 LAN RA 仍保持一致。
+Surge 使用 VIF 承载 FakeIP，必须设置 `ipv6-vif = always`。macOS 首先要解决 IPv6 承载：将客户端发往 Fake IPv6 的流量转发到 Surge 所在的 `tun`。Mac 须开启 `net.inet6.ip6.forwarding=1`；Mac 开机、Surge 重启或主网卡变化后，需要确认当前 VIF、本机路由和 LAN RA 仍保持一致。
+
+Fake IPv6 的下一跳有两种方案：
+
+1. **经主路由转发到 macOS Surge**：在主路由添加 Fake IPv6 前缀到 Mihomo/Surge LAN IPv6 下一跳的静态路由。旧版实际 Fake IPv6 池 `fd00:6152:0:9::/64` 属于 ULA，通常会被路由器按内部目的前缀处理并默认放行。新版 `2001:2:0:6152::/64` 不属于路由器的本地网段；在 UniFi 上，即使已静态路由至 Mihomo/Surge，也可能被归入 LAN → WAN/External。若回程绕过路由器，后续 TCP 包会被 `INVALID DROP` 丢弃。因此须添加一条位于 `INVALID DROP` 之前的高优先级 IPv6 Allow 规则，放行 LAN 到 `2001:2:0:6152::/64` 的流量。不要把该前缀配置为路由器实际承载的 LAN 接口网段，以免与静态路由和 RA 行为冲突。
+2. **由 macOS Surge 主机直接宣告 RA**：macOS 通过 RA 的 Route Information Option（RIO）向 LAN 宣告 Fake IPv6 前缀；客户端直接将该前缀的流量交给 Mac，再由 Mac 转发到 Surge `tun`。这会绕过主路由的上述 IPv6 状态防火墙路径。
 
 ###### Surge 旧版与新版 Fake IPv6 对照（新版 6.8.0，2026.08.06 发布）
 
@@ -219,10 +224,6 @@ Surge 使用 VIF 承载 FakeIP，必须设置 `ipv6-vif = always`。Mac 须开�
 | Fake DNS IPv6 | `fd00:6152::2` | `2001:2:0:6152::2` |
 | 实际 Fake IPv6 池 | `fd00:6152:0:9::/64` | `2001:2:0:6152:0:9::/96` |
 | macmini 本机路由 / LAN RIO | `fd00:6152::1/127`、`fd00:6152:0:9::/64` | `2001:2:0:6152::/64` |
-
-旧版：mac进行ra宣告`fd00:6152::1/127`、`fd00:6152:0:9::/64`，并把流量转发给surge所在的tun；
-
-新版：mac进行ra宣告`2001:2:0:6152::/64` ，并把流量转发给surge所在的tun；
 
 ###### macOS Surge RA reference
 
