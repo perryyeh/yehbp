@@ -400,7 +400,14 @@ mihomo_subscription_manual_update() {
   if mihomo_subscription_template_is_enabled; then
     mihomo_subscription_install_replace_template || return 1
   fi
-  mihomo_subscription_run_update
+  if mihomo_subscription_run_update; then
+    echo "✅ 外部订阅更新完成。"
+    echo "   日志：$MIHOMO_SUBSCRIPTION_DIR/subscription.log"
+    return 0
+  fi
+  echo "❌ 外部订阅更新或重载失败。"
+  echo "   日志：$MIHOMO_SUBSCRIPTION_DIR/subscription.log"
+  return 1
 }
 
 mihomo_subscription_delete() {
