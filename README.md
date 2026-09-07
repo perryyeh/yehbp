@@ -2,6 +2,8 @@
 
 自用一键旁路由交互式菜单脚本，提供从 DNS 缓存、域名分流、远程解析、代理接入，到在外回家入口的一整套网络方案。
 
+![YehBP 交互式主菜单](assets/images/yehbp-main-menu.jpg)
+
 支持 IPv6，已在群晖 7.3+、飞牛 1.0+、Armbian（Linux 6.1+）上测试通过；并新增 iStoreOS/OpenWrt 后端。
 
 > [!NOTE]
