@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.09.05"
+APP_VERSION="2026.09.09.06"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -4536,7 +4536,11 @@ configure_openwrt_dockcheck_cron() {
     fi
 
     if [ ! -f "$cron_file" ] || ! cmp -s "$tmp" "$cron_file"; then
-        install -m 0600 "$tmp" "$cron_file" || return 1
+        if command -v install >/dev/null 2>&1; then
+            install -m 0600 "$tmp" "$cron_file" || return 1
+        else
+            cp "$tmp" "$cron_file" && chmod 0600 "$cron_file" || return 1
+        fi
         changed=1
     fi
     if [ "$changed" -eq 1 ]; then
