@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.09.04"
+APP_VERSION="2026.09.09.05"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -4510,6 +4510,46 @@ clean_macvlan_bridge() {
 
 
 
+OPENWRT_DOCKCHECK_CRON_TAG="# yehbp-docker-auto-update"
+
+configure_openwrt_dockcheck_cron() {
+    local base_dir="$1" enable="$2" update_time="$3"
+    local cron_file="/etc/crontabs/root" tmp minute hour changed=0
+
+    [ -x /etc/init.d/cron ] || {
+        echo "❌ 未找到 OpenWrt cron 服务。"
+        return 1
+    }
+    case "$update_time" in
+        [0-1][0-9]:[0-5][0-9]|2[0-3]:[0-5][0-9]) ;;
+        *) echo "❌ 时间格式错误，应为 HH:MM。"; return 1 ;;
+    esac
+
+    tmp="$(mktemp /tmp/${APP_NAME}.dockcheck-cron.XXXXXX)" || return 1
+    trap 'rm -f "$tmp"' RETURN
+    [ -f "$cron_file" ] && grep -F -v "$OPENWRT_DOCKCHECK_CRON_TAG" "$cron_file" > "$tmp" || :
+
+    if [[ "$enable" =~ ^[Yy]$ ]]; then
+        hour="${update_time%:*}"
+        minute="${update_time#*:}"
+        printf '%s %s * * * %s %s\n' "$minute" "$hour" "$base_dir/docker-auto-update.sh" "$OPENWRT_DOCKCHECK_CRON_TAG" >> "$tmp"
+    fi
+
+    if [ ! -f "$cron_file" ] || ! cmp -s "$tmp" "$cron_file"; then
+        install -m 0600 "$tmp" "$cron_file" || return 1
+        changed=1
+    fi
+    if [ "$changed" -eq 1 ]; then
+        /etc/init.d/cron restart || return 1
+    fi
+
+    if [[ "$enable" =~ ^[Yy]$ ]]; then
+        echo "✅ 已启用 OpenWrt 每日自动更新：${update_time}"
+    else
+        echo "ℹ️ 已停用 OpenWrt Dockcheck 定时任务。"
+    fi
+}
+
 cleanup_dockcheck_auto_update() {
     echo "🧹 删除 Dockcheck"
 
@@ -4530,7 +4570,9 @@ cleanup_dockcheck_auto_update() {
     root_dir="$SELECTED_DOCKERAPPS_DIR"
     base_dir="${root_dir%/}/_auto_update"
 
-    if command -v systemctl >/dev/null 2>&1; then
+    if is_openwrt; then
+        configure_openwrt_dockcheck_cron "$base_dir" n "04:30" || return 1
+    elif command -v systemctl >/dev/null 2>&1; then
         echo "🛑 停用 docker-auto-update.timer ..."
         systemctl disable --now docker-auto-update.timer yehbp-docker-auto-update.timer >/dev/null 2>&1 || true
         rm -f /etc/systemd/system/docker-auto-update.service
@@ -4652,9 +4694,19 @@ install_dockcheck_auto_update() {
     if is_openwrt; then
         delay_days=0
         auto_prune=false
-        enable_timer=n
-        timer_calendar="*-*-* 04:30:00"
-        echo "ℹ️ OpenWrt 手动模式：不创建定时任务，固定为不延迟更新、不自动清理镜像；请通过菜单 68 手动检查或更新镜像。"
+        read -r -p "是否启用每日自动更新 cron？[y/N]: " enable_timer
+        if [[ "$enable_timer" =~ ^[Yy]$ ]]; then
+            read -r -p "每天检查时间 HH:MM [04:30]: " update_time
+            update_time="${update_time:-04:30}"
+            if ! [[ "$update_time" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]]; then
+                echo "❌ 时间格式错误，应为 HH:MM。"
+                return 1
+            fi
+        else
+            update_time="04:30"
+        fi
+        timer_calendar="*-*-* ${update_time}:00"
+        echo "ℹ️ OpenWrt 固定为不延迟更新、不自动清理镜像；可通过菜单 66 手动检查或更新镜像。"
     else
         read -r -p "新镜像发布后延迟 N 天再更新 [0]: " delay_days
         delay_days="${delay_days:-0}"
@@ -4696,7 +4748,7 @@ install_dockcheck_auto_update() {
     bash -n "$base_dir/docker-auto-update.sh" || return 1
 
     if is_openwrt; then
-        echo "✅ OpenWrt 手动模式已安装；未创建定时任务。"
+        configure_openwrt_dockcheck_cron "$base_dir" "$enable_timer" "$update_time" || return 1
     elif command -v systemctl >/dev/null 2>&1; then
         cp "$base_dir/docker-auto-update.service" /etc/systemd/system/docker-auto-update.service
         cp "$base_dir/docker-auto-update.timer" /etc/systemd/system/docker-auto-update.timer
@@ -4863,7 +4915,7 @@ sync_dockcheck_auto_update_components() {
 }
 
 show_dockcheck_auto_update_status() {
-    local base_dir local_version timer_enabled timer_active rc
+    local base_dir local_version timer_enabled timer_active cron_line rc
 
     base_dir="$(find_dockcheck_auto_update_base)"
     rc=$?
@@ -4885,7 +4937,12 @@ show_dockcheck_auto_update_status() {
     fi
 
     if is_openwrt; then
-        echo "运行模式：手动（未创建定时任务）"
+        cron_line="$(grep -F "$OPENWRT_DOCKCHECK_CRON_TAG" /etc/crontabs/root 2>/dev/null || true)"
+        if [ -n "$cron_line" ]; then
+            echo "自动更新 cron：$cron_line"
+        else
+            echo "自动更新 cron：未启用"
+        fi
     elif command -v systemctl >/dev/null 2>&1; then
         timer_enabled="$(systemctl is-enabled docker-auto-update.timer 2>/dev/null || true)"
         timer_active="$(systemctl is-active docker-auto-update.timer 2>/dev/null || true)"

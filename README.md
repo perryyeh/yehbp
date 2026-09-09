@@ -7,7 +7,7 @@
 支持 IPv6，已在群晖 7.3+、飞牛 1.0+、Armbian（Linux 6.1+）上测试通过；并新增 iStoreOS/OpenWrt 后端。
 
 > [!NOTE]
-> iStoreOS/OpenWrt 使用 `opkg`、`procd` 和 `logd`，不是 systemd。该平台支持 Docker 容器安装、macvlan、macvlan bridge 持久化及 Docker `data_root` 迁移；不提供脚本内格式化/挂载磁盘、Docker 安装、journald 优化或 systemd Dockcheck 定时任务。
+> iStoreOS/OpenWrt 使用 `opkg`、`procd` 和 `logd`，不是 systemd。该平台支持 Docker 容器安装、macvlan、macvlan bridge 持久化及 Docker `data_root` 迁移；不提供脚本内格式化/挂载磁盘、Docker 安装、journald 优化或 systemd Dockcheck timer；Dockcheck 可选使用 OpenWrt `cron` 每日执行。
 
 ## ✅ 适用场景与前置要求
 
@@ -312,7 +312,7 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 
 #### 6.3 安装/设置/删除/升级 Dockcheck（菜单 65）
 
-菜单 `65` 管理 Dockcheck（状态、安装/设置、删除、升级）；组件安装在所选 `dockerapps/_auto_update`，Dockcheck 直接从上游下载。Linux/NAS 可选定时更新，OpenWrt 仅支持手动模式。
+菜单 `65` 管理 Dockcheck（状态、安装/设置、删除、升级）；组件安装在所选 `dockerapps/_auto_update`，Dockcheck 直接从上游下载。Linux/NAS 可选 systemd 定时更新；OpenWrt 可选创建带 YehBP 专用标记的每日 `cron` 任务，删除 Dockcheck 时会移除该任务。
 
 #### 6.4 检查/更新 Docker 镜像（菜单 66）
 
