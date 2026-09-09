@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.09.06"
+APP_VERSION="2026.09.09.07"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -4695,9 +4695,21 @@ install_dockcheck_auto_update() {
     download_yehbp_asset "assets/docker-auto-update/docker-auto-update.service.tpl" "$base_dir/docker-auto-update.service.tpl" || return 1
     download_yehbp_asset "assets/docker-auto-update/docker-auto-update.timer.tpl" "$base_dir/docker-auto-update.timer.tpl" || return 1
 
-    if is_openwrt; then
-        delay_days=0
+    read -r -p "新镜像发布后延迟 N 天再更新 [0]: " delay_days
+    delay_days="${delay_days:-0}"
+    if ! [[ "$delay_days" =~ ^[0-9]+$ ]]; then
+        echo "❌ 延迟天数必须是数字。"
+        return 1
+    fi
+
+    read -r -p "更新成功后，是否自动删除旧的无用镜像？[y/N]: " prune_ans
+    if [[ "$prune_ans" =~ ^[Yy]$ ]]; then
+        auto_prune=true
+    else
         auto_prune=false
+    fi
+
+    if is_openwrt; then
         read -r -p "是否启用每日自动更新 cron？[y/N]: " enable_timer
         if [[ "$enable_timer" =~ ^[Yy]$ ]]; then
             read -r -p "每天检查时间 HH:MM [04:30]: " update_time
@@ -4710,22 +4722,7 @@ install_dockcheck_auto_update() {
             update_time="04:30"
         fi
         timer_calendar="*-*-* ${update_time}:00"
-        echo "ℹ️ OpenWrt 固定为不延迟更新、不自动清理镜像；可通过菜单 66 手动检查或更新镜像。"
     else
-        read -r -p "新镜像发布后延迟 N 天再更新 [0]: " delay_days
-        delay_days="${delay_days:-0}"
-        if ! [[ "$delay_days" =~ ^[0-9]+$ ]]; then
-            echo "❌ 延迟天数必须是数字。"
-            return 1
-        fi
-
-        read -r -p "更新成功后，是否自动删除旧的无用镜像？[y/N]: " prune_ans
-        if [[ "$prune_ans" =~ ^[Yy]$ ]]; then
-            auto_prune=true
-        else
-            auto_prune=false
-        fi
-
         read -r -p "是否启用每日自动更新 timer？[y/N]: " enable_timer
         if [[ "$enable_timer" =~ ^[Yy]$ ]]; then
             read -r -p "每天检查时间 HH:MM [04:30]: " update_time
