@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.09.03"
+APP_VERSION="2026.09.09.04"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -5686,7 +5686,7 @@ while true; do
         exit 0
     fi
     case $choice in
-        0) show_menu ;;
+        0) show_menu; continue ;;
         1) os_info ;;
         2) nic_info ;;
         3) disk_info ;;
@@ -5720,4 +5720,5 @@ while true; do
         999|del|delete|uninstall|remove|rm) uninstall_yehbp_cli ;;
         *) echo "无效选项，请重新输入。" ;;
     esac
+    echo "============================"
 done
