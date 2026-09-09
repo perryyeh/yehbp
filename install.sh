@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.09.07"
+APP_VERSION="2026.09.09.08"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -4575,7 +4575,7 @@ cleanup_dockcheck_auto_update() {
     base_dir="${root_dir%/}/_auto_update"
 
     if is_openwrt; then
-        configure_openwrt_dockcheck_cron "$base_dir" n "04:30" || return 1
+        configure_openwrt_dockcheck_cron "$base_dir" n "05:00" || return 1
     elif command -v systemctl >/dev/null 2>&1; then
         echo "🛑 停用 docker-auto-update.timer ..."
         systemctl disable --now docker-auto-update.timer yehbp-docker-auto-update.timer >/dev/null 2>&1 || true
@@ -4712,28 +4712,28 @@ install_dockcheck_auto_update() {
     if is_openwrt; then
         read -r -p "是否启用每日自动更新 cron？[y/N]: " enable_timer
         if [[ "$enable_timer" =~ ^[Yy]$ ]]; then
-            read -r -p "每天检查时间 HH:MM [04:30]: " update_time
-            update_time="${update_time:-04:30}"
+            read -r -p "每天检查时间 HH:MM [05:00]: " update_time
+            update_time="${update_time:-05:00}"
             if ! [[ "$update_time" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]]; then
                 echo "❌ 时间格式错误，应为 HH:MM。"
                 return 1
             fi
         else
-            update_time="04:30"
+            update_time="05:00"
         fi
         timer_calendar="*-*-* ${update_time}:00"
     else
         read -r -p "是否启用每日自动更新 timer？[y/N]: " enable_timer
         if [[ "$enable_timer" =~ ^[Yy]$ ]]; then
-            read -r -p "每天检查时间 HH:MM [04:30]: " update_time
-            update_time="${update_time:-04:30}"
+            read -r -p "每天检查时间 HH:MM [05:00]: " update_time
+            update_time="${update_time:-05:00}"
             if ! [[ "$update_time" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]]; then
                 echo "❌ 时间格式错误，应为 HH:MM。"
                 return 1
             fi
             timer_calendar="*-*-* ${update_time}:00"
         else
-            timer_calendar="*-*-* 04:30:00"
+            timer_calendar="*-*-* 05:00:00"
         fi
     fi
 
