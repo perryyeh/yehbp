@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.09.02"
+APP_VERSION="2026.09.09.03"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -5617,8 +5617,8 @@ load_rtp2httpd_asset() {
 manage_rtp2httpd_menu() {
     local choice
 
-    printf '\n📺 安装/删除/升级 IPTV（rtp2httpd）\n'
-    echo "1）查看配置"
+    printf '📺 安装/删除/升级 IPTV（rtp2httpd）\n'
+    echo "1）查看已安装信息"
     echo "2）安装/设置 rtp2httpd"
     echo "3）删除配置"
     echo "4）升级rtp2httpd版本"

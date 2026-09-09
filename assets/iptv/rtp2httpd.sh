@@ -499,7 +499,7 @@ rtp2httpd_show_config() {
         echo "ℹ️ 未找到 rtp2httpd 开机启动服务（rtp2httpd.service 或 rtp2httpd_*.service）。"
         return 0
     fi
-    echo "可查看的 rtp2httpd 配置："
+    echo "目前已安装的rtp2httpd信息："
     for i in "${!RTP2HTTPD_LIST_SERVICES[@]}"; do
         service="${RTP2HTTPD_LIST_SERVICES[$i]}"
         instance="${service#${RTP2HTTPD_SERVICE_BASE}}"
