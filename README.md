@@ -59,14 +59,14 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 60 | 安装 Portainer Server（管理服务器） |
 | 61 | 安装 Portainer Agent（受管节点） |
 | 62 | 配置 Portainer AGENT_SECRET      |
-| 65 | 安装/删除/升级 Dockcheck       |
+| 65 | 安装/设置/删除/升级 Dockcheck       |
 | 66 | 检查/更新docker镜像            |
 | 68 | 恢复/启动 Docker Compose 容器  |
 | 69 | 删除 Docker 容器及可选资源（容器/镜像/目录） |
 | 70 | 迁移 Docker 目录               |
 | 71 | 优化 Docker 日志               |
 | 72 | 优化 journald 日志             |
-| 80 | 安装/删除/升级/重启 IPTV（rtp2httpd） |
+| 80 | 安装/设置/删除/升级/重启 IPTV（rtp2httpd） |
 | 89 | 安装/管理 SOCKS5 代理          |
 | 90 | 创建macvlan bridge            |
 | 91 | 删除macvlan bridge            |
@@ -306,13 +306,13 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 
 #### 6.2 查看/安装/删除/升级/重启 IPTV（rtp2httpd）（菜单 80）
 
-仅支持 **NetworkManager + systemd** 的 Linux/NAS，不支持 OpenWrt。菜单可查看一个或全部实例的配置，并提供安装/替换配置、删除配置、升级共享二进制和重启选定实例；安装时需输入组播 VLAN、FCC VLAN、FCC 地址方式及本机 IPv4 监听地址/端口（默认 `5140`）。FCC 地址方式默认 DHCP；选择静态 IPv4 时需输入 `地址/前缀` 与同网段网关。
+仅支持 **NetworkManager + systemd** 的 Linux/NAS，不支持 OpenWrt。菜单可查看一个或全部实例的配置，并提供安装/设置 rtp2httpd、删除配置、升级共享二进制和重启选定实例；安装/设置时需输入组播 VLAN、FCC VLAN、FCC 地址方式及本机 IPv4 监听地址/端口（默认 `5140`）。FCC 地址方式默认 DHCP；选择静态 IPv4 时需输入 `地址/前缀` 与同网段网关。
 
 二进制从 [stackia/rtp2httpd](https://github.com/stackia/rtp2httpd) 官方 release 下载并校验 SHA-256。删除只移除 YehBP 创建的配置、service 与 VLAN profile，保留共享二进制和既有网络配置。
 
-#### 6.3 安装/删除/升级 Dockcheck（菜单 65）
+#### 6.3 安装/设置/删除/升级 Dockcheck（菜单 65）
 
-菜单 `65` 管理 Dockcheck（状态、安装、删除、升级）；组件安装在所选 `dockerapps/_auto_update`，Dockcheck 直接从上游下载。Linux/NAS 可选定时更新，OpenWrt 仅支持手动模式。
+菜单 `65` 管理 Dockcheck（状态、安装/设置、删除、升级）；组件安装在所选 `dockerapps/_auto_update`，Dockcheck 直接从上游下载。Linux/NAS 可选定时更新，OpenWrt 仅支持手动模式。
 
 #### 6.4 检查/更新 Docker 镜像（菜单 66）
 

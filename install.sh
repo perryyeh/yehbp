@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.05.06"
+APP_VERSION="2026.09.09.02"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -680,7 +680,7 @@ function show_menu() {
     echo "60）安装 Portainer Server（管理服务器）"
     echo "61）安装 Portainer Agent（受管节点）"
     echo "62）配置 Portainer AGENT_SECRET"
-    echo "65）安装/删除/升级 Dockcheck"
+    echo "65）安装/设置/删除/升级 Dockcheck"
     echo "66）检查/更新docker镜像"
     echo "68）恢复/启动 Docker Compose 容器"
     echo "69）删除 Docker 容器、镜像和 Compose 目录"
@@ -1002,7 +1002,7 @@ write_env_file() {
 SELECTED_DOCKERAPPS_DIR=""
 
 discover_dockerapps_dirs() {
-  # 默认扫描常见挂载点及家目录的最多四层路径；expanded 模式由用户明确确认，
+  # 默认扫描常见挂载点及家目录的最多三层路径；expanded 模式由用户明确确认，
   # 会遍历全盘，因此可能较慢。
   local scope="${1:-quick}"
   local search_roots=()
@@ -1035,7 +1035,7 @@ discover_dockerapps_dirs() {
 
   [ ${#search_roots[@]} -eq 0 ] && return 0
 
-  find "${search_roots[@]}" -maxdepth 4 \
+  find "${search_roots[@]}" -maxdepth 3 \
     \( -path '*/.@#local/trash' -o -path '*/.@#local/trash/*' \
        -o -path '*/thumb' -o -path '*/thumb/*' \) -prune -o \
     -type d -name dockerapps -print 2>/dev/null | sort -u
@@ -4570,7 +4570,7 @@ cleanup_dockcheck_auto_update() {
 }
 
 install_dockcheck_auto_update() {
-    echo "🔧 安装 Dockcheck（保留 Docker 网络/MAC 配置）"
+    echo "🔧 安装/设置 Dockcheck（保留 Docker 网络/MAC 配置）"
 
     if [ "${EUID:-$(id -u)}" -ne 0 ]; then
         echo "❌ 需要 root 权限，请使用 sudo 运行。"
@@ -4787,7 +4787,7 @@ sync_dockcheck_auto_update_components() {
     fi
     if [ "$rc" -ne 0 ]; then
         echo "❌ 未找到 Dockcheck 组件。"
-        echo "👉 请先执行 65 → 2 安装 Dockcheck。"
+        echo "👉 请先执行 65 → 2 安装/设置 Dockcheck。"
         return 1
     fi
 
@@ -4896,9 +4896,9 @@ show_dockcheck_auto_update_status() {
 manage_dockcheck_auto_update() {
     local choice
 
-    echo "🛠️ 安装/删除/升级 Dockcheck"
+    echo "🛠️ 安装/设置/删除/升级 Dockcheck"
     echo "1）查看 Dockcheck 状态/版本"
-    echo "2）安装 Dockcheck"
+    echo "2）安装/设置 Dockcheck"
     echo "3）删除 Dockcheck"
     echo "4）升级Dockcheck版本"
     echo "0）返回"
@@ -4943,7 +4943,7 @@ run_dockcheck_auto_update_once() {
     fi
     if [ "$rc" -ne 0 ]; then
         echo "❌ 未找到 Dockcheck 组件。"
-        echo "👉 请先执行 65 → 2 安装 Dockcheck。"
+        echo "👉 请先执行 65 → 2 安装/设置 Dockcheck。"
         return 1
     fi
 
@@ -5619,7 +5619,7 @@ manage_rtp2httpd_menu() {
 
     printf '\n📺 安装/删除/升级 IPTV（rtp2httpd）\n'
     echo "1）查看配置"
-    echo "2）安装 / 替换配置"
+    echo "2）安装/设置 rtp2httpd"
     echo "3）删除配置"
     echo "4）升级rtp2httpd版本"
     echo "5）重启 rtp2httpd 实例"
