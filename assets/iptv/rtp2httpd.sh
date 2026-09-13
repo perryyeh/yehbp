@@ -364,7 +364,8 @@ EOF
 }
 
 rtp2httpd_install() {
-    local dockerapps answer mcast_name fcc_name mcast_sysctl_if tmp_conf tmp_service fcc_ipv4_args=()
+    local dockerapps answer mcast_name fcc_name mcast_sysctl_if tmp_conf tmp_service fcc_network_start_pre
+    local shared_vlan=0 fcc_ipv4_args=()
     rtp2httpd_require_commands || return 1
     select_dockerapps_dir "安装IPTV(rtp2httpd)"
     case $? in 0) dockerapps="$SELECTED_DOCKERAPPS_DIR" ;; 2) return 0 ;; *) return 1 ;; esac
@@ -383,8 +384,8 @@ rtp2httpd_install() {
     RTP2HTTPD_MULTICAST_VLAN="$(rtp2httpd_prompt_vlan '请输入组播 VLAN ID（回车退出）: ')" || return 0
     RTP2HTTPD_FCC_VLAN="$(rtp2httpd_prompt_vlan '请输入 FCC/DHCP VLAN ID（回车退出）: ')" || return 0
     if [ "$RTP2HTTPD_MULTICAST_VLAN" = "$RTP2HTTPD_FCC_VLAN" ]; then
-        echo "❌ 组播和 FCC/DHCP VLAN ID 必须不同。"
-        return 1
+        shared_vlan=1
+        echo "ℹ️ 组播和 FCC/DHCP 共用 VLAN ${RTP2HTTPD_MULTICAST_VLAN}。"
     fi
     rtp2httpd_prompt_fcc_ipv4
     case $? in 0) ;; 2) return 0 ;; *) return 1 ;; esac
@@ -402,7 +403,8 @@ rtp2httpd_install() {
 
     mcast_name="rtp2httpd-${RTP2HTTPD_INSTANCE}-mcast-${RTP2HTTPD_PARENT_IF}-${RTP2HTTPD_MULTICAST_VLAN}"
     fcc_name="rtp2httpd-${RTP2HTTPD_INSTANCE}-fcc-${RTP2HTTPD_PARENT_IF}-${RTP2HTTPD_FCC_VLAN}"
-    if nmcli connection show "$mcast_name" >/dev/null 2>&1 || nmcli connection show "$fcc_name" >/dev/null 2>&1; then
+    if nmcli connection show "$mcast_name" >/dev/null 2>&1 || \
+       { [ "$shared_vlan" -eq 0 ] && nmcli connection show "$fcc_name" >/dev/null 2>&1; }; then
         echo "❌ 同名 NetworkManager profile 已存在；为避免覆盖未知配置，已取消。"
         return 1
     fi
@@ -412,17 +414,23 @@ rtp2httpd_install() {
         return 1
     fi
     RTP2HTTPD_MULTICAST_PROFILE_UUID="$(nmcli -g connection.uuid connection show "$mcast_name")"
-    if ! nmcli connection modify uuid "$RTP2HTTPD_MULTICAST_PROFILE_UUID" connection.autoconnect yes ipv4.method disabled ipv4.never-default yes ipv6.method disabled; then
+    if [ "$shared_vlan" -eq 0 ] && ! nmcli connection modify uuid "$RTP2HTTPD_MULTICAST_PROFILE_UUID" connection.autoconnect yes ipv4.method disabled ipv4.never-default yes ipv6.method disabled; then
         nmcli connection delete uuid "$RTP2HTTPD_MULTICAST_PROFILE_UUID" >/dev/null 2>&1 || true
         return 1
     fi
 
-    if ! nmcli connection add type vlan con-name "$fcc_name" ifname "${RTP2HTTPD_PARENT_IF}.${RTP2HTTPD_FCC_VLAN}" dev "$RTP2HTTPD_PARENT_IF" id "$RTP2HTTPD_FCC_VLAN" >/dev/null; then
-        nmcli connection delete uuid "$RTP2HTTPD_MULTICAST_PROFILE_UUID" >/dev/null 2>&1 || true
-        echo "❌ 无法创建 FCC/DHCP VLAN profile。"
-        return 1
+    if [ "$shared_vlan" -eq 1 ]; then
+        RTP2HTTPD_FCC_PROFILE_UUID="$RTP2HTTPD_MULTICAST_PROFILE_UUID"
+        fcc_network_start_pre="# FCC/DHCP 与组播共用 VLAN，仅启用一次 NetworkManager profile"
+    else
+        if ! nmcli connection add type vlan con-name "$fcc_name" ifname "${RTP2HTTPD_PARENT_IF}.${RTP2HTTPD_FCC_VLAN}" dev "$RTP2HTTPD_PARENT_IF" id "$RTP2HTTPD_FCC_VLAN" >/dev/null; then
+            nmcli connection delete uuid "$RTP2HTTPD_MULTICAST_PROFILE_UUID" >/dev/null 2>&1 || true
+            echo "❌ 无法创建 FCC/DHCP VLAN profile。"
+            return 1
+        fi
+        RTP2HTTPD_FCC_PROFILE_UUID="$(nmcli -g connection.uuid connection show "$fcc_name")"
+        fcc_network_start_pre="ExecStartPre=/usr/bin/nmcli --wait 60 connection up uuid ${RTP2HTTPD_FCC_PROFILE_UUID}"
     fi
-    RTP2HTTPD_FCC_PROFILE_UUID="$(nmcli -g connection.uuid connection show "$fcc_name")"
     if [ "$RTP2HTTPD_FCC_IPV4_METHOD" = "static" ]; then
         fcc_ipv4_args=(ipv4.method manual ipv4.addresses "$RTP2HTTPD_FCC_IPV4_ADDRESS" ipv4.gateway "$RTP2HTTPD_FCC_IPV4_GATEWAY")
     else
@@ -433,7 +441,7 @@ rtp2httpd_install() {
         ipv4.route-table "$RTP2HTTPD_FCC_ROUTE_TABLE" \
         ipv4.routing-rules "priority ${RTP2HTTPD_FCC_ROUTE_PRIORITY} oif ${RTP2HTTPD_PARENT_IF}.${RTP2HTTPD_FCC_VLAN} table ${RTP2HTTPD_FCC_ROUTE_TABLE}" \
         ipv6.method disabled; then
-        nmcli connection delete uuid "$RTP2HTTPD_FCC_PROFILE_UUID" >/dev/null 2>&1 || true
+        [ "$shared_vlan" -eq 1 ] || nmcli connection delete uuid "$RTP2HTTPD_FCC_PROFILE_UUID" >/dev/null 2>&1 || true
         nmcli connection delete uuid "$RTP2HTTPD_MULTICAST_PROFILE_UUID" >/dev/null 2>&1 || true
         return 1
     fi
@@ -450,6 +458,7 @@ rtp2httpd_install() {
         "__APP_DIR__=${RTP2HTTPD_APP_DIR}" "__CONFIG_PATH__=${RTP2HTTPD_CONFIG_PATH}" \
         "__MULTICAST_PROFILE_UUID__=${RTP2HTTPD_MULTICAST_PROFILE_UUID}" \
         "__FCC_PROFILE_UUID__=${RTP2HTTPD_FCC_PROFILE_UUID}" \
+        "__FCC_NETWORK_START_PRE__=${fcc_network_start_pre}" \
         "__MULTICAST_SYSCTL_IF__=${mcast_sysctl_if}" \
         "__IGMP_VERSION__=${RTP2HTTPD_IGMP_VERSION}" || return 1
     rtp2httpd_write_state "$RTP2HTTPD_STATE_PATH"
