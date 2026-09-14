@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.14.06"
+APP_VERSION="2026.09.14.07"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -1580,6 +1580,19 @@ repo_download_archive() {
   return 1
 }
 
+# BusyBox tar does not support GNU --strip-components. Extract the archive
+# into its staging directory and expose the single archive root.
+repo_extract_archive() {
+  local archive="$1" extract_dir roots root_count
+  extract_dir="$2"
+  roots="$(tar -tzf "$archive" | awk -F/ 'NF {print $1}' | sort -u)" || return 1
+  root_count="$(printf '%s\\n' "$roots" | sed '/^$/d' | wc -l | tr -d '[:space:]')"
+  [ "$root_count" = "1" ] || return 1
+  REPO_ARCHIVE_ROOT="$(printf '%s\\n' "$roots" | sed -n '1p')"
+  [ -n "$REPO_ARCHIVE_ROOT" ] || return 1
+  tar -xzf "$archive" -C "$extract_dir" || return 1
+}
+
 # 仓库更新
 repo_stage_update() {
   local name="$1"
@@ -1614,9 +1627,9 @@ repo_stage_update() {
 
     local archive="$tmp/.repo.tar.gz"
     if repo_download_archive "$tar_url" "$archive" && \
-       tar -xzf "$archive" -C "$tmp" --strip-components=1; then
+       repo_extract_archive "$archive" "$tmp" && \
+       mv "$tmp/$REPO_ARCHIVE_ROOT" "$NEXT_DIR"; then
       rm -f "$archive"
-      mv "$tmp" "$NEXT_DIR"
       WORK_DIR="$NEXT_DIR"
       NEED_SWITCH=1
       echo "✅ [$name] next 目录已准备：$NEXT_DIR"
@@ -1637,9 +1650,9 @@ repo_stage_update() {
   archive="$tmp/.repo.tar.gz"
 
   if repo_download_archive "$tar_url" "$archive" && \
-     tar -xzf "$archive" -C "$tmp" --strip-components=1; then
+     repo_extract_archive "$archive" "$tmp" && \
+     mv "$tmp/$REPO_ARCHIVE_ROOT" "$TARGET_DIR"; then
     rm -f "$archive"
-    mv "$tmp" "$TARGET_DIR"
     WORK_DIR="$TARGET_DIR"
     NEED_SWITCH=0
     return 0
@@ -3462,7 +3475,7 @@ read_mihomo_template_scalar() {
 }
 
 install_mihomo_external_ui() {
-    local config_template="$1" ui_dir ui_url archive stage content target backup archive_root_count
+    local config_template="$1" ui_dir ui_url archive stage content target backup
 
     ui_dir="$(read_mihomo_template_scalar "$config_template" "external-ui")" || {
         echo "❌ 无法从 $config_template 读取 external-ui。"
@@ -3498,15 +3511,14 @@ install_mihomo_external_ui() {
         rm -rf "$stage" "$archive"
         return 1
     fi
-    archive_root_count="$(tar -tzf "$archive" | awk -F/ 'NF { print $1 }' | sort -u | wc -l | tr -d '[:space:]')"
-    if [ "$archive_root_count" != "1" ]; then
+    if ! repo_extract_archive "$archive" "$stage"; then
         echo "❌ Mihomo UI 归档必须只有一个顶层目录，取消安装。"
         rm -rf "$stage" "$archive"
         return 1
     fi
 
     mkdir -p "$content" || { rm -rf "$stage" "$archive"; return 1; }
-    if ! tar -xzf "$archive" -C "$content" --strip-components=1 || [ ! -f "$content/index.html" ]; then
+    if ! mv "$stage/$REPO_ARCHIVE_ROOT"/* "$content"/ 2>/dev/null || [ ! -f "$content/index.html" ]; then
         echo "❌ Mihomo UI 解压或内容校验失败（缺少 index.html），取消安装。"
         rm -rf "$stage" "$archive"
         return 1
