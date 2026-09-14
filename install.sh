@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.14.08"
+APP_VERSION="2026.09.14.09"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -3203,12 +3203,15 @@ select_mihomo_upstream() {
     detect_mihomo_macvlan_candidates
 
     if [ "$MIHOMO_CANDIDATE_COUNT" -gt 0 ]; then
-        echo "检测到以下 Mihomo macvlan 容器："
+        echo "请选择 MosDNS 的上游 DNS："
+        echo "检测到以下可用的 Mihomo DNS 服务，可作为 MosDNS 上游："
         for i in $(seq 1 "$MIHOMO_CANDIDATE_COUNT"); do
-            echo "${i}）${MIHOMO_CANDIDATE_NAME[$i]}（${MIHOMO_CANDIDATE_NET[$i]}） IPv4: ${MIHOMO_CANDIDATE_IP4[$i]:-无} IPv6: ${MIHOMO_CANDIDATE_IP6[$i]:-无}"
+            echo "${i}）${MIHOMO_CANDIDATE_NAME[$i]}（${MIHOMO_CANDIDATE_NET[$i]}）"
+            echo "   IPv4：${MIHOMO_CANDIDATE_IP4[$i]:-无}:53"
+            echo "   IPv6：${MIHOMO_CANDIDATE_IP6[$i]:-无}:53"
         done
         echo "0）返回"
-        echo "m）手动输入"
+        echo "m）手动输入其他上游"
         read -r -p "请输入要操作的序号: " choice
         if [ "$choice" = "0" ]; then return 2; fi
         if [[ "$choice" =~ ^[1-9][0-9]*$ ]] && [ "$choice" -le "$MIHOMO_CANDIDATE_COUNT" ]; then
