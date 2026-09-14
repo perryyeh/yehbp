@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.14.01"
+APP_VERSION="2026.09.14.02"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -850,7 +850,8 @@ derive_ipv6_iprange_from_ipv4() {
 
 # 返回 IPv4 CIDR 的最后一个可用单播地址（broadcast 前一位）。
 cidr_last_usable_ipv4() {
-  python3 - "$1" <<'PY'
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$1" <<'PY'
 import ipaddress
 import sys
 
@@ -859,6 +860,21 @@ if network.num_addresses < 4:
     raise SystemExit("IPv4 IPRange 至少需要 4 个地址以分配 bridge 地址")
 print(network.broadcast_address - 1)
 PY
+    return
+  fi
+
+  local cidr="$1" address prefix ip1 ip2 ip3 ip4 value block network last
+  address="${cidr%/*}"
+  prefix="${cidr#*/}"
+  IFS='.' read -r ip1 ip2 ip3 ip4 <<< "$address"
+  [[ "$prefix" =~ ^[0-9]+$ ]] && (( prefix >= 0 && prefix <= 30 )) || return 1
+  [[ "$ip1" =~ ^[0-9]+$ && "$ip2" =~ ^[0-9]+$ && "$ip3" =~ ^[0-9]+$ && "$ip4" =~ ^[0-9]+$ ]] || return 1
+  (( ip1 <= 255 && ip2 <= 255 && ip3 <= 255 && ip4 <= 255 )) || return 1
+  value=$((ip1 * 16777216 + ip2 * 65536 + ip3 * 256 + ip4))
+  block=$((1 << (32 - prefix)))
+  network=$((value / block * block))
+  last=$((network + block - 2))
+  printf '%d.%d.%d.%d\n' "$((last / 16777216))" "$(((last / 65536) % 256))" "$(((last / 256) % 256))" "$((last % 256))"
 }
 
 # 返回 macvlan IPv4 IPRange 的安全默认值。
@@ -866,7 +882,8 @@ PY
 # 将下一个 /24 作为 Docker 容器专用地址池；/24 或更细时直接使用 CIDR。
 # 例：10.86.0.0/22 → 10.86.1.0/24；10.86.8.0/24 → 10.86.8.0/24。
 default_macvlan_ipv4_range() {
-  python3 - "$1" <<'PY'
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$1" <<'PY'
 import ipaddress
 import sys
 
@@ -880,17 +897,50 @@ else:
         raise SystemExit("CIDR 中没有可用的下一个 /24 IPRange")
     print(candidate)
 PY
+    return
+  fi
+
+  local cidr="$1" address prefix ip1 ip2 ip3 ip4 value block network candidate
+  address="${cidr%/*}"
+  prefix="${cidr#*/}"
+  IFS='.' read -r ip1 ip2 ip3 ip4 <<< "$address"
+  [[ "$prefix" =~ ^[0-9]+$ ]] && (( prefix >= 0 && prefix <= 32 )) || return 1
+  [[ "$ip1" =~ ^[0-9]+$ && "$ip2" =~ ^[0-9]+$ && "$ip3" =~ ^[0-9]+$ && "$ip4" =~ ^[0-9]+$ ]] || return 1
+  (( ip1 <= 255 && ip2 <= 255 && ip3 <= 255 && ip4 <= 255 )) || return 1
+  value=$((ip1 * 16777216 + ip2 * 65536 + ip3 * 256 + ip4))
+  block=$((1 << (32 - prefix)))
+  network=$((value / block * block))
+  if (( prefix < 24 )); then
+    candidate=$((network + 256))
+    (( candidate + 255 < network + block )) || return 1
+    printf '%d.%d.%d.0/24\n' "$((candidate / 16777216))" "$(((candidate / 65536) % 256))" "$(((candidate / 256) % 256))"
+  else
+    printf '%d.%d.%d.%d/%d\n' "$((network / 16777216))" "$(((network / 65536) % 256))" "$(((network / 256) % 256))" "$((network % 256))" "$prefix"
+  fi
 }
 
 # 返回 IPv6 CIDR 的最后一个地址。IPv6 没有 broadcast，该地址可用作 host bridge。
 cidr_last_ipv6() {
-  python3 - "$1" <<'PY'
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$1" <<'PY'
 import ipaddress
 import sys
 
 network = ipaddress.IPv6Network(sys.argv[1], strict=False)
 print(network[-1])
 PY
+    return
+  fi
+
+  # YehBP 的自动 IPv6 IPRange 固定为 /112，例如 fd00:10:86:100::101:0/112。
+  # 无 Python 的 OpenWrt 仅对该自动生成格式执行 fallback；其它手工前缀保留明确失败，
+  # 防止用不完整的 shell IPv6 解析器计算出错误地址。
+  local cidr="$1" address prefix
+  address="${cidr%/*}"
+  prefix="${cidr#*/}"
+  [ "$prefix" = "112" ] || return 1
+  [[ "$address" == *:* ]] || return 1
+  printf '%s:ffff\n' "${address%:*}"
 }
 
 # 返回 OpenWrt DHCP 接口的路由器地址，包括 defaultroute=0 时由 netifd
@@ -2157,7 +2207,7 @@ create_macvlan_network() {
   while IFS= read -r iface; do
     case "$iface" in
       # 明确排除：容器/隧道/虚拟/内核专用
-      lo|docker0|docker*|br-*|virbr*|veth*|mvbr*|tun*|tap*|wg*|tailscale*|zt*|ifb*|dummy*|gre*|gretap*|ip6gre*|sit*|macvtap*|kube*|cni*|flannel*|calico*|ovs-system* )
+      lo|docker0|docker*|br-[0-9a-f][0-9a-f]*|virbr*|veth*|mvbr*|tun*|tap*|wg*|tailscale*|zt*|ifb*|dummy*|gre*|gretap*|ip6gre*|sit*|macvtap*|kube*|cni*|flannel*|calico*|ovs-system* )
         continue
         ;;
       *)
