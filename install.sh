@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.14.04"
+APP_VERSION="2026.09.14.05"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -932,8 +932,7 @@ PY
     return
   fi
 
-  # YehBP 的自动 IPv6 IPRange 固定为 /112，例如 fd00:10:86:100::101:0/112。
-  # 无 Python 的 OpenWrt 仅对该自动生成格式执行 fallback；其它手工前缀保留明确失败，
+  # YehBP 自动生成的 IPv6 IPRange 使用 /112；无 Python 时仅支持该格式。
   # 防止用不完整的 shell IPv6 解析器计算出错误地址。
   local cidr="$1" address prefix
   address="${cidr%/*}"
@@ -3137,7 +3136,8 @@ detect_mihomo_macvlan_candidates() {
             [ "$driver" = "macvlan" ] || continue
             ip4="$(echo "$networks" | jq -r --arg n "$net" '.[$n].IPAddress // empty')"
             ip6="$(echo "$networks" | jq -r --arg n "$net" '.[$n].GlobalIPv6Address // empty')"
-            [ -n "$ip4" ] || [ -n "$ip6" ] || continue
+            # MosDNS 的模板始终需要 IPv4 上游；IPv6-only 容器不能作为候选。
+            [ -n "$ip4" ] || continue
             MIHOMO_CANDIDATE_COUNT=$((MIHOMO_CANDIDATE_COUNT + 1))
             MIHOMO_CANDIDATE_NAME[$MIHOMO_CANDIDATE_COUNT]="$name"
             MIHOMO_CANDIDATE_NET[$MIHOMO_CANDIDATE_COUNT]="$net"
@@ -3157,6 +3157,16 @@ normalize_mihomo_ipv6_endpoint() {
         echo "[$value]"
     else
         echo "$value"
+    fi
+}
+
+# 将裸 IP 规范为带端口的上游端点；已显式指定端口时原样保留。
+normalize_mihomo_endpoint_port() {
+    local value="$1"
+    if [[ "$value" =~ ^\[.*\]:[0-9]+$ ]] || [[ "$value" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}:[0-9]+$ ]]; then
+        echo "$value"
+    else
+        echo "${value}:53"
     fi
 }
 
@@ -3187,8 +3197,9 @@ select_mihomo_upstream() {
         read -r -p "请选择上游（0 返回，m 手动输入）: " choice
         if [ "$choice" = "0" ]; then return 2; fi
         if [[ "$choice" =~ ^[1-9][0-9]*$ ]] && [ "$choice" -le "$MIHOMO_CANDIDATE_COUNT" ]; then
-            MIHOMO_ENDPOINT4="${MIHOMO_CANDIDATE_IP4[$choice]}"
+            MIHOMO_ENDPOINT4="$(normalize_mihomo_endpoint_port "${MIHOMO_CANDIDATE_IP4[$choice]}")"
             MIHOMO_ENDPOINT6="$(normalize_mihomo_ipv6_endpoint "${MIHOMO_CANDIDATE_IP6[$choice]}")"
+            [ -n "$MIHOMO_ENDPOINT6" ] && MIHOMO_ENDPOINT6="$(normalize_mihomo_endpoint_port "$MIHOMO_ENDPOINT6")"
             return 0
         fi
         [ "$choice" = "m" ] || { echo "❌ 无效选择"; return 1; }
@@ -3196,6 +3207,7 @@ select_mihomo_upstream() {
 
     MIHOMO_ENDPOINT4="$(read_mihomo_manual_endpoint "" "请输入 Mihomo IPv4")" || return 1
     MIHOMO_IP4="${MIHOMO_ENDPOINT4%%:*}"
+    MIHOMO_ENDPOINT4="$(normalize_mihomo_endpoint_port "$MIHOMO_ENDPOINT4")"
     derived6=""
     if [ "$MIHOMO_IP4" = "198.18.0.2" ]; then
         derived6="2001:2:0:6152::2"
@@ -3211,6 +3223,7 @@ select_mihomo_upstream() {
     MIHOMO_ENDPOINT6="${input6:-$derived6}"
     MIHOMO_ENDPOINT6="$(normalize_mihomo_ipv6_endpoint "$MIHOMO_ENDPOINT6")"
     [ -n "$MIHOMO_ENDPOINT6" ] || return 1
+    MIHOMO_ENDPOINT6="$(normalize_mihomo_endpoint_port "$MIHOMO_ENDPOINT6")"
     return 0
 }
 
