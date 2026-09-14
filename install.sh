@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.14.09"
+APP_VERSION="2026.09.14.10"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -1421,6 +1421,27 @@ remove_unsupported_compose_endpoint_sysctls() {
   fi
 }
 
+remove_unsupported_compose_network_driver_opts() {
+  local compose_file="${1:-compose.yaml}" tmp
+  [ -f "$compose_file" ] || return 0
+
+  # Older Compose releases reject the service-network driver_opts field. Keep
+  # it in repository templates and remove it only after this host's Compose
+  # has positively reported that exact schema incompatibility.
+  tmp="$(mktemp "${compose_file}.network-driver-opts.XXXXXX")" || return 1
+  if ! awk '
+    /^        driver_opts:[[:space:]]*$/ { skip = 1; next }
+    skip && /^          / { next }
+    skip { skip = 0 }
+    { print }
+  ' "$compose_file" >"$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  mv "$tmp" "$compose_file" || { rm -f "$tmp"; return 1; }
+  echo "ℹ️ 当前 Docker Compose 不支持服务网络 driver_opts，已仅在本次部署配置中移除该字段。"
+}
+
 remove_incompatible_host_time_mounts() {
   local compose_file="${1:-compose.yaml}"
   [ -f "$compose_file" ] || return 0
@@ -1708,9 +1729,26 @@ compose_deploy_with_repo_switch() {
 
   echo "🔎 [$name] docker compose config 校验..."
   if ! "${COMPOSE[@]}" "${pargs[@]}" "${fargs[@]}" config >/tmp/"$name".compose.check 2>/tmp/"$name".compose.err; then
-    echo "❌ [$name] compose 校验失败："
-    sed 's/^/  /' /tmp/"$name".compose.err
-    return 1
+    # Compose releases predating service-network driver_opts report this exact
+    # schema error. Do not weaken the shared template: retry only after this
+    # host has demonstrated the incompatibility.
+    if grep -q 'Additional property driver_opts is not allowed' /tmp/"$name".compose.err; then
+      for f in "${files[@]}"; do
+        remove_unsupported_compose_network_driver_opts "$f" || return 1
+      done
+      echo "🔎 [$name] 以兼容配置重新校验 docker compose..."
+      if "${COMPOSE[@]}" "${pargs[@]}" "${fargs[@]}" config >/tmp/"$name".compose.check 2>/tmp/"$name".compose.err; then
+        :
+      else
+        echo "❌ [$name] compose 校验失败："
+        sed 's/^/  /' /tmp/"$name".compose.err
+        return 1
+      fi
+    else
+      echo "❌ [$name] compose 校验失败："
+      sed 's/^/  /' /tmp/"$name".compose.err
+      return 1
+    fi
   fi
 
   # B) 备份旧容器（stop + rename）用于回滚
