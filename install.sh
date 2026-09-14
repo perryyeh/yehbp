@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.14.10"
+APP_VERSION="2026.09.14.11"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -1499,6 +1499,56 @@ convert_compose_network_mac_for_legacy_docker() {
   echo "ℹ️ Docker API $api：已将 $compose_file 的网络级 mac_address 转为旧版兼容的服务级写法。"
 }
 
+convert_compose_network_mac_for_legacy_compose() {
+  local compose_file="$1" mac count tmp
+  [ -f "$compose_file" ] || return 0
+
+  # Compose v2.18 and earlier reject the network-level mac_address form even
+  # when the Docker daemon API itself supports it. YehBP's service templates
+  # contain one macvlan endpoint, so the equivalent service-level form is
+  # safe after that exact schema error has been observed.
+  count="$(awk '/^        mac_address:[[:space:]]*/ {n++} END {print n+0}' "$compose_file")"
+  [ "$count" -eq 0 ] && return 0
+  if [ "$count" -ne 1 ]; then
+    echo "❌ [$compose_file] 当前 Docker Compose 不支持网络级 mac_address，且该模板含 $count 个 MAC；拒绝进行不安全转换。"
+    return 1
+  fi
+
+  mac="$(awk '/^        mac_address:[[:space:]]*/ {sub(/^[[:space:]]*mac_address:[[:space:]]*/, ""); print; exit}' "$compose_file")"
+  [ -n "$mac" ] || { echo "❌ [$compose_file] 无法读取网络级 mac_address。"; return 1; }
+
+  tmp="$(mktemp "${compose_file}.legacy-compose-mac.XXXXXX")" || return 1
+  awk -v mac="$mac" '
+    /^    networks:[[:space:]]*$/ && !inserted {
+      print "    mac_address: " mac
+      inserted = 1
+    }
+    /^        mac_address:[[:space:]]*/ { next }
+    { print }
+  ' "$compose_file" > "$tmp" || { rm -f "$tmp"; return 1; }
+  mv "$tmp" "$compose_file" || { rm -f "$tmp"; return 1; }
+  echo "ℹ️ 当前 Docker Compose 不支持网络级 mac_address，已仅在本次部署配置中转为服务级写法。"
+}
+
+apply_compose_schema_compatibility_fallback() {
+  local compose_error="$1"; shift
+  local -a files=("$@") f
+
+  if grep -q 'Additional property driver_opts is not allowed' "$compose_error"; then
+    for f in "${files[@]}"; do
+      remove_unsupported_compose_network_driver_opts "$f" || return 1
+    done
+    return 0
+  fi
+  if grep -q 'Additional property mac_address is not allowed' "$compose_error"; then
+    for f in "${files[@]}"; do
+      convert_compose_network_mac_for_legacy_compose "$f" || return 1
+    done
+    return 0
+  fi
+  return 1
+}
+
 remove_compose_ipv6_fields() {
   local compose_file="${1:-compose.yaml}"
   [ -f "$compose_file" ] || return 0
@@ -1728,28 +1778,18 @@ compose_deploy_with_repo_switch() {
   done
 
   echo "🔎 [$name] docker compose config 校验..."
-  if ! "${COMPOSE[@]}" "${pargs[@]}" "${fargs[@]}" config >/tmp/"$name".compose.check 2>/tmp/"$name".compose.err; then
-    # Compose releases predating service-network driver_opts report this exact
-    # schema error. Do not weaken the shared template: retry only after this
-    # host has demonstrated the incompatibility.
-    if grep -q 'Additional property driver_opts is not allowed' /tmp/"$name".compose.err; then
-      for f in "${files[@]}"; do
-        remove_unsupported_compose_network_driver_opts "$f" || return 1
-      done
-      echo "🔎 [$name] 以兼容配置重新校验 docker compose..."
-      if "${COMPOSE[@]}" "${pargs[@]}" "${fargs[@]}" config >/tmp/"$name".compose.check 2>/tmp/"$name".compose.err; then
-        :
-      else
-        echo "❌ [$name] compose 校验失败："
-        sed 's/^/  /' /tmp/"$name".compose.err
-        return 1
-      fi
-    else
+  local schema_retry=0
+  while ! "${COMPOSE[@]}" "${pargs[@]}" "${fargs[@]}" config >/tmp/"$name".compose.check 2>/tmp/"$name".compose.err; do
+    # A single old Compose release can reject more than one newer service-
+    # network field, but only apply transformations after its exact error.
+    if [ "$schema_retry" -ge 2 ] || ! apply_compose_schema_compatibility_fallback /tmp/"$name".compose.err "${files[@]}"; then
       echo "❌ [$name] compose 校验失败："
       sed 's/^/  /' /tmp/"$name".compose.err
       return 1
     fi
-  fi
+    schema_retry=$((schema_retry + 1))
+    echo "🔎 [$name] 以兼容配置重新校验 docker compose..."
+  done
 
   # B) 备份旧容器（stop + rename）用于回滚
   local ts backup_cname old_running=""
