@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.14.03"
+APP_VERSION="2026.09.14.04"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -3121,6 +3121,99 @@ install_adguardhome() {
     repo_offer_delete_backup "adguardhome" "$BAK_DIR" "adguardhome"
 }
 
+detect_mihomo_macvlan_candidates() {
+    MIHOMO_CANDIDATE_COUNT=0
+    unset MIHOMO_CANDIDATE_NAME MIHOMO_CANDIDATE_NET MIHOMO_CANDIDATE_IP4 MIHOMO_CANDIDATE_IP6
+
+    local line id name networks net driver ip4 ip6
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        id="${line%% *}"
+        name="${line#* }"
+        networks="$(docker inspect -f '{{json .NetworkSettings.Networks}}' "$id" 2>/dev/null)"
+        [ -n "$networks" ] && [ "$networks" != "null" ] || continue
+        for net in $(echo "$networks" | jq -r 'keys[]' 2>/dev/null); do
+            driver="$(docker network inspect -f '{{.Driver}}' "$net" 2>/dev/null)"
+            [ "$driver" = "macvlan" ] || continue
+            ip4="$(echo "$networks" | jq -r --arg n "$net" '.[$n].IPAddress // empty')"
+            ip6="$(echo "$networks" | jq -r --arg n "$net" '.[$n].GlobalIPv6Address // empty')"
+            [ -n "$ip4" ] || [ -n "$ip6" ] || continue
+            MIHOMO_CANDIDATE_COUNT=$((MIHOMO_CANDIDATE_COUNT + 1))
+            MIHOMO_CANDIDATE_NAME[$MIHOMO_CANDIDATE_COUNT]="$name"
+            MIHOMO_CANDIDATE_NET[$MIHOMO_CANDIDATE_COUNT]="$net"
+            MIHOMO_CANDIDATE_IP4[$MIHOMO_CANDIDATE_COUNT]="$ip4"
+            MIHOMO_CANDIDATE_IP6[$MIHOMO_CANDIDATE_COUNT]="$ip6"
+        done
+    done <<EOF
+$(docker ps --format '{{.ID}} {{.Names}}' 2>/dev/null | grep -Ei '(^|[ _-])(mihomo|clash-meta|clash)($|[ _-])')
+EOF
+}
+
+normalize_mihomo_ipv6_endpoint() {
+    local value="$1"
+    if [[ "$value" =~ ^\[.*\](:[0-9]+)?$ ]]; then
+        echo "$value"
+    elif [[ "$value" == *:* ]]; then
+        echo "[$value]"
+    else
+        echo "$value"
+    fi
+}
+
+read_mihomo_manual_endpoint() {
+    local input="$1" label="$2" ip port
+    read -r -p "$label（可带端口，回车取消）: " input
+    [ -n "$input" ] || return 1
+    if [[ "$input" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}(:[0-9]+)?$ ]]; then
+        ip="${input%%:*}"
+        port=""
+        [[ "$input" == *:* ]] && port="${input#*:}"
+        echo "$input"
+        return 0
+    fi
+    echo "❌ 无效的 IPv4 地址：$input" >&2
+    return 1
+}
+
+select_mihomo_upstream() {
+    local choice i derived6 port input6
+    detect_mihomo_macvlan_candidates
+
+    if [ "$MIHOMO_CANDIDATE_COUNT" -gt 0 ]; then
+        echo "检测到以下 Mihomo macvlan 容器："
+        for i in $(seq 1 "$MIHOMO_CANDIDATE_COUNT"); do
+            echo "${i}）${MIHOMO_CANDIDATE_NAME[$i]}（${MIHOMO_CANDIDATE_NET[$i]}） IPv4: ${MIHOMO_CANDIDATE_IP4[$i]:-无} IPv6: ${MIHOMO_CANDIDATE_IP6[$i]:-无}"
+        done
+        read -r -p "请选择上游（0 返回，m 手动输入）: " choice
+        if [ "$choice" = "0" ]; then return 2; fi
+        if [[ "$choice" =~ ^[1-9][0-9]*$ ]] && [ "$choice" -le "$MIHOMO_CANDIDATE_COUNT" ]; then
+            MIHOMO_ENDPOINT4="${MIHOMO_CANDIDATE_IP4[$choice]}"
+            MIHOMO_ENDPOINT6="$(normalize_mihomo_ipv6_endpoint "${MIHOMO_CANDIDATE_IP6[$choice]}")"
+            return 0
+        fi
+        [ "$choice" = "m" ] || { echo "❌ 无效选择"; return 1; }
+    fi
+
+    MIHOMO_ENDPOINT4="$(read_mihomo_manual_endpoint "" "请输入 Mihomo IPv4")" || return 1
+    MIHOMO_IP4="${MIHOMO_ENDPOINT4%%:*}"
+    derived6=""
+    if [ "$MIHOMO_IP4" = "198.18.0.2" ]; then
+        derived6="2001:2:0:6152::2"
+    else
+        calculate_ip_mac "${MIHOMO_IP4##*.}"
+        [ "$calculated_ip" = "$MIHOMO_IP4" ] && derived6="$calculated_ip6"
+    fi
+    port=""
+    [[ "$MIHOMO_ENDPOINT4" == *:* ]] && port="${MIHOMO_ENDPOINT4#*:}"
+    [ -n "$derived6" ] && [ -n "$port" ] && derived6="[$derived6]:$port"
+    [ -n "$derived6" ] && echo "推导的 Mihomo IPv6：$derived6"
+    read -r -p "请输入 Mihomo IPv6（回车使用推导值；带端口请写 [IPv6]:端口）: " input6
+    MIHOMO_ENDPOINT6="${input6:-$derived6}"
+    MIHOMO_ENDPOINT6="$(normalize_mihomo_ipv6_endpoint "$MIHOMO_ENDPOINT6")"
+    [ -n "$MIHOMO_ENDPOINT6" ] || return 1
+    return 0
+}
+
 install_mosdns() {
 
     echo "🔧 安装 mosdns（需要选择 macvlan 网络）"
@@ -3133,49 +3226,18 @@ install_mosdns() {
       *) return 1 ;;
     esac
 
-    # 用于写 mosdns 上游：mihomo 写 IPv4；能确定 IPv6 时再写 fake IPv6 上游
-    local mihomo_input mihomo mihomo6
-
-    read -r -p "surge请输入198.18.0.2, mihomo请输入输完整IP或最后一段（回车默认 120）: " mihomo_input
-
-    # ✅ 关键修复
-    if [ -z "$mihomo_input" ]; then
-        calculate_ip_mac 120
-        mihomo="$calculated_ip"
-        mihomo6="$calculated_ip6"
-    elif [[ "$mihomo_input" =~ ^[0-9]+$ ]]; then
-        if [ "$mihomo_input" -lt 1 ] || [ "$mihomo_input" -gt 254 ]; then
-            echo "❌ 无效的最后一段：$mihomo_input"
-            return 1
-        fi
-        calculate_ip_mac "$mihomo_input"
-        mihomo="$calculated_ip"
-        mihomo6="$calculated_ip6"
-    else
-        mihomo="$(echo "$mihomo_input" | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n1)"
-        [ -n "$mihomo" ] || { echo "❌ 无法解析 IPv4：$mihomo_input"; return 1; }
-        if [ "$mihomo" = "198.18.0.2" ]; then
-            mihomo6="2001:2:0:6152::2"
-        else
-            mihomo6=""
-            calculate_ip_mac "${mihomo##*.}"
-            if [ "$calculated_ip" = "$mihomo" ]; then
-                mihomo6="$calculated_ip6"
-            fi
-        fi
-    fi
-
-    if [ "$mihomo" = "198.18.0.2" ]; then
-        echo "📌 上游 surge IPv4：$mihomo"
-        echo "📌 上游 surge IPv6：$mihomo6"
-    else
-        echo "📌 上游 mihomo IPv4：$mihomo"
-        if [ -n "$mihomo6" ]; then
-            echo "📌 上游 mihomo IPv6：$mihomo6"
-        else
-            echo "📌 上游 mihomo IPv6：无法找到"
-        fi
-    fi
+    local mihomo mihomo6 mihomo_ip4
+    select_mihomo_upstream
+    case $? in
+      0) ;;
+      2) return 0 ;;
+      *) return 1 ;;
+    esac
+    mihomo="$MIHOMO_ENDPOINT4"
+    mihomo6="$MIHOMO_ENDPOINT6"
+    mihomo_ip4="${mihomo%%:*}"
+    echo "📌 上游 IPv4：$mihomo"
+    echo "📌 上游 IPv6：$mihomo6"
 
     # 2) 选择 mosdns IPv4 最后一段（回车默认 119）
     local mosdns_last
@@ -3233,9 +3295,10 @@ install_mosdns() {
     # 8) 替换 dns.yaml 里上游 mihomo / gateway
     if [ -f "dns.yaml" ]; then
         # 用 # 作为分隔符更稳（避免 / 等字符导致 sed 崩）
-        sed -i "s#198.18.0.2#${mihomo}#g" dns.yaml
+        sed -i "s#udp://198.18.0.2:53#udp://${mihomo}#g" dns.yaml
+        sed -i "s#198.18.0.2#${mihomo_ip4}#g" dns.yaml
         if [ -n "$mihomo6" ]; then
-            sed -i "s#2001:2:0:6152::2#${mihomo6}#g" dns.yaml
+            sed -i "s#udp://\[2001:2:0:6152::2\]:53#udp://${mihomo6}#g" dns.yaml
         fi
         if [ -n "$gateway" ] && [ "$gateway" != "null" ]; then
             sed -i "s#10.0.0.1#${gateway}#g" dns.yaml
@@ -3249,7 +3312,7 @@ install_mosdns() {
     if [ -f "config.yaml" ]; then
         local enable_fakeipv6
 
-        if [ "$mihomo" = "198.18.0.2" ]; then
+        if [ "$mihomo_ip4" = "198.18.0.2" ]; then
             # surge：IPv6 是写死的，必须询问
             echo "⚠️ Surge fake IPv6 需要确认链路可用，坑较多。"
             read -r -p "是否开启 fake IPv6 解析？[y/N]: " enable_fakeipv6
