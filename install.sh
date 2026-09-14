@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.14.07"
+APP_VERSION="2026.09.14.08"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -1586,9 +1586,9 @@ repo_extract_archive() {
   local archive="$1" extract_dir roots root_count
   extract_dir="$2"
   roots="$(tar -tzf "$archive" | awk -F/ 'NF {print $1}' | sort -u)" || return 1
-  root_count="$(printf '%s\\n' "$roots" | sed '/^$/d' | wc -l | tr -d '[:space:]')"
+  root_count="$(printf '%s\n' "$roots" | sed '/^$/d' | wc -l | tr -d '[:space:]')"
   [ "$root_count" = "1" ] || return 1
-  REPO_ARCHIVE_ROOT="$(printf '%s\\n' "$roots" | sed -n '1p')"
+  REPO_ARCHIVE_ROOT="$(printf '%s\n' "$roots" | sed -n '1p')"
   [ -n "$REPO_ARCHIVE_ROOT" ] || return 1
   tar -xzf "$archive" -C "$extract_dir" || return 1
 }
@@ -3207,7 +3207,9 @@ select_mihomo_upstream() {
         for i in $(seq 1 "$MIHOMO_CANDIDATE_COUNT"); do
             echo "${i}）${MIHOMO_CANDIDATE_NAME[$i]}（${MIHOMO_CANDIDATE_NET[$i]}） IPv4: ${MIHOMO_CANDIDATE_IP4[$i]:-无} IPv6: ${MIHOMO_CANDIDATE_IP6[$i]:-无}"
         done
-        read -r -p "请选择上游（0 返回，m 手动输入）: " choice
+        echo "0）返回"
+        echo "m）手动输入"
+        read -r -p "请输入要操作的序号: " choice
         if [ "$choice" = "0" ]; then return 2; fi
         if [[ "$choice" =~ ^[1-9][0-9]*$ ]] && [ "$choice" -le "$MIHOMO_CANDIDATE_COUNT" ]; then
             MIHOMO_ENDPOINT4="$(normalize_mihomo_endpoint_port "${MIHOMO_CANDIDATE_IP4[$choice]}")"
