@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.14.02"
+APP_VERSION="2026.09.14.03"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -987,7 +987,7 @@ get_subnet_v4() {
     local prefix_len
     prefix_len=$(ip -4 addr show "$iface" | grep inet | awk '{print $2}' | cut -d'/' -f2)
 
-    if [ -n "$prefix_len" ] && is_openwrt; then
+    if [ -n "$prefix_len" ] && is_openwrt && command -v python3 >/dev/null 2>&1; then
       cidr=$(python3 - "$ip/$prefix_len" <<'PY'
 import ipaddress
 import sys
@@ -1034,7 +1034,7 @@ get_subnet_v6() {
 
   if [ -z "$cidr" ]; then
     prefix_len="$(ip -6 -o addr show dev "$iface" scope global 2>/dev/null | awk -v ip="$ip" '$4 ~ ("^" ip "/") {split($4, a, "/"); print a[2]; exit}')"
-    if [ -n "$prefix_len" ]; then
+    if [ -n "$prefix_len" ] && command -v python3 >/dev/null 2>&1; then
       cidr="$(python3 - "$ip/$prefix_len" <<'PY'
 import ipaddress
 import sys
