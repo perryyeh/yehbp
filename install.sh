@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.14.05"
+APP_VERSION="2026.09.14.06"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -1380,7 +1380,7 @@ env_require_vars() {
 }
 
 remove_compose_endpoint_ra_sysctl() {
-  local compose_file="${1:-docker-compose.yml}" tmp
+  local compose_file="${1:-compose.yaml}" tmp
   [ -f "$compose_file" ] || return 0
 
   # Endpoint sysctls are a comma-separated list. Remove only the unsupported
@@ -1410,7 +1410,7 @@ remove_compose_endpoint_ra_sysctl() {
 }
 
 remove_unsupported_compose_endpoint_sysctls() {
-  local compose_file="${1:-docker-compose.yml}"
+  local compose_file="${1:-compose.yaml}"
 
   # Some kernels, including current OpenWrt 6.6 builds, do not expose this
   # namespace sysctl. Passing it through Docker makes runc fail before the
@@ -1422,7 +1422,7 @@ remove_unsupported_compose_endpoint_sysctls() {
 }
 
 remove_incompatible_host_time_mounts() {
-  local compose_file="${1:-docker-compose.yml}"
+  local compose_file="${1:-compose.yaml}"
   [ -f "$compose_file" ] || return 0
 
   # Containers expect these bind sources to be regular files. Some OpenWrt
@@ -1479,7 +1479,7 @@ convert_compose_network_mac_for_legacy_docker() {
 }
 
 remove_compose_ipv6_fields() {
-  local compose_file="${1:-docker-compose.yml}"
+  local compose_file="${1:-compose.yaml}"
   [ -f "$compose_file" ] || return 0
 
   # 无 IPv6 场景：删除固定 IPv6 地址，避免 compose 校验/启动报错。
@@ -1653,7 +1653,7 @@ repo_stage_update() {
 # 容器层（停旧 → 起新 → 更新/回滚）
 compose_deploy_with_repo_switch() {
   # 用法（推荐）：
-  #   compose_deploy_with_repo_switch "mihomo" "mihomo" docker-compose.yml docker-compose.ipv6.yml
+  #   compose_deploy_with_repo_switch "mihomo" "mihomo" compose.yaml compose.ipv6.yaml
   #
   # 依赖 repo_stage_update 已经被调用过，且设置了全局变量：
   #   WORK_DIR NEED_SWITCH TARGET_DIR BAK_DIR
@@ -1672,7 +1672,7 @@ compose_deploy_with_repo_switch() {
     return 1
   fi
 
-  [ ${#files[@]} -eq 0 ] && files=("docker-compose.yml")
+  [ ${#files[@]} -eq 0 ] && files=("compose.yaml")
 
   local -a fargs=()
   for f in "${files[@]}"; do fargs+=("-f" "$f"); done
@@ -2945,11 +2945,11 @@ install_librespeed() {
     # 7) 替换compose配置中的容器相关字段
     if [ "$CONTAINER_NAME" != "$DEFAULT_CONTAINER_NAME" ]; then
         # 1. 替换services下一级的服务名称
-        sed -i "s/^  $DEFAULT_CONTAINER_NAME:/  $CONTAINER_NAME:/" docker-compose.yml
+        sed -i "s/^  $DEFAULT_CONTAINER_NAME:/  $CONTAINER_NAME:/" compose.yaml
         # 2. 替换container_name
-        sed -i "s/container_name: $DEFAULT_CONTAINER_NAME/container_name: $CONTAINER_NAME/" docker-compose.yml
+        sed -i "s/container_name: $DEFAULT_CONTAINER_NAME/container_name: $CONTAINER_NAME/" compose.yaml
         # 3. 替换hostname
-        sed -i "s/hostname: $DEFAULT_CONTAINER_NAME/hostname: $CONTAINER_NAME/" docker-compose.yml
+        sed -i "s/hostname: $DEFAULT_CONTAINER_NAME/hostname: $CONTAINER_NAME/" compose.yaml
         echo "✅ 已自定义容器名称/目录为：$CONTAINER_NAME"
     fi
 
@@ -2967,11 +2967,11 @@ EOF
 
     # 8) 无IPv6场景：自动删除compose中的ipv6配置避免报错
     if [ -z "$librespeed6" ]; then
-        remove_compose_ipv6_fields docker-compose.yml
+        remove_compose_ipv6_fields compose.yaml
     fi
 
     # 9) 一步部署：校验 -> 停旧备份 -> 起新 -> next->正式 -> 正式再up -> 失败回滚
-    compose_deploy_with_repo_switch "librespeed" "$CONTAINER_NAME" "docker-compose.yml" || return 1
+    compose_deploy_with_repo_switch "librespeed" "$CONTAINER_NAME" "compose.yaml" || return 1
 
     echo "✅ LibreSpeed 已启动"
     echo "容器名称：${CONTAINER_NAME}"
@@ -3045,11 +3045,11 @@ install_adguardhome() {
     # 6) 替换compose配置中的容器相关字段
     if [ "$CONTAINER_NAME" != "$DEFAULT_CONTAINER_NAME" ]; then
         # 1. 替换services下一级的服务名称
-        sed -i "s/^  $DEFAULT_CONTAINER_NAME:/  $CONTAINER_NAME:/" docker-compose.yml
+        sed -i "s/^  $DEFAULT_CONTAINER_NAME:/  $CONTAINER_NAME:/" compose.yaml
         # 2. 替换container_name
-        sed -i "s/container_name: $DEFAULT_CONTAINER_NAME/container_name: $CONTAINER_NAME/" docker-compose.yml
+        sed -i "s/container_name: $DEFAULT_CONTAINER_NAME/container_name: $CONTAINER_NAME/" compose.yaml
         # 3. 替换hostname
-        sed -i "s/hostname: $DEFAULT_CONTAINER_NAME/hostname: $CONTAINER_NAME/" docker-compose.yml
+        sed -i "s/hostname: $DEFAULT_CONTAINER_NAME/hostname: $CONTAINER_NAME/" compose.yaml
         echo "✅ 已自定义容器名称/目录为：$CONTAINER_NAME"
     fi
 
@@ -3093,10 +3093,10 @@ install_adguardhome() {
     }
 
     # 9) 固定使用主compose文件（已合并双栈配置）
-    local compose_files=(docker-compose.yml)
+    local compose_files=(compose.yaml)
     # 无IPv6场景：自动删除compose中的ipv6_address配置，避免启动报错
     if [ "$USE_IPV6" -eq 0 ]; then
-        remove_compose_ipv6_fields docker-compose.yml
+        remove_compose_ipv6_fields compose.yaml
     fi
 
     # 10) 一步部署：校验 -> 停旧备份 -> 起新 -> next->正式 -> 正式再up -> 失败回滚
@@ -3297,11 +3297,11 @@ install_mosdns() {
     # 7) 替换compose配置中的容器相关字段
     if [ "$CONTAINER_NAME" != "$DEFAULT_CONTAINER_NAME" ]; then
         # 1. 替换services下一级的服务名称
-        sed -i "s/^  $DEFAULT_CONTAINER_NAME:/  $CONTAINER_NAME:/" docker-compose.yml
+        sed -i "s/^  $DEFAULT_CONTAINER_NAME:/  $CONTAINER_NAME:/" compose.yaml
         # 2. 替换container_name
-        sed -i "s/container_name: $DEFAULT_CONTAINER_NAME/container_name: $CONTAINER_NAME/" docker-compose.yml
+        sed -i "s/container_name: $DEFAULT_CONTAINER_NAME/container_name: $CONTAINER_NAME/" compose.yaml
         # 3. 替换hostname
-        sed -i "s/hostname: $DEFAULT_CONTAINER_NAME/hostname: $CONTAINER_NAME/" docker-compose.yml
+        sed -i "s/hostname: $DEFAULT_CONTAINER_NAME/hostname: $CONTAINER_NAME/" compose.yaml
         echo "✅ 已自定义容器名称/目录为：$CONTAINER_NAME"
     fi
 
@@ -3414,10 +3414,10 @@ EOF
     }
 
     # 9) 固定使用主compose文件（已合并双栈配置）
-    local compose_files=(docker-compose.yml)
+    local compose_files=(compose.yaml)
     # 无IPv6场景：自动删除compose中的ipv6_address配置，避免启动报错
     if [ "$USE_IPV6" -eq 0 ]; then
-        remove_compose_ipv6_fields docker-compose.yml
+        remove_compose_ipv6_fields compose.yaml
     fi
     # 10）一步部署：校验 -> 停旧备份 -> 起新 -> next->正式 -> 正式再up -> 失败回滚
     compose_deploy_with_repo_switch "mosdns" "$CONTAINER_NAME" "${compose_files[@]}" || return 1
@@ -3610,7 +3610,7 @@ install_mihomo() {
     cd "$WORK_DIR" || { echo "❌ 进入目录失败：$WORK_DIR"; return 1; }
 
     # 5) 根据网络模式选择 compose/config 模板，并复制为正式文件
-    local compose_template="docker-compose.${MIHOMO_NETWORK_MODE}.yml"
+    local compose_template="compose.${MIHOMO_NETWORK_MODE}.yaml"
     local config_template="config.${MIHOMO_NETWORK_MODE}.yaml"
     if [ ! -f "$compose_template" ]; then
         echo "❌ 缺少 compose 模板：$compose_template"
@@ -3624,9 +3624,9 @@ install_mihomo() {
         echo "❌ 缺少 Mihomo macvlan 订阅覆盖模板：subscription.macvlan.yaml"
         return 1
     fi
-    cp "$compose_template" docker-compose.yml || return 1
+    cp "$compose_template" compose.yaml || return 1
     cp "$config_template" config.yaml || return 1
-    echo "✅ 已选择 compose 模板：$compose_template -> docker-compose.yml"
+    echo "✅ 已选择 compose 模板：$compose_template -> compose.yaml"
     echo "✅ 已选择 mihomo 配置模板：$config_template -> config.yaml"
     install_mihomo_external_ui "$config_template" || return 1
 
@@ -3635,11 +3635,11 @@ install_mihomo() {
     local TEMPLATE_CONTAINER_NAME="mihomo"
     if [ "$CONTAINER_NAME" != "$TEMPLATE_CONTAINER_NAME" ]; then
         # 1. 替换services下一级的服务名称
-        sed -i "s/^  $TEMPLATE_CONTAINER_NAME:/  $CONTAINER_NAME:/" docker-compose.yml
+        sed -i "s/^  $TEMPLATE_CONTAINER_NAME:/  $CONTAINER_NAME:/" compose.yaml
         # 2. 替换container_name
-        sed -i "s/container_name: $TEMPLATE_CONTAINER_NAME/container_name: $CONTAINER_NAME/" docker-compose.yml
+        sed -i "s/container_name: $TEMPLATE_CONTAINER_NAME/container_name: $CONTAINER_NAME/" compose.yaml
         # 3. 替换hostname
-        sed -i "s/hostname: $TEMPLATE_CONTAINER_NAME/hostname: $CONTAINER_NAME/" docker-compose.yml
+        sed -i "s/hostname: $TEMPLATE_CONTAINER_NAME/hostname: $CONTAINER_NAME/" compose.yaml
         echo "✅ 已自定义容器名称/目录为：$CONTAINER_NAME"
     fi
 
@@ -3677,7 +3677,7 @@ install_mihomo() {
 
         # 无 IPv6 场景：自动删除 compose/config 中的 IPv6 配置，避免启动报错
         if [ "$USE_IPV6" -eq 0 ]; then
-            remove_compose_ipv6_fields docker-compose.yml
+            remove_compose_ipv6_fields compose.yaml
             remove_config_ipv6_fields config.yaml
             remove_config_ipv6_fields subscription.macvlan.yaml
         fi
@@ -3686,7 +3686,7 @@ install_mihomo() {
     fi
 
     # 9) 固定使用安装时生成的正式 compose 文件
-    local compose_files=(docker-compose.yml)
+    local compose_files=(compose.yaml)
 
     # 10) 一步部署：校验 -> 停旧备份 -> 起新 -> next->正式 -> 正式再up -> 失败回滚
     compose_deploy_with_repo_switch "mihomo" "$CONTAINER_NAME" "${compose_files[@]}" || return 1
@@ -3797,23 +3797,23 @@ install_ddnsgo() {
     repo_stage_update "ddnsgo" "$dockerapps" "$REPO_URL" "$CONTAINER_NAME" || return 1
     cd "$WORK_DIR" || { echo "❌ 进入目录失败：$WORK_DIR"; return 1; }
 
-    # 5) 根据网络模式选择 compose 模板，并复制为正式 docker-compose.yml
-    local compose_template="docker-compose.${DDNSGO_NETWORK_MODE}.yml"
+    # 5) 根据网络模式选择 compose 模板，并复制为正式 compose.yaml
+    local compose_template="compose.${DDNSGO_NETWORK_MODE}.yaml"
     if [ ! -f "$compose_template" ]; then
         echo "❌ 缺少 compose 模板：$compose_template"
         return 1
     fi
-    cp "$compose_template" docker-compose.yml || return 1
-    echo "✅ 已选择 compose 模板：$compose_template -> docker-compose.yml"
+    cp "$compose_template" compose.yaml || return 1
+    echo "✅ 已选择 compose 模板：$compose_template -> compose.yaml"
 
     # 6) 替换compose配置中的容器相关字段
     if [ "$CONTAINER_NAME" != "$DEFAULT_CONTAINER_NAME" ]; then
         # 1. 替换services下一级的服务名称（ddns-go 默认服务名带连字符）
-        sed -i "s/^  $DEFAULT_SERVICE_NAME:/  $CONTAINER_NAME:/" docker-compose.yml
+        sed -i "s/^  $DEFAULT_SERVICE_NAME:/  $CONTAINER_NAME:/" compose.yaml
         # 2. 替换container_name
-        sed -i "s/container_name: $DEFAULT_CONTAINER_NAME/container_name: $CONTAINER_NAME/" docker-compose.yml
+        sed -i "s/container_name: $DEFAULT_CONTAINER_NAME/container_name: $CONTAINER_NAME/" compose.yaml
         # 3. 替换hostname
-        sed -i "s/hostname: $DEFAULT_CONTAINER_NAME/hostname: $CONTAINER_NAME/" docker-compose.yml
+        sed -i "s/hostname: $DEFAULT_CONTAINER_NAME/hostname: $CONTAINER_NAME/" compose.yaml
         echo "✅ 已自定义容器名称/目录为：$CONTAINER_NAME"
     fi
 
@@ -3839,14 +3839,14 @@ install_ddnsgo() {
 
         # 无 IPv6 场景：自动删除 compose 中的 ipv6_address 配置，避免启动报错
         if [ "$USE_IPV6" -eq 0 ]; then
-            remove_compose_ipv6_fields docker-compose.yml
+            remove_compose_ipv6_fields compose.yaml
         fi
     else
         rm -f "$WORK_DIR/.env"
     fi
 
-    # 8) 选择 compose 文件列表（默认只用 docker-compose.yml）
-    local compose_files=(docker-compose.yml)
+    # 8) 选择 compose 文件列表（默认只用 compose.yaml）
+    local compose_files=(compose.yaml)
 
     # 9) 一步部署：校验 -> 停旧备份 -> 起新 -> next->正式 -> 正式再up -> 失败回滚
     compose_deploy_with_repo_switch "ddnsgo" "$CONTAINER_NAME" "${compose_files[@]}" || return 1
@@ -3959,23 +3959,23 @@ install_lucky() {
     repo_stage_update "lucky" "$dockerapps" "$REPO_URL" "$CONTAINER_NAME" || return 1
     cd "$WORK_DIR" || { echo "❌ 进入目录失败：$WORK_DIR"; return 1; }
 
-    # 5) 根据网络模式选择 compose 模板，并复制为正式 docker-compose.yml
-    local compose_template="docker-compose.${LUCKY_NETWORK_MODE}.yml"
+    # 5) 根据网络模式选择 compose 模板，并复制为正式 compose.yaml
+    local compose_template="compose.${LUCKY_NETWORK_MODE}.yaml"
     if [ ! -f "$compose_template" ]; then
         echo "❌ 缺少 compose 模板：$compose_template"
         return 1
     fi
-    cp "$compose_template" docker-compose.yml || return 1
-    echo "✅ 已选择 compose 模板：$compose_template -> docker-compose.yml"
+    cp "$compose_template" compose.yaml || return 1
+    echo "✅ 已选择 compose 模板：$compose_template -> compose.yaml"
 
     # 6) 替换compose配置中的容器相关字段
     if [ "$CONTAINER_NAME" != "$DEFAULT_CONTAINER_NAME" ]; then
         # 1. 替换services下一级的服务名称
-        sed -i "s/^  $DEFAULT_CONTAINER_NAME:/  $CONTAINER_NAME:/" docker-compose.yml
+        sed -i "s/^  $DEFAULT_CONTAINER_NAME:/  $CONTAINER_NAME:/" compose.yaml
         # 2. 替换container_name
-        sed -i "s/container_name: $DEFAULT_CONTAINER_NAME/container_name: $CONTAINER_NAME/" docker-compose.yml
+        sed -i "s/container_name: $DEFAULT_CONTAINER_NAME/container_name: $CONTAINER_NAME/" compose.yaml
         # 3. 替换hostname
-        sed -i "s/hostname: $DEFAULT_CONTAINER_NAME/hostname: $CONTAINER_NAME/" docker-compose.yml
+        sed -i "s/hostname: $DEFAULT_CONTAINER_NAME/hostname: $CONTAINER_NAME/" compose.yaml
         echo "✅ 已自定义容器名称/目录为：$CONTAINER_NAME"
     fi
 
@@ -4001,14 +4001,14 @@ install_lucky() {
 
         # 无 IPv6 场景：自动删除 compose 中的 ipv6_address 配置，避免启动报错
         if [ "$USE_IPV6" -eq 0 ]; then
-            remove_compose_ipv6_fields docker-compose.yml
+            remove_compose_ipv6_fields compose.yaml
         fi
     else
         rm -f "$WORK_DIR/.env"
     fi
 
     # 8) compose 文件
-    local compose_files=(docker-compose.yml)
+    local compose_files=(compose.yaml)
 
     # 9) 部署
     compose_deploy_with_repo_switch "lucky" "$CONTAINER_NAME" "${compose_files[@]}" || return 1
@@ -4070,7 +4070,7 @@ install_portainer() {
     fi
 
     portainer_dir="${dockerapps}/portainer"
-    compose_file="${portainer_dir}/docker-compose.yml"
+    compose_file="${portainer_dir}/compose.yaml"
     env_file="${portainer_dir}/.env"
     ts="$(date +%Y%m%d-%H%M%S)"
 
@@ -4102,10 +4102,10 @@ install_portainer() {
     fi
 
     echo "🔎 Portainer compose 校验..."
-    (cd "$portainer_dir" && "${COMPOSE[@]}" -p portainer -f docker-compose.yml config >/dev/null) || return 1
+    (cd "$portainer_dir" && "${COMPOSE[@]}" -p portainer -f compose.yaml config >/dev/null) || return 1
 
     echo "🚀 使用 compose 启动 Portainer..."
-    (cd "$portainer_dir" && "${COMPOSE[@]}" -p portainer -f docker-compose.yml up -d) || return 1
+    (cd "$portainer_dir" && "${COMPOSE[@]}" -p portainer -f compose.yaml up -d) || return 1
 
     host_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')"
     [ -z "$host_ip" ] && host_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
@@ -4217,7 +4217,7 @@ configure_portainer_agent_secret_one() {
     compose_file="$(docker inspect -f '{{with index .Config.Labels "com.docker.compose.project.config_files"}}{{.}}{{end}}' "$id" 2>/dev/null || true)"
     service="$(docker inspect -f '{{with index .Config.Labels "com.docker.compose.service"}}{{.}}{{end}}' "$id" 2>/dev/null || true)"
     project="$(docker inspect -f '{{with index .Config.Labels "com.docker.compose.project"}}{{.}}{{end}}' "$id" 2>/dev/null || true)"
-    [ -n "$compose_file" ] || compose_file="${compose_dir}/docker-compose.yml"
+    [ -n "$compose_file" ] || compose_file="$(find_standard_compose_file "$compose_dir" || true)"
     if [[ "$compose_dir" != /* ]] || [ ! -d "$compose_dir" ] || [[ "$compose_file" != "$compose_dir"/* ]] || [ ! -f "$compose_file" ] || [ -z "$service" ] || [ -z "$project" ]; then
         echo "❌ 选中的容器不是具有完整 Compose 标签的本地部署；为确保 Secret 可持久化，未修改。"
         return 1
@@ -4365,7 +4365,7 @@ install_portainer_agent() {
     fi
 
     agent_dir="${dockerapps}/portainer_agent"
-    compose_file="${agent_dir}/docker-compose.yml"
+    compose_file="${agent_dir}/compose.yaml"
     env_file="${agent_dir}/.env"
     ts="$(date +%Y%m%d-%H%M%S)"
     if docker ps -a --format '{{.Names}}' | grep -qx portainer_agent; then
@@ -4394,9 +4394,9 @@ install_portainer_agent() {
     fi
 
     echo "🔎 Portainer Agent compose 校验..."
-    (cd "$agent_dir" && "${COMPOSE[@]}" -p portainer_agent -f docker-compose.yml config >/dev/null) || return 1
+    (cd "$agent_dir" && "${COMPOSE[@]}" -p portainer_agent -f compose.yaml config >/dev/null) || return 1
     echo "🚀 使用 compose 启动 Portainer Agent..."
-    (cd "$agent_dir" && "${COMPOSE[@]}" -p portainer_agent -f docker-compose.yml up -d) || return 1
+    (cd "$agent_dir" && "${COMPOSE[@]}" -p portainer_agent -f compose.yaml up -d) || return 1
 
     host_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')"
     [ -z "$host_ip" ] && host_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"

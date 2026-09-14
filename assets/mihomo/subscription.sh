@@ -168,6 +168,16 @@ mihomo_subscription_runtime_ready() {
   ' >/dev/null 2>&1
 }
 
+# Docker Compose 官方优先使用 compose.yaml；保留旧文件名以维护已有部署。
+mihomo_subscription_find_compose_file() {
+  local dir="$1" file
+  local -a candidates=(compose.yaml compose.yml docker-compose.yaml docker-compose.yml)
+  for file in "${candidates[@]}"; do
+    [ -f "$dir/$file" ] && { printf '%s' "$dir/$file"; return 0; }
+  done
+  return 1
+}
+
 # Convert a pre-container-scheduler YehBP macvlan deployment in place.  This
 # preserves config.yaml, .env, container name, network fields and the official
 # image; it only adds the stable entrypoint and subscription hook. The original
@@ -184,9 +194,9 @@ mihomo_subscription_enable_runtime() {
   fi
 
   dir="$MIHOMO_SUBSCRIPTION_DIR"
-  compose_file="$dir/docker-compose.yml"
+  compose_file="$(mihomo_subscription_find_compose_file "$dir" || true)"
   [ -f "$compose_file" ] || {
-    echo "❌ 未找到该安装目录的 docker-compose.yml，无法安全配置自动更新。"
+    echo "❌ 未找到该安装目录的 Compose 文件（compose.yaml、compose.yml、docker-compose.yaml 或 docker-compose.yml），无法安全配置自动更新。"
     return 1
   }
   if grep -Eq '^[[:space:]]+build:' "$compose_file"; then
