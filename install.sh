@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.13.01"
+APP_VERSION="2026.09.14.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -703,6 +703,46 @@ function show_menu() {
 # 全局保存用户选择的 macvlan 网络名
 SELECTED_MACVLAN=""
 
+# 部分 OpenWrt 的 Bash 仍是 3.2；优先使用较新 Bash 的内建能力，
+# 仅在缺少时使用兼容 fallback。
+bash_supports_mapfile() {
+    type mapfile >/dev/null 2>&1
+}
+
+bash_supports_associative_arrays() {
+    [ "${BASH_VERSINFO[0]:-0}" -ge 4 ]
+}
+
+list_macvlan_networks() {
+    local net
+    MACVLAN_NETWORKS=()
+    if bash_supports_mapfile; then
+        mapfile -t MACVLAN_NETWORKS < <(docker network ls --format '{{.Name}}' | grep '^macvlan' || true)
+    else
+        while IFS= read -r net; do
+            [ -n "$net" ] && MACVLAN_NETWORKS+=("$net")
+        done < <(docker network ls --format '{{.Name}}' | grep '^macvlan' || true)
+    fi
+}
+
+macvlan_networks_for_parent() {
+    local wanted_parent="$1" net parent result=""
+    while IFS= read -r net; do
+        parent="$(docker network inspect "$net" -f '{{.Options.parent}}' 2>/dev/null)"
+        [ "$parent" = "$wanted_parent" ] && result="${result}${net} "
+    done < <(docker network ls --filter driver=macvlan --format '{{.Name}}')
+    printf '%s' "$result"
+}
+
+macvlan_parent_in_use() {
+    local wanted_parent="$1" net parent
+    while IFS= read -r net; do
+        parent="$(docker network inspect "$net" -f '{{.Options.parent}}' 2>/dev/null)"
+        [ "$parent" = "$wanted_parent" ] && return 0
+    done < <(docker network ls --filter driver=macvlan --format '{{.Name}}')
+    return 1
+}
+
 # 显示一个 macvlan 网络的关键地址范围；供所有 macvlan 选择菜单复用。
 show_macvlan_network_summary() {
     local index="$1" net="$2" network_info
@@ -731,7 +771,8 @@ show_macvlan_network_summary() {
 
 # 选择 macvlan；所有容器安装和 macvlan bridge 配置共用。
 select_macvlan_or_exit() {
-    mapfile -t macvlan_networks < <(docker network ls --format '{{.Name}}' | grep '^macvlan' || true)
+    list_macvlan_networks
+    local macvlan_networks=("${MACVLAN_NETWORKS[@]}")
     if [ ${#macvlan_networks[@]} -eq 0 ]; then
         echo "❌ 未发现任何以 macvlan 开头的 Docker 网络，请先创建 macvlan 网络。"
         return 1
@@ -2133,13 +2174,14 @@ create_macvlan_network() {
     return 1
   fi
 
-  # 收集 macvlan 网络与 parent 接口的映射
-  declare -A MACVLAN_BY_PARENT
-
-  while IFS= read -r net; do
-    parent="$(docker network inspect "$net" -f '{{.Options.parent}}' 2>/dev/null)"
-    [ -n "$parent" ] && MACVLAN_BY_PARENT["$parent"]+="$net "
-  done < <(docker network ls --filter driver=macvlan --format '{{.Name}}')
+  # 新版 Bash 使用关联数组预先索引；Bash 3.2 使用按接口查询的兼容路径。
+  if bash_supports_associative_arrays; then
+    declare -A MACVLAN_BY_PARENT
+    while IFS= read -r net; do
+      parent="$(docker network inspect "$net" -f '{{.Options.parent}}' 2>/dev/null)"
+      [ -n "$parent" ] && MACVLAN_BY_PARENT["$parent"]+="$net "
+    done < <(docker network ls --filter driver=macvlan --format '{{.Name}}')
+  fi
 
   echo "请选择 parent 接口（可选物理口 / VLAN 子接口 / OVS bridge 口）："
   local i ip4 ip6 macvlans
@@ -2149,7 +2191,11 @@ create_macvlan_network() {
     ip4="$(ip -4 addr show "$iface" 2>/dev/null | awk '/ inet /{print $2}' | head -n1)"
     ip6="$(ip -6 addr show "$iface" 2>/dev/null | awk '/ inet6 / && $2 ~ /^fd/{print $2}' | head -n1)"
 
-    macvlans="${MACVLAN_BY_PARENT[$iface]}"
+    if bash_supports_associative_arrays; then
+      macvlans="${MACVLAN_BY_PARENT[$iface]}"
+    else
+      macvlans="$(macvlan_networks_for_parent "$iface")"
+    fi
     if [ -n "$macvlans" ]; then
       echo "$((i + 1))）$iface  IPv4: ${ip4:-无}  ULA: ${ip6:-无}"
       echo "    ↳ 已存在 macvlan: $macvlans"
@@ -4247,7 +4293,8 @@ clean_macvlan_network() {
     echo "🧹 删除 Docker macvlan 网络"
 
     # 找出所有以 macvlan 开头的 Docker 网络
-    mapfile -t macvlan_networks < <(docker network ls --format '{{.Name}}' | grep '^macvlan' || true)
+    list_macvlan_networks
+    local macvlan_networks=("${MACVLAN_NETWORKS[@]}")
 
     if [ ${#macvlan_networks[@]} -eq 0 ]; then
         echo "ℹ️ 当前没有任何以 macvlan 开头的 Docker 网络。"
@@ -4283,25 +4330,23 @@ clean_macvlan_network() {
         return 0
     fi
 
-    # 先构建剩余网络的 <phys>_<vlan> 索引，用于判断 VLAN 是否仍被其他 macvlan 使用
-    declare -A remain_key_count
-    for net in "${macvlan_networks[@]}"; do
-        skip=false
-        for del in "${to_delete[@]}"; do
-            [[ "$net" == "$del" ]] && { skip=true; break; }
+    if bash_supports_associative_arrays; then
+        # Bash 4：预先统计未删除网络对各 VLAN parent 的引用。
+        declare -A remain_key_count
+        for net in "${macvlan_networks[@]}"; do
+            skip=false
+            for del in "${to_delete[@]}"; do
+                [[ "$net" == "$del" ]] && { skip=true; break; }
+            done
+            $skip && continue
+            if [[ "$net" =~ ^macvlan_([A-Za-z0-9_-]+)_([0-9]+)$ ]]; then
+                phys="${BASH_REMATCH[1]}"
+                vid="${BASH_REMATCH[2]}"
+                key="${phys}_${vid}"
+                remain_key_count["$key"]=$(( ${remain_key_count["$key"]:-0} + 1 ))
+            fi
         done
-        $skip && continue
-        # 解析 macvlan_<phys> 或 macvlan_<phys>_<vid>
-        if [[ "$net" =~ ^macvlan_([A-Za-z0-9_-]+)_([0-9]+)$ ]]; then
-            phys="${BASH_REMATCH[1]}"
-            vid="${BASH_REMATCH[2]}"
-            key="${phys}_${vid}"
-            remain_key_count["$key"]=$(( ${remain_key_count["$key"]:-0} + 1 ))
-        elif [[ "$net" =~ ^macvlan_([A-Za-z0-9_-]+)$ ]]; then
-            phys="${BASH_REMATCH[1]}"
-            # 无 VLAN 的网络，不涉及删除子接口
-        fi
-    done
+    fi
 
     for net in "${to_delete[@]}"; do
         echo
@@ -4330,9 +4375,11 @@ clean_macvlan_network() {
             phys_safe="${BASH_REMATCH[1]}"
             vid="${BASH_REMATCH[2]}"
 
-            # 如果其它 macvlan 仍在用相同 <phys>_<vid>，则不删除该 VLAN 子接口
-            key="${phys_safe}_${vid}"
-            if [ "${remain_key_count[$key]:-0}" -gt 0 ]; then
+            # Bash 4 使用创建前的索引；Bash 3.2 则在删除后查询剩余网络。
+            if bash_supports_associative_arrays && [ "${remain_key_count[$key]:-0}" -gt 0 ]; then
+                echo "ℹ️ 仍有其它 macvlan 使用 ${phys_safe}.${vid}，跳过删除该 VLAN 子接口。"
+                continue
+            elif ! bash_supports_associative_arrays && macvlan_parent_in_use "${phys_safe}.${vid}"; then
                 echo "ℹ️ 仍有其它 macvlan 使用 ${phys_safe}.${vid}，跳过删除该 VLAN 子接口。"
                 continue
             fi
