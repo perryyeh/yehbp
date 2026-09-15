@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.16.01"
+APP_VERSION="2026.09.16.02"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -167,7 +167,7 @@ download_yehbp_asset() {
 
     mkdir -p "$(dirname "$dst")" || return 1
     require_curl_for_configured_proxy || return 1
-    yehbp_curl --connect-timeout 10 --max-time 30 -fsSL "$url" -o "$dst" || {
+    yehbp_curl --retry 3 --retry-delay 1 --connect-timeout 10 --max-time 30 -fsSL "$url" -o "$dst" || {
         rm -f "$dst"
         echo "❌ 下载失败（30s 超时或网络错误）：$src；请重试。"
         return 1
