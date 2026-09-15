@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.14.11"
+APP_VERSION="2026.09.16.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -598,10 +598,11 @@ install_dependencies() {
     return 1
 }
 
-install_python3_for_dockcheck() {
+install_python3() {
+    local feature="${1:-此功能}"
     command -v python3 >/dev/null 2>&1 && return 0
 
-    echo "⬇️ Dockcheck 需要 python3，正在安装…"
+    echo "⬇️ ${feature} 需要 python3，正在安装…"
     if is_openwrt; then
         opkg update && opkg install python3
     elif command -v apt-get >/dev/null 2>&1; then
@@ -619,6 +620,10 @@ install_python3_for_dockcheck() {
         return 1
     fi
     echo "✅ python3 已安装：$(python3 --version 2>&1)"
+}
+
+install_python3_for_dockcheck() {
+    install_python3 "Dockcheck"
 }
 
 openwrt_dockcheck_xargs_compatible() {
@@ -675,6 +680,7 @@ function show_menu() {
     echo "19）安装mosdns"
     echo "20）安装mihomo"
     echo "21）配置mihomo订阅"
+    echo "22）管理原生 Mihomo 配置订阅"
     echo "25）安装ddns-go"
     echo "26）安装lucky"
     echo "60）安装 Portainer Server（管理服务器）"
@@ -5974,6 +5980,19 @@ load_mihomo_subscription_asset() {
     rm -f "$asset"
 }
 
+load_native_mihomo_subscription_asset() {
+    local asset
+    asset="$(mktemp /tmp/yehbp-native-mihomo-subscription.XXXXXX)" || return 1
+    if ! download_yehbp_asset "assets/mihomo/native-subscription.sh" "$asset" || ! bash -n "$asset"; then
+        echo "❌ 原生 Mihomo 订阅功能脚本下载或语法检查失败。"
+        rm -f "$asset"
+        return 1
+    fi
+    # shellcheck disable=SC1090
+    . "$asset"
+    rm -f "$asset"
+}
+
 manage_mihomo_subscription_menu() {
     local choice
 
@@ -5998,6 +6017,12 @@ manage_mihomo_subscription_menu() {
         3) mihomo_subscription_delete ;;
         4) mihomo_subscription_show_log ;;
     esac
+}
+
+manage_native_mihomo_subscription() {
+    echo "ℹ️ 正在下载原生 Mihomo 订阅功能脚本（最多等待 30 秒）…"
+    load_native_mihomo_subscription_asset || return 1
+    manage_native_mihomo_subscription_menu
 }
 
 # ========== 主循环 ==========
@@ -6029,6 +6054,7 @@ while true; do
         19) install_mosdns ;;
         20) install_mihomo ;;
         21) manage_mihomo_subscription_menu ;;
+        22) manage_native_mihomo_subscription ;;
         25) install_ddnsgo ;;
         26) install_lucky ;;
         65) manage_dockcheck_auto_update ;;

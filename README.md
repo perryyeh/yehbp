@@ -54,6 +54,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 19 | 安装 mosdns                   |
 | 20 | 安装 mihomo                   |
 | 21 | 配置mihomo订阅             |
+| 22 | 管理原生 Mihomo 配置订阅       |
 | 25 | 安装 ddnsgo                   |
 | 26 | 安装 lucky                    |
 | 60 | 安装 Portainer Server（管理服务器） |
@@ -304,31 +305,37 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 
 首次配置会在需要时提示启用容器内自动更新。订阅配置保存在权限为 `0600` 的 `subscription.conf`；未配置时 `subscription.conf` 和 `subscription.log` 不存在。删除订阅会恢复原本地配置并保留 `subscription.sh`。
 
-#### 6.2 查看已安装信息/安装/删除/升级/重启 IPTV（rtp2httpd）（菜单 80）
+#### 6.2 管理原生 Mihomo 配置订阅（菜单 22）
+
+仅支持由 OpenWrt `procd` 管理、启动命令含 `mihomo -d <配置目录>` 的原生 Mihomo 实例。订阅元数据与 Mihomo 配置放在同一目录：`subscription.conf`（权限 `0600`）只保存完整配置 URL，`subscription.log`（权限 `0600`）只保留含当天在内最近 7 个日历日的更新结果，不记录 URL、Token 或节点内容。
+
+立即更新会下载到配置目录内的临时文件，以该实例的 Mihomo 二进制和配置目录执行校验；校验成功且内容发生变化时，首次更新仅创建一份 `config.yaml.backup` 原始配置备份，再原子替换固定文件名 `config.yaml` 并重启对应 procd 服务。下载、校验、替换或重启失败时，当前配置保持不变；若重启新配置失败，自动恢复更新前的临时回滚副本。配置内容相同时不会替换或重启。删除订阅只删除 `subscription.conf` 和 `subscription.log`，不会修改 `config.yaml` 或重启 Mihomo。
+
+#### 6.3 查看已安装信息/安装/删除/升级/重启 IPTV（rtp2httpd）（菜单 80）
 
 仅支持 **NetworkManager + systemd** 的 Linux/NAS，不支持 OpenWrt。菜单可查看一个或全部实例的已安装信息，并提供安装/设置 rtp2httpd、删除配置、升级共享二进制和重启选定实例；安装/设置时需输入组播 VLAN、FCC VLAN、FCC 地址方式及本机 IPv4 监听地址/端口（默认 `5140`）。FCC 地址方式默认 DHCP；选择静态 IPv4 时需输入 `地址/前缀` 与同网段网关。
 
 二进制从 [stackia/rtp2httpd](https://github.com/stackia/rtp2httpd) 官方 release 下载并校验 SHA-256。删除只移除 YehBP 创建的配置、service 与 VLAN profile，保留共享二进制和既有网络配置。
 
-#### 6.3 安装/设置/删除/升级 Dockcheck（菜单 65）
+#### 6.4 安装/设置/删除/升级 Dockcheck（菜单 65）
 
 菜单 `65` 管理 Dockcheck（状态、安装/设置、删除、升级）；组件安装在所选 `dockerapps/_auto_update`，Dockcheck 直接从上游下载。Linux/NAS 可选 systemd 定时更新；OpenWrt 可选创建带 YehBP 专用标记的每日 `cron` 任务，删除 Dockcheck 时会移除该任务。
 
-#### 6.4 检查/更新 Docker 镜像（菜单 66）
+#### 6.5 检查/更新 Docker 镜像（菜单 66）
 
 菜单 `66` 可手动检查或更新 Docker 镜像；compose 容器可更新，非 compose 容器仅检查/拉取镜像而不重建。
 
-#### 6.5 恢复/启动 Docker Compose 容器（菜单 68）
+#### 6.6 恢复/启动 Docker Compose 容器（菜单 68）
 
 菜单 `68` 先列出正在运行且可定位 Compose 工作目录的容器，选择后会校验当前 Compose/.env。若该项目已有运行容器，才会询问是否强制重新创建全部服务；若没有运行容器，则直接按当前 Compose/.env 创建或启动。选择 `m` 可改为选择一个 `dockerapps` 根目录，再只列出其下一级目录内的 `compose.yaml`、`compose.yml`、`docker-compose.yaml` 或 `docker-compose.yml` 项目，不递归深入。不会 build 镜像，也不会删除 orphan 容器。
 
-#### 6.6 删除 Docker 容器、镜像和 Compose 目录（菜单 69）
+#### 6.7 删除 Docker 容器、镜像和 Compose 目录（菜单 69）
 
 菜单 `69` 列出所有容器（含已停止容器），选择后会二次确认并强制删除该容器。未被其他容器引用的镜像会一并删除；若镜像仍被其他容器引用，会明确列出这些容器并保留镜像，随后继续 Compose 目录处理。
 
 对于具有 Docker Compose `com.docker.compose.project.working_dir` 标签的容器，删除完成后可输入 `y` 删除该 Compose 所在目录。此操作仅删除标签指向的 working_dir，**不会删除**该 Compose 通过 bind mount 引用的其他主机目录，也不会删除 Docker volumes；没有该标签、标签不是安全的绝对路径或目录已不存在时，不会删除任何主机目录。
 
-#### 6.7 配置 Portainer AGENT_SECRET（菜单 62）
+#### 6.8 配置 Portainer AGENT_SECRET（菜单 62）
 
 菜单 `62` 会先显示“配置 Portainer AGENT_SECRET”并列出本机检测到的 Portainer Server 与 Agent 容器，选择单个序号或 `0` 返回。该 Secret 必须在同一 Portainer Server 管理的全部 Server/Agent 使用相同值。为让新增环境变量生效，脚本会备份选中容器的 Compose 与 `.env` 配置，写入权限为 `0600` 的 `.env`，再通过 Compose 强制重建该容器并验证 Secret 已注入；仅支持带完整 Docker Compose 标签的本地部署。
 
