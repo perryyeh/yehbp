@@ -165,7 +165,7 @@ native_mihomo_manual_update() {
   fi
 
   candidate="$(mktemp "$NATIVE_MIHOMO_DIR/.subscription-config.XXXXXX")" || { rmdir "$lock"; return 1; }
-  if ! curl --connect-timeout 15 --max-time 120 --fail --location --silent --show-error "$url" -o "$candidate" || [ ! -s "$candidate" ]; then
+  if ! curl --retry 3 --retry-delay 1 --connect-timeout 15 --max-time 120 --fail --location --silent --show-error "$url" -o "$candidate" || [ ! -s "$candidate" ]; then
     rm -f "$candidate"
     rmdir "$lock"
     native_mihomo_log_event "$NATIVE_MIHOMO_DIR" "失败：订阅下载失败，运行中的 config.yaml 未修改。"
