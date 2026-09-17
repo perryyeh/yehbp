@@ -88,10 +88,16 @@ curl -fsSL https://raw.githubusercontent.com/perryyeh/yehbp/main/install.sh | su
 curl -fsSL https://raw.githubusercontent.com/perryyeh/yehbp/main/install.sh | bash
 ```
 
-安装后直接运行：
+YehBP 主程序安装在 `/usr/local/bin/yehbp`。多数 Linux/NAS 与部分 OpenWrt 固件已将 `/usr/local/bin` 加入 root 的 `PATH`，安装后可直接运行：
 
 ```bash
 sudo yehbp
+```
+
+部分 OpenWrt 衍生固件的 root `PATH` 不含 `/usr/local/bin`。安装器会在 `/usr/bin` 已位于 `PATH` 且未存在同名文件时，自动创建兼容软链接 `/usr/bin/yehbp -> /usr/local/bin/yehbp`，因此重新登录后仍可直接运行 `yehbp`。若安装器提示未能创建兼容命令，请使用完整路径：
+
+```sh
+/usr/local/bin/yehbp
 ```
 
 每次运行 `yehbp` 时会检查仓库版本。如果发现新版本，会提示是否升级：
@@ -116,12 +122,15 @@ sudo yehbp
 999 / del / delete / uninstall / remove / rm
 ```
 
-脚本会二次确认后删除 `/usr/local/bin/yehbp`、同目录 SOCKS5 配置 `/usr/local/bin/yehbpproxy.conf` 和历史备份 `/usr/local/bin/yehbp.bak-*`，不会删除已安装的 Docker 容器、配置目录、macvlan、systemd 服务等。
+脚本会二次确认后删除 `/usr/local/bin/yehbp`、仅当其明确指向该主程序时的兼容软链接 `/usr/bin/yehbp`、同目录 SOCKS5 配置 `/usr/local/bin/yehbpproxy.conf` 和历史备份 `/usr/local/bin/yehbp.bak-*`，不会删除已安装的 Docker 容器、配置目录、macvlan、systemd 服务等。
 
 也可以手动删除：
 
 ```bash
 sudo rm -f /usr/local/bin/yehbp /usr/local/bin/yehbpproxy.conf /usr/local/bin/yehbp.bak-*
+if [ "$(readlink /usr/bin/yehbp 2>/dev/null)" = "/usr/local/bin/yehbp" ]; then
+  sudo rm -f /usr/bin/yehbp
+fi
 ```
 
 ### SOCKS5 下载代理（菜单 89）

@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.16.03"
+APP_VERSION="2026.09.17.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -10,6 +10,7 @@ RAW_VERSION_URL="${RAW_GITHUB_BASE}/VERSION"
 RAW_ASSET_BASE="${RAW_GITHUB_BASE}"
 DOCKCHECK_URL="https://raw.githubusercontent.com/mag37/dockcheck/main/dockcheck.sh"
 INSTALL_BIN="/usr/local/bin/${APP_NAME}"
+COMMAND_SHIM="/usr/bin/${APP_NAME}"
 SOCKS5_PROXY_CONFIG="$(dirname "$INSTALL_BIN")/${APP_NAME}proxy.conf"
 PLATFORM=""
 
@@ -286,6 +287,48 @@ dockcheck_version_gt() {
     return 1
 }
 
+path_has_dir() {
+    case ":${PATH:-}:" in
+        *":$1:"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+ensure_yehbp_command_shim() {
+    local install_dir shim_dir shim_target
+    install_dir="$(dirname "$INSTALL_BIN")"
+    shim_dir="$(dirname "$COMMAND_SHIM")"
+
+    # /usr/local/bin is the conventional install location. Some OpenWrt-based
+    # firmware images omit it from root's PATH but include /usr/bin instead.
+    path_has_dir "$install_dir" && return 0
+    if ! path_has_dir "$shim_dir"; then
+        echo "⚠️ 当前 PATH 不含 ${install_dir}，且 ${shim_dir} 也不在 PATH；请使用 ${INSTALL_BIN} 运行。"
+        return 0
+    fi
+
+    if [ -e "$COMMAND_SHIM" ] || [ -L "$COMMAND_SHIM" ]; then
+        shim_target="$(readlink "$COMMAND_SHIM" 2>/dev/null || true)"
+        if [ "$shim_target" = "$INSTALL_BIN" ]; then
+            return 0
+        fi
+        echo "⚠️ 当前 PATH 不含 ${install_dir}，但 ${COMMAND_SHIM} 已存在；未覆盖它。请使用 ${INSTALL_BIN} 运行。"
+        return 0
+    fi
+
+    ln -s "$INSTALL_BIN" "$COMMAND_SHIM" || return 1
+    echo "ℹ️ 当前 PATH 不含 ${install_dir}，已创建兼容命令：${COMMAND_SHIM} -> ${INSTALL_BIN}"
+}
+
+remove_yehbp_command_shim() {
+    local shim_target
+    [ -L "$COMMAND_SHIM" ] || return 0
+    shim_target="$(readlink "$COMMAND_SHIM" 2>/dev/null || true)"
+    [ "$shim_target" = "$INSTALL_BIN" ] || return 0
+    rm -f "$COMMAND_SHIM" || return 1
+    echo "✅ 已删除兼容命令：${COMMAND_SHIM}"
+}
+
 install_yehbp_from_file() {
     local src="$1"
     local backup_mode="${2:-no-backup}"
@@ -309,6 +352,8 @@ install_yehbp_from_file() {
         cp "$src" "$INSTALL_BIN" || return 1
         chmod 0755 "$INSTALL_BIN" || return 1
     fi
+
+    ensure_yehbp_command_shim
 }
 
 install_yehbp_cli() {
@@ -357,7 +402,7 @@ uninstall_yehbp_cli() {
     local ans
 
     echo "⚠️ 将删除 ${INSTALL_BIN}。"
-    echo "ℹ️ 这只会删除 ${APP_NAME} 命令和历史备份 ${INSTALL_BIN}.bak-*，不会删除已安装的 Docker 容器、配置目录、macvlan、systemd 服务等。"
+    echo "ℹ️ 这只会删除 ${APP_NAME} 命令、其兼容软链接和历史备份 ${INSTALL_BIN}.bak-*，不会删除已安装的 Docker 容器、配置目录、macvlan、systemd 服务等。"
     read -r -p "确认删除？[y/N]: " ans
     if [[ ! "$ans" =~ ^[Yy]$ ]]; then
         echo "ℹ️ 已取消删除。"
@@ -370,6 +415,8 @@ uninstall_yehbp_cli() {
     else
         echo "ℹ️ 未找到：${INSTALL_BIN}"
     fi
+
+    remove_yehbp_command_shim || return 1
 
     if compgen -G "${INSTALL_BIN}.bak-*" >/dev/null; then
         rm -f ${INSTALL_BIN}.bak-* || return 1
