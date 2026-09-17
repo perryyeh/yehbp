@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.17.01"
+APP_VERSION="2026.09.17.02"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -328,6 +328,13 @@ remove_yehbp_command_shim() {
     rm -f "$COMMAND_SHIM" || return 1
     echo "✅ 已删除兼容命令：${COMMAND_SHIM}"
 }
+
+# Existing installations can be upgraded by an older script that predates the
+# compatibility shim. Repair that case as soon as the newly installed command
+# is started, without creating a dangling link during a first failed install.
+if [ -x "$INSTALL_BIN" ]; then
+    ensure_yehbp_command_shim || echo "⚠️ 未能创建 ${COMMAND_SHIM}；请使用 ${INSTALL_BIN} 运行。"
+fi
 
 install_yehbp_from_file() {
     local src="$1"
