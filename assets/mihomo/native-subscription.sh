@@ -132,7 +132,7 @@ native_mihomo_add_or_replace() {
   [ -f "$conf" ] && existing="$(native_mihomo_read_url "$conf")"
 
   if [ -n "$existing" ]; then
-    read -r -p "订阅 URL（回车保留当前值，不回显）: " url
+    read -r -p "订阅 URL（回车使用当前值：$existing；如需修改请输入新值）: " url
     url="${url:-$existing}"
   else
     read -r -p "请输入完整 Mihomo 配置订阅 URL: " url
