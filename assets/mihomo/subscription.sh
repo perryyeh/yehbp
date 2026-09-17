@@ -340,7 +340,7 @@ mihomo_subscription_add_or_replace() {
   fi
 
   if [ -n "$existing_url" ]; then
-    read -r -p "订阅 URL（回车保留当前值：$existing_url）: " url
+    read -r -p "订阅 URL（回车使用当前值：$existing_url；如需修改请输入新值）: " url
     url="${url:-$existing_url}"
   else
     read -r -p "请输入完整 Mihomo YAML 订阅 URL: " url
