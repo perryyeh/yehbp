@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.18.01"
+APP_VERSION="2026.09.18.02"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -1797,13 +1797,13 @@ repo_stage_update() {
 # 容器层（停旧 → 起新 → 更新/回滚）
 compose_deploy_with_repo_switch() {
   # 用法（推荐）：
-  #   compose_deploy_with_repo_switch "mihomo" "mihomo" compose.yaml compose.ipv6.yaml
+  #   compose_deploy_with_repo_switch "mihomo" compose.yaml compose.ipv6.yaml
   #
   # 依赖 repo_stage_update 已经被调用过，且设置了全局变量：
   #   WORK_DIR NEED_SWITCH TARGET_DIR BAK_DIR
 
   local name="$1"; shift
-  local svc="$1"; shift
+  local svc="$name"
   local -a files=("$@")
 
   local -a COMPOSE
@@ -1821,9 +1821,10 @@ compose_deploy_with_repo_switch() {
   local -a fargs=()
   for f in "${files[@]}"; do fargs+=("-f" "$f"); done
 
-  # ✅ 固定 project name：确保 next/正式 两次 up 属于同一个项目
+  # 用户输入的唯一名称同时作为 Compose project 和容器名，确保
+  # next/正式两次 up 属于同一个项目。
   local PROJECT
-  PROJECT="$name"         # 或者你想用 "$svc" / dir_name，都行，但要稳定
+  PROJECT="$name"
   local -a pargs=(-p "$PROJECT")
 
   # A) 先在 WORK_DIR 做 config 校验（不碰容器）
@@ -3047,6 +3048,14 @@ EOF
     fi
 }
 
+validate_compose_app_name() {
+    local name="$1"
+    if [[ ! "$name" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
+        echo "❌ 名称无效：'$name'。只能使用小写字母、数字、_、-，且必须以字母或数字开头。"
+        return 1
+    fi
+}
+
 install_librespeed() {
 
     echo "🔧 安装 LibreSpeed（需要选择 macvlan 网络）"
@@ -3087,6 +3096,7 @@ install_librespeed() {
     local CONTAINER_NAME
     read -r -p "请输入容器名称（回车默认使用 '$DEFAULT_CONTAINER_NAME'）: " CONTAINER_NAME
     CONTAINER_NAME=${CONTAINER_NAME:-$DEFAULT_CONTAINER_NAME}
+    validate_compose_app_name "$CONTAINER_NAME" || return 1
 
     # 6) 仓库分阶段更新：目录名使用用户输入的容器名
     local REPO_URL="https://github.com/perryyeh/librespeed.git"
@@ -3122,7 +3132,7 @@ EOF
     fi
 
     # 9) 一步部署：校验 -> 停旧备份 -> 起新 -> next->正式 -> 正式再up -> 失败回滚
-    compose_deploy_with_repo_switch "$CONTAINER_NAME" "$CONTAINER_NAME" "compose.yaml" || return 1
+    compose_deploy_with_repo_switch "$CONTAINER_NAME" "compose.yaml" || return 1
 
     echo "✅ LibreSpeed 已启动"
     echo "容器名称：${CONTAINER_NAME}"
@@ -3187,6 +3197,7 @@ install_adguardhome() {
     local CONTAINER_NAME
     read -r -p "请输入容器名称（回车默认使用 '$DEFAULT_CONTAINER_NAME'）: " CONTAINER_NAME
     CONTAINER_NAME=${CONTAINER_NAME:-$DEFAULT_CONTAINER_NAME}
+    validate_compose_app_name "$CONTAINER_NAME" || return 1
 
     # 5) 更新/获取仓库（stage：设置 WORK_DIR / NEED_SWITCH / TARGET_DIR / BAK_DIR）
     local REPO_URL="https://github.com/perryyeh/adguardhome.git"
@@ -3252,7 +3263,7 @@ install_adguardhome() {
 
     # 10) 一步部署：校验 -> 停旧备份 -> 起新 -> next->正式 -> 正式再up -> 失败回滚
     #     （注意：第二个参数是容器名，必须和 compose 里的 container_name 一致）
-    compose_deploy_with_repo_switch "$CONTAINER_NAME" "$CONTAINER_NAME" "${compose_files[@]}" || return 1
+    compose_deploy_with_repo_switch "$CONTAINER_NAME" "${compose_files[@]}" || return 1
 
     echo "✅ AdGuardHome 已启动"
     echo "  容器名称   : ${CONTAINER_NAME}"
@@ -3442,6 +3453,7 @@ install_mosdns() {
     local CONTAINER_NAME
     read -r -p "请输入容器名称（回车默认使用 '$DEFAULT_CONTAINER_NAME'）: " CONTAINER_NAME
     CONTAINER_NAME=${CONTAINER_NAME:-$DEFAULT_CONTAINER_NAME}
+    validate_compose_app_name "$CONTAINER_NAME" || return 1
 
     # 6) 仓库更新：
     local REPO_URL="https://github.com/perryyeh/mosdns.git"
@@ -3576,7 +3588,7 @@ EOF
         remove_compose_ipv6_fields compose.yaml
     fi
     # 10）一步部署：校验 -> 停旧备份 -> 起新 -> next->正式 -> 正式再up -> 失败回滚
-    compose_deploy_with_repo_switch "$CONTAINER_NAME" "$CONTAINER_NAME" "${compose_files[@]}" || return 1
+    compose_deploy_with_repo_switch "$CONTAINER_NAME" "${compose_files[@]}" || return 1
 
     echo "✅ mosdns 已启动"
     echo "  容器名称   : ${CONTAINER_NAME}"
@@ -3758,6 +3770,7 @@ install_mihomo() {
     local CONTAINER_NAME
     read -r -p "请输入容器名称（回车默认使用 '$DEFAULT_CONTAINER_NAME'）: " CONTAINER_NAME
     CONTAINER_NAME=${CONTAINER_NAME:-$DEFAULT_CONTAINER_NAME}
+    validate_compose_app_name "$CONTAINER_NAME" || return 1
 
     # 4) repo 分阶段更新（内部会设置 WORK_DIR / NEED_SWITCH / BAK_DIR 等全局变量）
     REPO_URL="https://github.com/perryyeh/mihomo.git"
@@ -3844,7 +3857,7 @@ install_mihomo() {
     local compose_files=(compose.yaml)
 
     # 10) 一步部署：校验 -> 停旧备份 -> 起新 -> next->正式 -> 正式再up -> 失败回滚
-    compose_deploy_with_repo_switch "$CONTAINER_NAME" "$CONTAINER_NAME" "${compose_files[@]}" || return 1
+    compose_deploy_with_repo_switch "$CONTAINER_NAME" "${compose_files[@]}" || return 1
 
     # 11) 输出访问地址
     echo "✅ mihomo 已启动"
@@ -3946,6 +3959,7 @@ install_ddnsgo() {
     local CONTAINER_NAME
     read -r -p "请输入容器名称（回车默认使用 '$DEFAULT_CONTAINER_NAME'）: " CONTAINER_NAME
     CONTAINER_NAME=${CONTAINER_NAME:-$DEFAULT_CONTAINER_NAME}
+    validate_compose_app_name "$CONTAINER_NAME" || return 1
 
     # 4) repo 分阶段更新：目录名使用用户输入的容器名
     REPO_URL="https://github.com/perryyeh/ddnsgo.git"
@@ -4004,7 +4018,7 @@ install_ddnsgo() {
     local compose_files=(compose.yaml)
 
     # 9) 一步部署：校验 -> 停旧备份 -> 起新 -> next->正式 -> 正式再up -> 失败回滚
-    compose_deploy_with_repo_switch "$CONTAINER_NAME" "$CONTAINER_NAME" "${compose_files[@]}" || return 1
+    compose_deploy_with_repo_switch "$CONTAINER_NAME" "${compose_files[@]}" || return 1
 
     # 10) ddns-go 管理界面地址（默认监听 9876）
     local ddns_port=9876
@@ -4108,6 +4122,7 @@ install_lucky() {
     local CONTAINER_NAME
     read -r -p "请输入容器名称（回车默认使用 '$DEFAULT_CONTAINER_NAME'）: " CONTAINER_NAME
     CONTAINER_NAME=${CONTAINER_NAME:-$DEFAULT_CONTAINER_NAME}
+    validate_compose_app_name "$CONTAINER_NAME" || return 1
 
     # 4) repo 更新：目录名使用用户输入的容器名
     REPO_URL="https://github.com/perryyeh/lucky.git"
@@ -4166,7 +4181,7 @@ install_lucky() {
     local compose_files=(compose.yaml)
 
     # 9) 部署
-    compose_deploy_with_repo_switch "$CONTAINER_NAME" "$CONTAINER_NAME" "${compose_files[@]}" || return 1
+    compose_deploy_with_repo_switch "$CONTAINER_NAME" "${compose_files[@]}" || return 1
 
     # 10) Lucky Web 面板
     local lucky_port=16601
