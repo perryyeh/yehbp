@@ -53,8 +53,8 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 14 | 安装 AdGuardHome              |
 | 19 | 安装 mosdns                   |
 | 20 | 安装 mihomo                   |
-| 21 | 配置mihomo订阅             |
-| 22 | 管理原生 Mihomo 配置订阅       |
+| 21 | 管理 YehBP 安装的 Mihomo 订阅 |
+| 22 | 管理 OpenWrt 原生 Mihomo 订阅 |
 | 25 | 安装 ddnsgo                   |
 | 26 | 安装 lucky                    |
 | 60 | 安装 Portainer Server（管理服务器） |
@@ -308,15 +308,15 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 
 ### 6. 其他
 
-#### 6.1 配置 Mihomo 订阅（菜单 21）
+#### 6.1 管理 YehBP 安装的 Mihomo 订阅（菜单 21）
 
-管理 YehBP 安装的 **macvlan 和 host Mihomo**。选择实例后可添加/修改、立即更新、删除订阅或查看日志；更新间隔默认 `0`（不自动刷新）。可选择按当前模式模板覆盖参数，或原样使用订阅；更新成功后只重载 Mihomo，不重启容器。
+用于 YehBP 安装的 **macvlan 或 host Mihomo**，包括 Docker 容器和宿主机实例；不是管理 OpenWrt 自己安装的原生 Mihomo。选择实例后可添加/修改、立即更新、删除订阅或查看日志；更新间隔默认 `0`（不自动刷新）。可选择按当前模式模板覆盖参数，或原样使用订阅；更新成功后只重载 Mihomo，不重启容器。
 
 首次配置会在需要时提示启用容器内自动更新。订阅配置保存在权限为 `0600` 的 `subscription.conf`；未配置时 `subscription.conf` 和 `subscription.log` 不存在。删除订阅会恢复原本地配置并保留 `subscription.sh`。
 
-#### 6.2 管理原生 Mihomo 配置订阅（菜单 22）
+#### 6.2 管理 OpenWrt 原生 Mihomo 订阅（菜单 22）
 
-仅支持由 OpenWrt `procd` 管理、启动命令含 `mihomo -d <配置目录>` 的原生 Mihomo 实例。订阅元数据与 Mihomo 配置放在同一目录：`subscription.conf`（权限 `0600`）只保存完整配置 URL，`subscription.log`（权限 `0600`）只保留含当天在内最近 7 个日历日的更新结果，不记录 URL、Token 或节点内容。
+用于**不是由 YehBP 安装**、而是直接由 OpenWrt `procd` 管理的 Mihomo（启动命令含 `mihomo -d <配置目录>`）。订阅元数据与 Mihomo 配置放在同一目录：`subscription.conf`（权限 `0600`）只保存完整配置 URL，`subscription.log`（权限 `0600`）只保留含当天在内最近 7 个日历日的更新结果，不记录 URL、Token 或节点内容。
 
 立即更新会下载到配置目录内的临时文件，以该实例的 Mihomo 二进制和配置目录执行校验；校验成功且内容发生变化时，首次更新仅创建一份 `config.yaml.backup` 原始配置备份，再原子替换固定文件名 `config.yaml` 并重启对应 procd 服务。下载、校验、替换或重启失败时，当前配置保持不变；若重启新配置失败，自动恢复更新前的临时回滚副本。配置内容相同时不会替换或重启。删除订阅只删除 `subscription.conf` 和 `subscription.log`，不会修改 `config.yaml` 或重启 Mihomo。
 
