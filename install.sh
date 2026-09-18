@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.17.04"
+APP_VERSION="2026.09.18.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -3122,7 +3122,7 @@ EOF
     fi
 
     # 9) 一步部署：校验 -> 停旧备份 -> 起新 -> next->正式 -> 正式再up -> 失败回滚
-    compose_deploy_with_repo_switch "librespeed" "$CONTAINER_NAME" "compose.yaml" || return 1
+    compose_deploy_with_repo_switch "$CONTAINER_NAME" "$CONTAINER_NAME" "compose.yaml" || return 1
 
     echo "✅ LibreSpeed 已启动"
     echo "容器名称：${CONTAINER_NAME}"
@@ -3252,7 +3252,7 @@ install_adguardhome() {
 
     # 10) 一步部署：校验 -> 停旧备份 -> 起新 -> next->正式 -> 正式再up -> 失败回滚
     #     （注意：第二个参数是容器名，必须和 compose 里的 container_name 一致）
-    compose_deploy_with_repo_switch "adguardhome" "$CONTAINER_NAME" "${compose_files[@]}" || return 1
+    compose_deploy_with_repo_switch "$CONTAINER_NAME" "$CONTAINER_NAME" "${compose_files[@]}" || return 1
 
     echo "✅ AdGuardHome 已启动"
     echo "  容器名称   : ${CONTAINER_NAME}"
@@ -3576,7 +3576,7 @@ EOF
         remove_compose_ipv6_fields compose.yaml
     fi
     # 10）一步部署：校验 -> 停旧备份 -> 起新 -> next->正式 -> 正式再up -> 失败回滚
-    compose_deploy_with_repo_switch "mosdns" "$CONTAINER_NAME" "${compose_files[@]}" || return 1
+    compose_deploy_with_repo_switch "$CONTAINER_NAME" "$CONTAINER_NAME" "${compose_files[@]}" || return 1
 
     echo "✅ mosdns 已启动"
     echo "  容器名称   : ${CONTAINER_NAME}"
@@ -3844,7 +3844,7 @@ install_mihomo() {
     local compose_files=(compose.yaml)
 
     # 10) 一步部署：校验 -> 停旧备份 -> 起新 -> next->正式 -> 正式再up -> 失败回滚
-    compose_deploy_with_repo_switch "mihomo" "$CONTAINER_NAME" "${compose_files[@]}" || return 1
+    compose_deploy_with_repo_switch "$CONTAINER_NAME" "$CONTAINER_NAME" "${compose_files[@]}" || return 1
 
     # 11) 输出访问地址
     echo "✅ mihomo 已启动"
@@ -4004,7 +4004,7 @@ install_ddnsgo() {
     local compose_files=(compose.yaml)
 
     # 9) 一步部署：校验 -> 停旧备份 -> 起新 -> next->正式 -> 正式再up -> 失败回滚
-    compose_deploy_with_repo_switch "ddnsgo" "$CONTAINER_NAME" "${compose_files[@]}" || return 1
+    compose_deploy_with_repo_switch "$CONTAINER_NAME" "$CONTAINER_NAME" "${compose_files[@]}" || return 1
 
     # 10) ddns-go 管理界面地址（默认监听 9876）
     local ddns_port=9876
@@ -4166,7 +4166,7 @@ install_lucky() {
     local compose_files=(compose.yaml)
 
     # 9) 部署
-    compose_deploy_with_repo_switch "lucky" "$CONTAINER_NAME" "${compose_files[@]}" || return 1
+    compose_deploy_with_repo_switch "$CONTAINER_NAME" "$CONTAINER_NAME" "${compose_files[@]}" || return 1
 
     # 10) Lucky Web 面板
     local lucky_port=16601
