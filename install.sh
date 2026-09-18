@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.18.02"
+APP_VERSION="2026.09.18.03"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -1797,7 +1797,7 @@ repo_stage_update() {
 # 容器层（停旧 → 起新 → 更新/回滚）
 compose_deploy_with_repo_switch() {
   # 用法（推荐）：
-  #   compose_deploy_with_repo_switch "mihomo" compose.yaml compose.ipv6.yaml
+  #   compose_deploy_with_repo_switch "mihomo" compose.yaml
   #
   # 依赖 repo_stage_update 已经被调用过，且设置了全局变量：
   #   WORK_DIR NEED_SWITCH TARGET_DIR BAK_DIR
