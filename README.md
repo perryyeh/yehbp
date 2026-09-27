@@ -139,7 +139,7 @@ fi
 
 有效配置会用于 YehBP 的版本检查、升级及功能下载，并通过 `socks5h` 让代理端解析下载域名。配置文件不存在或内容无效时，YehBP 不使用代理；已配置有效代理但系统未安装 `curl` 时，为避免绕过代理，下载会取消而非退回直连。
 
-在 YehBP 的 Compose 应用安装、Portainer/Agent 安装及菜单 `68` 启动项目时，有效 SOCKS5 配置也会用于镜像下载：先用已安装的 [Skopeo](https://github.com/containers/skopeo) 按 Compose 镜像清单复制到本机 Docker，再以 `--pull never --no-build` 启动。**使用前需在目标宿主机安装 `skopeo`，且 Compose 须支持 `up --pull never`**；否则操作会报错停止，不会改走直连。没有配置代理时保留原有 Docker 行为。此设置不改变 Docker daemon 全局代理，也不代理菜单 `66` / Dockcheck 的镜像更新。使用自建镜像（`build:`）或只有摘要、无可用标签的镜像时，不支持此预拉方式。
+在 YehBP 的 Compose 应用安装、Portainer/Agent 安装及菜单 `68` 启动项目时，有效 SOCKS5 配置也会用于镜像下载：脚本使用现有 `curl` 经 SOCKS5 下载公开 Docker Hub 镜像、校验摘要，用 `docker load` 导入后，再以 `--pull never --no-build` 启动。**目标宿主机需要 `curl`、`python3` 和支持 `up --pull never` 的 Compose，不需要 Skopeo**；缺少依赖或下载失败时停止，不改走直连。临时归档放在所选 dockerapps/工作目录并在操作结束后清理。未配置代理时保持原行为；不会改动 Docker daemon 全局代理，也不代理菜单 `66` / Dockcheck 的镜像更新。此下载器仅支持公开 Docker Hub 的镜像标签；其他仓库、私有镜像、摘要引用和自建镜像（`build:`）会报错，不会直连兜底。
 
 ### 3. 设置旁路由步骤
 

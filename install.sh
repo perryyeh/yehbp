@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.27.01"
+APP_VERSION="2026.09.27.02"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -91,26 +91,37 @@ require_curl_for_configured_proxy() {
     fi
 }
 
-# Docker daemon does not inherit this script's SOCKS5 setting. Copy images via
-# skopeo's registry client into the local daemon before Compose starts containers.
+# Docker daemon does not inherit the script's SOCKS5 setting. Fetch public
+# Docker Hub layers with curl, verify digests, then import with docker load.
 yehbp_prefetch_image() {
-    local image="$1" proxy
+    local image="$1" proxy staging platform
     proxy="$(configured_socks5_proxy)" || return 0
-    if ! command -v skopeo >/dev/null 2>&1; then
-        echo "❌ 已配置 SOCKS5，但缺少 skopeo；请先安装 skopeo。拒绝直连拉取镜像：$image"
+    if ! command -v python3 >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1; then
+        echo "❌ 镜像代理下载需要系统已有的 python3 和 curl；未改走直连。"
         return 1
     fi
-    echo "⬇️ 经 SOCKS5 代理拉取镜像：$image"
-    env ALL_PROXY= all_proxy= HTTP_PROXY="$proxy" HTTPS_PROXY="$proxy" \
-        http_proxy="$proxy" https_proxy="$proxy" NO_PROXY= no_proxy= \
-        skopeo copy "docker://$image" "docker-daemon:$image" || {
-        echo "❌ 代理拉取失败，未改走直连：$image"
-        return 1
-    }
-    docker image inspect "$image" >/dev/null 2>&1 || {
-        echo "❌ 镜像导入 Docker 后无法验证：$image"
-        return 1
-    }
+    platform="$(docker info --format '{{.OSType}}/{{.Architecture}}' 2>/dev/null)" || return 1
+    case "$platform" in
+        linux/x86_64) platform=linux/amd64 ;;
+        linux/aarch64) platform=linux/arm64 ;;
+        linux/armv7l) platform=linux/arm/v7 ;;
+        linux/armv6l) platform=linux/arm/v6 ;;
+        linux/*) ;;
+        *) echo "❌ 不支持的 Docker 平台：$platform"; return 1 ;;
+    esac
+    staging="$(mktemp -d "${2:-$(pwd)}/.yehbp-image.XXXXXX")" || return 1
+    (
+        trap 'rm -rf -- "$staging"' EXIT
+        yehbp_curl --connect-timeout 10 --max-time 60 -fsSL \
+            "${RAW_ASSET_BASE}/assets/docker-image-proxy/pull.py" -o "$staging/pull.py" || return 1
+        echo "⬇️ 经 SOCKS5 下载镜像：$image ($platform)"
+        python3 "$staging/pull.py" "$proxy" "$image" "$staging/image.tar" "$platform" || return 1
+        docker image load -i "$staging/image.tar" || return 1
+        docker image inspect "$image" >/dev/null 2>&1 || {
+            echo "❌ 镜像导入后无法验证：$image"
+            return 1
+        }
+    ) || { echo "❌ 镜像代理下载失败，未改走直连：$image"; return 1; }
 }
 
 yehbp_prefetch_compose_images() {
@@ -4305,7 +4316,7 @@ install_portainer() {
     env_file="${portainer_dir}/.env"
     ts="$(date +%Y%m%d-%H%M%S)"
 
-    yehbp_prefetch_image 'portainer/portainer-ce:lts' || return 1
+    yehbp_prefetch_image 'portainer/portainer-ce:lts' "$dockerapps" || return 1
     if docker ps -a --format '{{.Names}}' | grep -qx portainer; then
         echo "🧩 发现旧 Portainer 容器，正在移除..."
         docker rm -f portainer >/dev/null || return 1
@@ -4603,7 +4614,7 @@ install_portainer_agent() {
     compose_file="${agent_dir}/compose.yaml"
     env_file="${agent_dir}/.env"
     ts="$(date +%Y%m%d-%H%M%S)"
-    yehbp_prefetch_image 'portainer/agent:lts' || return 1
+    yehbp_prefetch_image 'portainer/agent:lts' "$dockerapps" || return 1
     if docker ps -a --format '{{.Names}}' | grep -qx portainer_agent; then
         echo "🧩 发现旧 Portainer Agent 容器，正在移除..."
         docker rm -f portainer_agent >/dev/null || return 1
