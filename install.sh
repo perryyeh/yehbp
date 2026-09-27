@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.27.01"
+APP_VERSION="2026.09.18.05"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -88,61 +88,6 @@ require_curl_for_configured_proxy() {
     if configured_socks5_proxy >/dev/null && ! command -v curl >/dev/null 2>&1; then
         echo "❌ 已配置 SOCKS5 代理，但未找到 curl；为避免绕过代理，已取消下载。"
         return 1
-    fi
-}
-
-# Docker daemon does not inherit this script's SOCKS5 setting. Copy images via
-# skopeo's registry client into the local daemon before Compose starts containers.
-yehbp_prefetch_image() {
-    local image="$1" proxy
-    proxy="$(configured_socks5_proxy)" || return 0
-    if ! command -v skopeo >/dev/null 2>&1; then
-        echo "❌ 已配置 SOCKS5，但缺少 skopeo；请先安装 skopeo。拒绝直连拉取镜像：$image"
-        return 1
-    fi
-    echo "⬇️ 经 SOCKS5 代理拉取镜像：$image"
-    env ALL_PROXY= all_proxy= HTTP_PROXY="$proxy" HTTPS_PROXY="$proxy" \
-        http_proxy="$proxy" https_proxy="$proxy" NO_PROXY= no_proxy= \
-        skopeo copy "docker://$image" "docker-daemon:$image" || {
-        echo "❌ 代理拉取失败，未改走直连：$image"
-        return 1
-    }
-    docker image inspect "$image" >/dev/null 2>&1 || {
-        echo "❌ 镜像导入 Docker 后无法验证：$image"
-        return 1
-    }
-}
-
-yehbp_prefetch_compose_images() {
-    local image images
-    configured_socks5_proxy >/dev/null || return 0
-    yehbp_require_compose_pull_never "$@" || return 1
-    # Run from the Compose project directory; pass the exact project/file flags.
-    images="$("$@" config --images)" || {
-        echo "❌ 无法从 Compose 配置读取镜像；已取消安装以避免直连。"
-        return 1
-    }
-    while IFS= read -r image; do
-        [ -n "$image" ] || continue
-        yehbp_prefetch_image "$image" || return 1
-    done <<< "$images"
-}
-
-yehbp_require_compose_pull_never() {
-    local -a cmd=("$@")
-    # The caller passes Compose project/file flags; use the command itself
-    # to detect support, without relying on the installed Compose version.
-    "${cmd[@]}" up --help 2>/dev/null | grep -q -- '--pull' || {
-        echo "❌ 当前 Compose 不支持 up --pull never；无法保证镜像不直连。"
-        return 1
-    }
-}
-
-yehbp_compose_up() {
-    if configured_socks5_proxy >/dev/null; then
-        "$@" --pull never --no-build
-    else
-        "$@"
     fi
 }
 
@@ -1907,9 +1852,6 @@ compose_deploy_with_repo_switch() {
     echo "🔎 [$name] 以兼容配置重新校验 docker compose..."
   done
 
-  # Proxy-fetch all Compose images before touching the existing container.
-  yehbp_prefetch_compose_images "${COMPOSE[@]}" "${pargs[@]}" "${fargs[@]}" || return 1
-
   # B) 备份旧容器（stop + rename）用于回滚
   local ts backup_cname old_running=""
   ts="$(date +%Y%m%d-%H%M%S)"
@@ -1959,7 +1901,7 @@ compose_deploy_with_repo_switch() {
 
   # C) 在 WORK_DIR 启动新容器（next 或正式都一样）
   echo "🚀 [$name] 启动新容器（WORK_DIR=$WORK_DIR）..."
-  if ! yehbp_compose_up "${COMPOSE[@]}" "${pargs[@]}" "${fargs[@]}" up -d --force-recreate; then
+  if ! "${COMPOSE[@]}" "${pargs[@]}" "${fargs[@]}" up -d --force-recreate; then
     echo "❌ [$name] 新容器启动失败，开始回滚..."
     rollback_container
     return 1
@@ -1993,7 +1935,7 @@ compose_deploy_with_repo_switch() {
     # 在正式目录再强制重建一次，确保挂载源稳定到正式路径
     cd "$WORK_DIR" || { echo "❌ 进入目录失败：$WORK_DIR"; rollback_dir; rollback_container; return 1; }
     echo "🚀 [$name] 在正式目录再次重建（确保挂载路径稳定）..."
-    if ! yehbp_compose_up "${COMPOSE[@]}" "${pargs[@]}" "${fargs[@]}" up -d --force-recreate; then
+    if ! "${COMPOSE[@]}" "${pargs[@]}" "${fargs[@]}" up -d --force-recreate; then
       echo "❌ [$name] 正式目录重建失败，开始回滚..."
       rollback_dir
       rollback_container
@@ -4296,16 +4238,12 @@ install_portainer() {
         echo "❌ 未找到 docker compose / docker-compose，无法用 compose 管理 Portainer。"
         return 1
     fi
-    if configured_socks5_proxy >/dev/null; then
-        yehbp_require_compose_pull_never "${COMPOSE[@]}" || return 1
-    fi
 
     portainer_dir="${dockerapps}/portainer"
     compose_file="${portainer_dir}/compose.yaml"
     env_file="${portainer_dir}/.env"
     ts="$(date +%Y%m%d-%H%M%S)"
 
-    yehbp_prefetch_image 'portainer/portainer-ce:lts' || return 1
     if docker ps -a --format '{{.Names}}' | grep -qx portainer; then
         echo "🧩 发现旧 Portainer 容器，正在移除..."
         docker rm -f portainer >/dev/null || return 1
@@ -4337,7 +4275,7 @@ install_portainer() {
     (cd "$portainer_dir" && "${COMPOSE[@]}" -p portainer -f compose.yaml config >/dev/null) || return 1
 
     echo "🚀 使用 compose 启动 Portainer..."
-    (cd "$portainer_dir" && yehbp_compose_up "${COMPOSE[@]}" -p portainer -f compose.yaml up -d) || return 1
+    (cd "$portainer_dir" && "${COMPOSE[@]}" -p portainer -f compose.yaml up -d) || return 1
 
     host_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')"
     [ -z "$host_ip" ] && host_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
@@ -4590,9 +4528,6 @@ install_portainer_agent() {
         echo "❌ 未找到 docker compose / docker-compose，无法用 compose 管理 Portainer Agent。"
         return 1
     fi
-    if configured_socks5_proxy >/dev/null; then
-        yehbp_require_compose_pull_never "${COMPOSE[@]}" || return 1
-    fi
     docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null)"
     if [ -z "$docker_root" ] || [ ! -d "${docker_root}/volumes" ]; then
         echo "❌ 无法识别 Docker volume 目录。"
@@ -4603,7 +4538,6 @@ install_portainer_agent() {
     compose_file="${agent_dir}/compose.yaml"
     env_file="${agent_dir}/.env"
     ts="$(date +%Y%m%d-%H%M%S)"
-    yehbp_prefetch_image 'portainer/agent:lts' || return 1
     if docker ps -a --format '{{.Names}}' | grep -qx portainer_agent; then
         echo "🧩 发现旧 Portainer Agent 容器，正在移除..."
         docker rm -f portainer_agent >/dev/null || return 1
@@ -4632,7 +4566,7 @@ install_portainer_agent() {
     echo "🔎 Portainer Agent compose 校验..."
     (cd "$agent_dir" && "${COMPOSE[@]}" -p portainer_agent -f compose.yaml config >/dev/null) || return 1
     echo "🚀 使用 compose 启动 Portainer Agent..."
-    (cd "$agent_dir" && yehbp_compose_up "${COMPOSE[@]}" -p portainer_agent -f compose.yaml up -d) || return 1
+    (cd "$agent_dir" && "${COMPOSE[@]}" -p portainer_agent -f compose.yaml up -d) || return 1
 
     host_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')"
     [ -z "$host_ip" ] && host_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
@@ -5585,12 +5519,10 @@ restore_docker_compose_project() {
         echo "⚠️ 强制重建会停止并重新创建该项目全部服务，服务将短暂中断。"
         read -r -p "是否强制重新构建？[y/N]: " confirm
         [[ "$confirm" =~ ^[Yy]$ ]] || { echo "ℹ️ 已取消。"; return 0; }
-        (cd "$dir" && yehbp_prefetch_compose_images "${COMPOSE[@]}" -f "$compose_file") || return 1
-        (cd "$dir" && yehbp_compose_up "${COMPOSE[@]}" -f "$compose_file" up -d --no-build --force-recreate)
+        (cd "$dir" && "${COMPOSE[@]}" -f "$compose_file" up -d --no-build --force-recreate)
     else
         echo "▶️ 未检测到该项目的运行中容器，按当前 Compose/.env 创建/启动。"
-        (cd "$dir" && yehbp_prefetch_compose_images "${COMPOSE[@]}" -f "$compose_file") || return 1
-        (cd "$dir" && yehbp_compose_up "${COMPOSE[@]}" -f "$compose_file" up -d --no-build)
+        (cd "$dir" && "${COMPOSE[@]}" -f "$compose_file" up -d --no-build)
     fi || { echo "❌ Compose 恢复/启动失败。"; return 1; }
 
     echo "✅ Compose 项目已处理：$(basename "$dir")"

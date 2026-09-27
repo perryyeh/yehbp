@@ -68,7 +68,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 71 | 优化 Docker 日志               |
 | 72 | 优化 journald 日志             |
 | 80 | 安装/设置/删除/升级/重启 IPTV（rtp2httpd） |
-| 89 | 安装/管理 SOCKS5 代理（含安装镜像） |
+| 89 | 安装/管理 SOCKS5 代理          |
 | 90 | 创建macvlan bridge            |
 | 91 | 删除macvlan bridge            |
 | 99 / exit / quit / q | 退出脚本           |
@@ -138,8 +138,6 @@ fi
 菜单 `89` 可保存一个无认证 SOCKS5 代理。输入格式为 `IP或域名:端口`，也可带 `socks5://` 前缀；有效端口为 `1–65535`。配置保存到与 `yehbp` 命令同目录的 `/usr/local/bin/yehbpproxy.conf`，再次添加会直接替换该单一值，删除操作会删除该文件。
 
 有效配置会用于 YehBP 的版本检查、升级及功能下载，并通过 `socks5h` 让代理端解析下载域名。配置文件不存在或内容无效时，YehBP 不使用代理；已配置有效代理但系统未安装 `curl` 时，为避免绕过代理，下载会取消而非退回直连。
-
-在 YehBP 的 Compose 应用安装、Portainer/Agent 安装及菜单 `68` 启动项目时，有效 SOCKS5 配置也会用于镜像下载：先用已安装的 [Skopeo](https://github.com/containers/skopeo) 按 Compose 镜像清单复制到本机 Docker，再以 `--pull never --no-build` 启动。**使用前需在目标宿主机安装 `skopeo`，且 Compose 须支持 `up --pull never`**；否则操作会报错停止，不会改走直连。没有配置代理时保留原有 Docker 行为。此设置不改变 Docker daemon 全局代理，也不代理菜单 `66` / Dockcheck 的镜像更新。使用自建镜像（`build:`）或只有摘要、无可用标签的镜像时，不支持此预拉方式。
 
 ### 3. 设置旁路由步骤
 
