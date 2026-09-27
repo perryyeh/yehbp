@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.27.03"
+APP_VERSION="2026.09.27.04"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -1968,9 +1968,18 @@ compose_deploy_with_repo_switch() {
     fi
   }
 
+  keep_no_tun_mihomo_for_debug() {
+    [ "${MIHOMO_TUN_DEVICE_SKIPPED:-}" = "$name" ] || return 1
+    docker ps -a --format '{{.Names}}' | grep -qx "$svc" || return 1
+    echo "⚠️ [$name] 新容器 $svc 已保留供排查（可能未运行）；旧容器备份：${backup_cname:-无}；当前目录：$WORK_DIR"
+    docker logs --tail=80 "$svc" 2>/dev/null || true
+    return 0
+  }
+
   # C) 在 WORK_DIR 启动新容器（next 或正式都一样）
   echo "🚀 [$name] 启动新容器（WORK_DIR=$WORK_DIR）..."
   if ! yehbp_compose_up "${COMPOSE[@]}" "${pargs[@]}" "${fargs[@]}" up -d --force-recreate; then
+    keep_no_tun_mihomo_for_debug && return 1
     echo "❌ [$name] 新容器启动失败，开始回滚..."
     rollback_container
     return 1
@@ -2005,6 +2014,7 @@ compose_deploy_with_repo_switch() {
     cd "$WORK_DIR" || { echo "❌ 进入目录失败：$WORK_DIR"; rollback_dir; rollback_container; return 1; }
     echo "🚀 [$name] 在正式目录再次重建（确保挂载路径稳定）..."
     if ! yehbp_compose_up "${COMPOSE[@]}" "${pargs[@]}" "${fargs[@]}" up -d --force-recreate; then
+      keep_no_tun_mihomo_for_debug && return 1
       echo "❌ [$name] 正式目录重建失败，开始回滚..."
       rollback_dir
       rollback_container
@@ -2017,13 +2027,14 @@ compose_deploy_with_repo_switch() {
   if ! docker inspect -f '{{.State.Running}}' "$svc" 2>/dev/null | grep -q true; then
     echo "❌ [$name] 容器未处于 running：$svc"
     docker logs --tail=80 "$svc" 2>/dev/null || true
+    keep_no_tun_mihomo_for_debug && return 1
     echo "❌ [$name] running 检查失败，开始回滚..."
     rollback_dir
     rollback_container
     return 1
   fi
 
-  if [ -n "$backup_cname" ]; then
+  if [ -n "$backup_cname" ] && [ "${MIHOMO_TUN_DEVICE_SKIPPED:-}" != "$name" ]; then
     if docker rm -f "$backup_cname" >/dev/null 2>&1; then
       echo "🗑️ [$name] 新容器启动成功，已删除旧容器备份：$backup_cname"
     else
@@ -3788,7 +3799,7 @@ install_mihomo() {
     echo "🔧 安装 mihomo"
 
     # 0) 选择网络模式
-    local MIHOMO_NETWORK_MODE network_choice
+    local MIHOMO_NETWORK_MODE network_choice MIHOMO_TUN_DEVICE_SKIPPED=""
     echo "请选择 mihomo 网络模式："
     echo "  1）host（使用宿主机网络，适合在外回家）"
     echo "  2）macvlan（独立 LAN IP/MAC，适合旁路由）"
@@ -3808,6 +3819,7 @@ install_mihomo() {
             ;;
     esac
     echo "📡 mihomo 网络模式：$MIHOMO_NETWORK_MODE"
+
 
     # 1) macvlan 模式才选择 macvlan 并计算独立 IP/MAC/Gateway
     local mihomo="" mihomo6="" mihomomac="" gateway="" USE_IPV6=0
@@ -3884,6 +3896,30 @@ install_mihomo() {
     cp "$config_template" config.yaml || return 1
     echo "✅ 已选择 compose 模板：$compose_template -> compose.yaml"
     echo "✅ 已选择 mihomo 配置模板：$config_template -> config.yaml"
+    if [ ! -c /dev/net/tun ]; then
+        # Only adjust the generated compose.yaml. Keep both upstream templates
+        # and the generated Mihomo config unchanged for later TUN debugging.
+        python3 - compose.yaml <<'PY'
+from pathlib import Path
+import sys
+
+compose = Path(sys.argv[1])
+text = compose.read_text()
+device = '    devices:\n      - /dev/net/tun:/dev/net/tun\n'
+if text.count(device) > 1 or (device not in text and '/dev/net/tun' in text):
+    print('❌ 未识别的 TUN 设备映射，未修改 Compose。')
+    sys.exit(1)
+if device in text:
+    compose.write_text(text.replace(device, '', 1))
+PY
+        [ "$?" -eq 0 ] || return 1
+        if [ "$MIHOMO_NETWORK_MODE" = "macvlan" ]; then
+            MIHOMO_TUN_DEVICE_SKIPPED="$CONTAINER_NAME"
+            echo "⚠️ 宿主机无 TUN：仅从生成的 compose.yaml 移除了设备映射；Mihomo 配置仍启用 TUN，需自行调试。"
+        else
+            echo "ℹ️ 宿主机无 TUN：host 模板无设备映射。"
+        fi
+    fi
     install_mihomo_external_ui "$config_template" || return 1
 
     # 6) 模板中的服务、容器和主机名固定为 mihomo。host 模式的默认

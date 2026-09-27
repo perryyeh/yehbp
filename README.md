@@ -52,7 +52,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 11 | 安装 LibreSpeed（升级保留 config） |
 | 14 | 安装 AdGuardHome              |
 | 19 | 安装 mosdns                   |
-| 20 | 安装 mihomo                   |
+| 20 | 安装 mihomo（host 模板免 TUN） |
 | 21 | 管理 Docker Mihomo 订阅 |
 | 22 | 管理原生 Mihomo 订阅 |
 | 25 | 安装 ddnsgo                   |
@@ -172,7 +172,7 @@ fi
 | ddns-go / `25` | `host` | 直接使用宿主机的 IPv4/IPv6，适合双栈 DDNS；会占用宿主机 `9876` 端口。 | 独立 LAN IP/MAC，适合仅 IPv4 的环境。 |
 | Lucky / `26` | `host` | 直接使用宿主机网络，适合 IPv4 + IPv6；会占用宿主机 `16601` 端口。 | 独立 LAN IP/MAC，适合仅 IPv4 的环境。 |
 
-同一宿主机需要同时运行不同用途的实例时，为每个实例指定不同的容器/目录名称，并确认其端口不会冲突。
+同一宿主机需要同时运行不同用途的实例时，为每个实例指定不同的容器/目录名称，并确认其端口不会冲突。Mihomo 的 `host` 上游模板不再映射 `/dev/net/tun`（其 `tun.enable` 默认为 `false`）。`macvlan` 上游模板保持原样；宿主机无 TUN 时，YehBP 仅从安装时生成的 `compose.yaml` 移除设备映射，不修改配置文件中的 `tun.enable: true`，因此 Mihomo 进程可能仍无法运行，Fake-IP 旁路也不能据此视为可用；若新容器已创建但启动失败，YehBP 会保留新容器与旧容器备份供排查（旧容器此时处于停止状态）；需要后续补齐 TUN 或自行调整运行配置。
 
 安装 Mihomo 时，YehBP 会按所选模式读取 `config.host.yaml` 或 `config.macvlan.yaml` 的 `external-ui` 与 `external-ui-url`，下载 tar.gz 格式的最新 UI，校验归档结构和 `index.html` 后原子替换到该 `external-ui` 目录；UI 下载或校验失败会在启动容器前取消安装。
 
