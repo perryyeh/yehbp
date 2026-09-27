@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.27.02"
+APP_VERSION="2026.09.27.03"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -3171,6 +3171,25 @@ install_librespeed() {
     local REPO_URL="https://github.com/perryyeh/librespeed.git"
     repo_stage_update "librespeed" "$dockerapps" "$REPO_URL" "$CONTAINER_NAME" || return 1
     cd "$WORK_DIR" || { echo "❌ 进入目录失败：$WORK_DIR"; return 1; }
+
+    # The upstream archive has no config/ directory, but Compose bind-mounts
+    # ./config. Synology requires the source to exist before starting. Preserve
+    # the old config (including a symlink) while the old container is running.
+    if [ -L "$TARGET_DIR/config" ]; then
+        if [ -e "$WORK_DIR/config" ] || [ -L "$WORK_DIR/config" ]; then
+            echo "❌ 新目录已存在 config，不能覆盖原有配置链接。"
+            return 1
+        fi
+        cp -a "$TARGET_DIR/config" "$WORK_DIR/config" || return 1
+    elif [ -d "$TARGET_DIR/config" ]; then
+        mkdir -p "$WORK_DIR/config" || return 1
+        cp -a "$TARGET_DIR/config/." "$WORK_DIR/config/" || return 1
+    elif [ -e "$TARGET_DIR/config" ]; then
+        echo "❌ 原 config 不是目录或符号链接：$TARGET_DIR/config"
+        return 1
+    else
+        mkdir -p "$WORK_DIR/config" || return 1
+    fi
 
     # 7) 替换compose配置中的容器相关字段
     if [ "$CONTAINER_NAME" != "$DEFAULT_CONTAINER_NAME" ]; then

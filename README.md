@@ -49,7 +49,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 7  | 安装/升级 Docker              |
 | 8  | 创建macvlan（包括ipv4+ipv6）      |
 | 9  | 删除 macvlan                  |
-| 11 | 安装 LibreSpeed               |
+| 11 | 安装 LibreSpeed（升级保留 config） |
 | 14 | 安装 AdGuardHome              |
 | 19 | 安装 mosdns                   |
 | 20 | 安装 mihomo                   |
