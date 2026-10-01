@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.10.01.01"
+APP_VERSION="2026.10.02.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -3246,6 +3246,41 @@ EOF
     repo_offer_delete_backup "librespeed" "$BAK_DIR" "librespeed"
 }
 
+# 只替换 dns.upstream_dns 列表，其他 YAML 内容保持原样。
+adguardhome_replace_upstreams() {
+    local config_file="$1" tmp upstream yaml="" escaped_quote="''"
+    shift
+    [ "$#" -gt 0 ] || return 1
+    for upstream in "$@"; do
+        [ -n "$upstream" ] && [[ "$upstream" != *$'\n'* && "$upstream" != *$'\r'* ]] || return 1
+        upstream="${upstream//\'/$escaped_quote}"
+        yaml="${yaml}    - '${upstream}'"$'\n'
+    done
+    tmp="$(mktemp "${config_file}.tmp.XXXXXX")" || return 1
+    if UPSTREAM_YAML="$yaml" awk '
+        /^  upstream_dns:[[:space:]]*$/ {
+            if (found++) exit 1
+            print
+            printf "%s", ENVIRON["UPSTREAM_YAML"]
+            replacing = 1
+            next
+        }
+        replacing && /^[[:space:]]*$/ { next }
+        replacing && /^    / { next }
+        { replacing = 0; print }
+        END { if (found != 1) exit 1 }
+    ' "$config_file" > "$tmp"; then
+        # 保留原配置文件权限。
+        cat "$tmp" > "$config_file"
+        local status=$?
+        rm -f "$tmp"
+        return "$status"
+    fi
+    rm -f "$tmp"
+    echo "❌ 无法替换 AdGuard Home 上游 DNS 列表" >&2
+    return 1
+}
+
 install_adguardhome() {
 
     echo "🔧 安装 AdGuardHome（需要选择 macvlan 网络）"
@@ -3258,15 +3293,45 @@ install_adguardhome() {
       *) return 1 ;;
     esac
 
-    # 1) 输入 mosdns IPv4 最后一段（默认 119）-> 计算 mosdns/mosdns6
-    local mosdns_last mosdns mosdns6
-    mosdns_last="$(prompt_ipv4_last_octet \
-      "请输入 mosdns IPv4 最后一段（1-254，回车默认 119）: " \
-      119
-    )" || return 1
-    calculate_ip_mac "$mosdns_last"
-    mosdns="$calculated_ip"
-    mosdns6="$calculated_ip6"
+    # 1) 上游方案；默认保留原 mosdns 流程。
+    local dns_mode dns_input mosdns_last mosdns="" mosdns6=""
+    local -a adguard_upstreams=()
+    echo "请选择 AdGuard Home 上游 DNS："
+    echo "1）配合 mosdns 使用（默认）"
+    echo "2）不使用 mosdns，使用阿里 + 腾讯 DNS"
+    echo "3）不使用 mosdns，自定义 DNS"
+    while true; do
+        read -r -p "请选择 [1-3，回车默认 1]: " dns_mode || return 1
+        dns_mode="${dns_mode:-1}"
+        case "$dns_mode" in
+            1)
+                mosdns_last="$(prompt_ipv4_last_octet \
+                  "请输入 mosdns IPv4 最后一段（1-254，回车默认 119）: " \
+                  119
+                )" || return 1
+                calculate_ip_mac "$mosdns_last"
+                mosdns="$calculated_ip"
+                mosdns6="$calculated_ip6"
+                break
+                ;;
+            2)
+                adguard_upstreams=(223.5.5.5 119.29.29.29)
+                break
+                ;;
+            3)
+                echo "输入一个或多个上游 DNS，以空格分隔（支持 IP、IP:端口、DoH/DoT 地址）。"
+                echo "请勿输入会转发回本 AdGuard Home 的 DNS 地址，以免形成循环。"
+                while true; do
+                    read -r -p "上游 DNS: " dns_input || return 1
+                    read -r -a adguard_upstreams <<< "$dns_input"
+                    [ "${#adguard_upstreams[@]}" -gt 0 ] && break
+                    echo "❌ 请至少输入一个上游 DNS"
+                done
+                break
+                ;;
+            *) echo "❌ 请选择 1、2 或 3" ;;
+        esac
+    done
 
     # 2) 输入 AdGuardHome IPv4 最后一段（默认 114）-> 计算 adguard/adguard6/adguardmac/gateway
     local adg_last adguard adguard6 adguardmac gateway
@@ -3333,9 +3398,13 @@ install_adguardhome() {
 
     # 7) 替换逻辑（必须保留：mosdns / mosdns6 / gateway）
     if [ -f "${WORK_DIR}/AdGuardHome.yaml" ]; then
-        sed -i "s/10.0.1.119/${mosdns}/g" "${WORK_DIR}/AdGuardHome.yaml"
-        if [ -n "$mosdns6" ]; then
-            sed -E -i "s|#\[[0-9A-Fa-f:]+:119\]|[${mosdns6}]|g" "${WORK_DIR}/AdGuardHome.yaml"
+        if [ "$dns_mode" = 1 ]; then
+            sed -i "s/10.0.1.119/${mosdns}/g" "${WORK_DIR}/AdGuardHome.yaml"
+            if [ -n "$mosdns6" ]; then
+                sed -E -i "s|#\[[0-9A-Fa-f:]+:119\]|[${mosdns6}]|g" "${WORK_DIR}/AdGuardHome.yaml"
+            fi
+        else
+            adguardhome_replace_upstreams "${WORK_DIR}/AdGuardHome.yaml" "${adguard_upstreams[@]}" || return 1
         fi
         if [ -n "$gateway" ] && [ "$gateway" != "null" ]; then
             sed -i "s/10.0.0.1/${gateway}/g" "${WORK_DIR}/AdGuardHome.yaml"
@@ -3375,7 +3444,12 @@ install_adguardhome() {
     fi
     echo "  macvlan 网络: ${SELECTED_MACVLAN}"
     echo "  MAC        : ${adguardmac}"
-    echo "  上游 mosdns : ${mosdns}"
+    case "$dns_mode" in
+        1) echo "  上游 mosdns : ${mosdns}" ;;
+        2) echo "  上游 DNS    : 阿里 223.5.5.5 + 腾讯 119.29.29.29（普通 UDP）" ;;
+        3) echo "  上游 DNS    : 自定义（${#adguard_upstreams[@]} 个）" ;;
+    esac
+    echo "ℹ️ 备用 DNS 及其他设置保持模板原样，请在 AdGuard Home 管理页面自行调整。"
 
     # 11) 可选删除目录备份（带挂载检查）
     repo_offer_delete_backup "adguardhome" "$BAK_DIR" "adguardhome"
