@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.09.27.04"
+APP_VERSION="2026.10.01.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -6202,7 +6202,7 @@ manage_mihomo_subscription_menu() {
     echo "🔧 Mihomo 外部订阅配置"
     echo "1）添加/修改外部订阅"
     echo "2）立即更新外部订阅"
-    echo "3）删除外部订阅并恢复本地配置"
+    echo "3）删除外部订阅（保留当前配置）"
     echo "4）查看订阅更新日志"
     echo "0）返回"
     read -r -p "请输入要操作的序号: " choice

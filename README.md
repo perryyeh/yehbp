@@ -53,7 +53,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 14 | 安装 AdGuardHome              |
 | 19 | 安装 mosdns                   |
 | 20 | 安装 mihomo（host 模板免 TUN） |
-| 21 | 管理 Docker Mihomo 订阅 |
+| 21 | 管理 Docker Mihomo 订阅（删除订阅保留当前配置） |
 | 22 | 管理原生 Mihomo 订阅 |
 | 25 | 安装 ddnsgo                   |
 | 26 | 安装 lucky                    |
@@ -314,7 +314,7 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 
 用于 YehBP 安装的 **macvlan 或 host Mihomo**，包括 Docker 容器和宿主机实例；不是管理 OpenWrt 自己安装的原生 Mihomo。选择实例后可添加/修改、立即更新、删除订阅或查看日志；更新间隔默认 `0`（不自动刷新）。可选择按当前模式模板覆盖参数，或原样使用订阅；更新成功后只重载 Mihomo，不重启容器。
 
-首次配置会在需要时提示启用容器内自动更新。订阅配置保存在权限为 `0600` 的 `subscription.conf`；未配置时 `subscription.conf` 和 `subscription.log` 不存在。删除订阅会恢复原本地配置并保留 `subscription.sh`。
+首次配置会在需要时提示启用容器内自动更新。订阅配置保存在权限为 `0600` 的 `subscription.conf`；未配置时 `subscription.conf` 和 `subscription.log` 不存在。删除订阅会移除订阅设置、更新日志和自动刷新状态，并清理旧定时任务；保留当前 `config.yaml`、本地配置备份和 `subscription.sh`，不恢复备份、不重载或重启 Mihomo。若订阅更新正在执行或更新锁未释放，会拒绝删除，避免当前配置被进行中的更新覆盖。
 
 #### 6.2 管理原生 Mihomo 订阅（菜单 22）
 

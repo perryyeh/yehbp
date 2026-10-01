@@ -421,23 +421,31 @@ mihomo_subscription_manual_update() {
 }
 
 mihomo_subscription_delete() {
-  local confirm dir backup
+  local confirm
   mihomo_subscription_select_target || return $?
-  mihomo_subscription_runtime_ready || return 1
-  mihomo_subscription_install_script || return 1
-  dir="$MIHOMO_SUBSCRIPTION_DIR"
-  backup="$dir/config.macvlan.backup.yaml"
-  [ -f "$backup" ] || { echo "❌ 未找到 $backup，拒绝删除订阅以免无法恢复。"; return 1; }
-  read -r -p "确认删除外部订阅、恢复本地配置并重载 Mihomo？[y/N]: " confirm
+  read -r -p "确认删除该容器的外部订阅及自动更新，保留当前配置？[y/N]: " confirm
   [[ "$confirm" =~ ^[Yy]$ ]] || { echo "ℹ️ 已取消。"; return 0; }
-  if ! docker exec -e MIHOMO_WAIT_RELOAD=1 "$MIHOMO_SUBSCRIPTION_CONTAINER" \
-      /root/.config/mihomo/subscription.sh --restore; then
-    echo "❌ 本地备份未通过当前 Mihomo 校验或重载失败，未删除订阅。"
+
+  # Remove subscription metadata under the updater's lock, without restoring
+  # config.yaml, downloading the updater, or requesting a reload.
+  if ! docker exec "$MIHOMO_SUBSCRIPTION_CONTAINER" sh -c '
+    dir=/root/.config/mihomo
+    lock="$dir/.subscription.lock"
+    mkdir "$lock" 2>/dev/null || {
+      echo "❌ 订阅更新正在执行或锁未释放，请稍后重试；未删除订阅。"
+      exit 1
+    }
+    trap '\''rmdir "$lock"'\'' EXIT
+    trap '\''exit 1'\'' HUP INT TERM
+    rm -f "$dir/subscription.conf" "$dir/subscription.log" "$dir/.subscription.next-run"
+  '; then
     return 1
   fi
-  mihomo_subscription_remove_legacy_timer || return 1
-  rm -f "$dir/subscription.conf" "$dir/subscription.log" "$backup"
-  echo "✅ 已恢复本地配置、重载 Mihomo，并删除外部订阅。"
+  if ! mihomo_subscription_remove_legacy_timer; then
+    echo "⚠️ 外部订阅已删除并保留当前配置，但旧定时任务清理失败。"
+    return 1
+  fi
+  echo "✅ 已删除外部订阅及自动更新，保留了当前配置；未重载 Mihomo。"
 }
 
 mihomo_subscription_show_log() {
@@ -452,7 +460,7 @@ manage_mihomo_subscription() {
   echo "🔧 Mihomo 外部完整订阅配置（macvlan / host；容器内更新）"
   echo "1）添加/修改外部订阅"
   echo "2）立即更新外部订阅"
-  echo "3）删除外部订阅并恢复本地配置"
+  echo "3）删除外部订阅（保留当前配置）"
   echo "4）查看订阅更新日志"
   echo "0）返回"
   local choice
