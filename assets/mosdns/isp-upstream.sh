@@ -40,8 +40,8 @@ mosdns_add_isp_upstream() {
             print "    args:"
             print "      primary: isp"
             print "      secondary: forward_public_direct_group"
-            print "      threshold: 100"
-            print "      always_standby: false"
+            print "      threshold: 50"
+            print "      always_standby: true"
             print ""
         }
         /^  - tag:/ && pending { wrapper(); pending=0 }

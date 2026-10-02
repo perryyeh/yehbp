@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.10.02.02"
+APP_VERSION="2026.10.02.03"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -3723,7 +3723,7 @@ install_mosdns() {
             echo "❌ 请至少输入一个有效 IPv4 DNS 地址"
         done
         mosdns_add_isp_upstream "$WORK_DIR" "${isp_upstreams[@]}" || return 1
-        echo "✅ 国内优先查询运营商 DNS，失败或超过 100 ms 后启用原阿里/腾讯组合"
+        echo "✅ 国内运营商优先，原阿里/腾讯同时待命；失败或超过 50 ms 时可采用备用结果"
     fi
 
     # 10) 可选功能：默认关闭，安装时按需开启

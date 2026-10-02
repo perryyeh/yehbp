@@ -77,7 +77,7 @@ class IspUpstreamTests(unittest.TestCase):
         self.assertTrue(config.startswith(original_group))
         self.assertTrue(config.endswith('  - tag: sequence_main' + original_rules))
         self.assertLess(config.index('  - tag: forward_direct_group'), config.index('  - tag: sequence_main'))
-        self.assertIn('primary: isp\n      secondary: forward_public_direct_group\n      threshold: 100\n      always_standby: false', config)
+        self.assertIn('primary: isp\n      secondary: forward_public_direct_group\n      threshold: 50\n      always_standby: true', config)
         self.assert_clean()
 
     def test_single_isp(self):
