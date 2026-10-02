@@ -51,7 +51,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 9  | 删除 macvlan                  |
 | 11 | 安装 LibreSpeed（升级保留 config） |
 | 14 | 安装 AdGuardHome（mosdns / 阿里腾讯 / 自定义上游） |
-| 19 | 安装 mosdns                   |
+| 19 | 安装 mosdns（可选运营商国内优先上游） |
 | 20 | 安装 mihomo（host 模板免 TUN） |
 | 21 | 管理 Docker Mihomo 订阅（删除订阅保留当前配置） |
 | 22 | 管理原生 Mihomo 订阅 |
@@ -156,7 +156,7 @@ fi
      - 回车默认选择 `2`，`n` 等同于 `4`。VLAN 子接口无完整 IPv6 信息时，选项 `1` 会回退检查物理 parent。
 5. 选择网卡创建 macvlan；群晖建议选择 `ovs` 开头网卡。
 6. 没有 Surge / OpenWrt 作为代理时，可安装 Mihomo 替代；Mihomo 需开启 TUN 模式并配置好上游代理。
-7. 安装 MosDNS；选择 Surge 作为上游时 DNS 写 `198.18.0.2`，选择 Mihomo 作为上游时 DNS 写 Mihomo 的 局域网IP。
+7. 安装 MosDNS；选择 Surge 作为上游时 DNS 写 `198.18.0.2`，选择 Mihomo 作为上游时 DNS 写 Mihomo 的 局域网IP。可选添加运营商 DNS 作为国内优先上游（默认关闭），输入一个或多个 IPv4 地址，以空格分隔；启用后使用普通 UDP 查询，运营商失败、无应答或超过 100 ms 后启用原阿里/腾讯组合。原 ali/tencent 定义、组合参数及分流规则不变，不是三家竞速；正常 DNS 应答（包括 NXDOMAIN）不会因此自动回退。不要输入会转发回 AdGuard Home / MosDNS 的路由器地址。
 8. 安装 AdGuardHome：默认选择 `1` 配合 MosDNS，沿用原地址配置流程；也可选择 `2` 独立使用阿里 `223.5.5.5` + 腾讯 `119.29.29.29`（普通 UDP），或 `3` 输入一个或多个自定义上游（空格分隔，支持 IP、IP:端口、DoH/DoT）。选项 `2`、`3` 不询问 MosDNS 地址，仅替换完整的 `upstream_dns` 列表；备用 DNS、bootstrap、上游模式、缓存等保持模板原样，安装后请在管理页面自行调整。不要输入会转发回本 AdGuardHome 的上游，以免形成解析循环。
 9. 最后创建 macvlan bridge，解决宿主机和容器之间的互通。bridge IPv4 使用 macvlan IPv4 IPRange 的最后一个可用地址；bridge IPv6 使用 Docker IPv6 IPRange 的最后一个地址，宿主机也对该相同 IPv6 IPRange 写入 bridge 路由。手动输入的 IPv6 CIDR/IPRange/Gateway 优先；如 IPv6 IPRange 与 parent 接口现有 RA/on-link 前缀重叠，应确认该路由设计符合预期。
 10. 按下方「[4. FakeIP 旁路与 IPv6 规划](#fakeip-routing)」完成 Surge 或 Mihomo 的 FakeIP 数据面转发与验证。

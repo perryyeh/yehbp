@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.10.02.01"
+APP_VERSION="2026.10.02.02"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -3697,6 +3697,35 @@ install_mosdns() {
         return 1
     fi
 
+    # 运营商 DNS 可选；默认保持原阿里/腾讯行为。
+    local enable_isp isp_input isp_asset ip isp_valid
+    local -a isp_upstreams=()
+    read -r -p "是否添加运营商 DNS 作为国内优先上游？[y/N]: " enable_isp || return 1
+    if [[ "$enable_isp" =~ ^[Yy]$ ]]; then
+        isp_asset="$(mktemp "$WORK_DIR/.isp-upstream.XXXXXX")" || return 1
+        if ! download_yehbp_asset "assets/mosdns/isp-upstream.sh" "$isp_asset" || ! bash -n "$isp_asset"; then
+            rm -f "$isp_asset"
+            return 1
+        fi
+        source "$isp_asset"
+        rm -f "$isp_asset"
+        echo "请输入实际运营商 IPv4 DNS，多个地址用空格分隔。"
+        echo "请勿输入会转发回 AdGuard Home / mosdns 的路由器地址，以免形成循环。"
+        while true; do
+            read -r -p "运营商 DNS: " isp_input || return 1
+            read -r -a isp_upstreams <<< "$isp_input"
+            isp_valid=1
+            [ "${#isp_upstreams[@]}" -gt 0 ] || isp_valid=0
+            for ip in "${isp_upstreams[@]}"; do
+                mosdns_validate_isp_ipv4 "$ip" || isp_valid=0
+            done
+            [ "$isp_valid" -eq 1 ] && break
+            echo "❌ 请至少输入一个有效 IPv4 DNS 地址"
+        done
+        mosdns_add_isp_upstream "$WORK_DIR" "${isp_upstreams[@]}" || return 1
+        echo "✅ 国内优先查询运营商 DNS，失败或超过 100 ms 后启用原阿里/腾讯组合"
+    fi
+
     # 10) 可选功能：默认关闭，安装时按需开启
     local enable_rule_sync enable_candidate_auto
 
@@ -3772,6 +3801,11 @@ EOF
         echo "  IPv6       : 未启用（所选 macvlan 未开启 IPv6 或无 IPv6 子网）"
     fi
     echo "  上游 mihomo / surge : ${mihomo}"
+    if [[ "$enable_isp" =~ ^[Yy]$ ]]; then
+        echo "  国内上游   : 运营商优先 → 原阿里/腾讯备用"
+    else
+        echo "  国内上游   : 原阿里/腾讯组合"
+    fi
     echo "  macvlan 网络: ${SELECTED_MACVLAN}"
     echo "  MAC        : ${mosdnsmac}"
 
