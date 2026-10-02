@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.10.02.04"
+APP_VERSION="2026.10.02.05"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -3533,7 +3533,7 @@ select_mihomo_upstream() {
             echo "   IPv6：${MIHOMO_CANDIDATE_IP6[$i]:-无}:53"
         done
         echo "0）返回"
-        echo "m）手动输入其他上游"
+        echo "m）手动输入 Mihomo 或 Surge 的 DNS 地址"
         read -r -p "请输入要操作的序号: " choice
         if [ "$choice" = "0" ]; then return 2; fi
         if [[ "$choice" =~ ^[1-9][0-9]*$ ]] && [ "$choice" -le "$MIHOMO_CANDIDATE_COUNT" ]; then
@@ -3545,7 +3545,7 @@ select_mihomo_upstream() {
         [ "$choice" = "m" ] || { echo "❌ 无效选择"; return 1; }
     fi
 
-    MIHOMO_ENDPOINT4="$(read_mihomo_manual_endpoint "" "请输入 Mihomo IPv4")" || return 1
+    MIHOMO_ENDPOINT4="$(read_mihomo_manual_endpoint "" "请输入 Mihomo 或 Surge 的 DNS 地址（IPv4）")" || return 1
     MIHOMO_IP4="${MIHOMO_ENDPOINT4%%:*}"
     MIHOMO_ENDPOINT4="$(normalize_mihomo_endpoint_port "$MIHOMO_ENDPOINT4")"
     derived6=""
@@ -3558,8 +3558,8 @@ select_mihomo_upstream() {
     port=""
     [[ "$MIHOMO_ENDPOINT4" == *:* ]] && port="${MIHOMO_ENDPOINT4#*:}"
     [ -n "$derived6" ] && [ -n "$port" ] && derived6="[$derived6]:$port"
-    [ -n "$derived6" ] && echo "推导的 Mihomo IPv6：$derived6"
-    read -r -p "请输入 Mihomo IPv6（回车使用推导值；带端口请写 [IPv6]:端口）: " input6
+    [ -n "$derived6" ] && echo "推导的 Mihomo 或 Surge 的 DNS 地址（IPv6）：$derived6"
+    read -r -p "请输入 Mihomo 或 Surge 的 DNS 地址（IPv6，回车使用推导值；带端口请写 [IPv6]:端口）: " input6
     MIHOMO_ENDPOINT6="${input6:-$derived6}"
     MIHOMO_ENDPOINT6="$(normalize_mihomo_ipv6_endpoint "$MIHOMO_ENDPOINT6")"
     [ -n "$MIHOMO_ENDPOINT6" ] || return 1
