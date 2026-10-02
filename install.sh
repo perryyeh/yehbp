@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.10.02.03"
+APP_VERSION="2026.10.02.04"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -3717,7 +3717,7 @@ install_mosdns() {
             isp_valid=1
             [ "${#isp_upstreams[@]}" -gt 0 ] || isp_valid=0
             for ip in "${isp_upstreams[@]}"; do
-                mosdns_validate_isp_ipv4 "$ip" || isp_valid=0
+                mosdns_validate_isp_ipv4 "$ip" && [ "$ip" != 192.0.2.1 ] || isp_valid=0
             done
             [ "$isp_valid" -eq 1 ] && break
             echo "❌ 请至少输入一个有效 IPv4 DNS 地址"

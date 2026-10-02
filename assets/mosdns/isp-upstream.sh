@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Optional installer renderer: preserve ali/tencent definitions and existing rules.
+# Render template ISP placeholder and switch only the domestic entry.
 
 mosdns_validate_isp_ipv4() {
     local ip="$1" part
@@ -14,62 +14,41 @@ mosdns_validate_isp_ipv4() {
 }
 
 mosdns_add_isp_upstream() {
-    local dir="$1" ip tmp_dns tmp_config status=0
+    local dir="$1" ip tmp_dns tmp_config
     shift
     [ "$#" -gt 0 ] || return 1
     for ip in "$@"; do
-        mosdns_validate_isp_ipv4 "$ip" || { echo "❌ 无效运营商 IPv4 DNS：$ip" >&2; return 1; }
+        mosdns_validate_isp_ipv4 "$ip" && [ "$ip" != 192.0.2.1 ] || {
+            echo "❌ 无效或未替换的运营商 IPv4 DNS：$ip" >&2; return 1;
+        }
     done
     [ -f "$dir/dns.yaml" ] && [ -f "$dir/config.yaml" ] || return 1
-    # Refuse duplicate/reserved tags; do not overwrite a previously rendered config.
-    if ! awk '
-        /^  - tag: (isp|forward_public_direct_group)([[:space:]]|$)/ { bad=1 }
-        END { exit bad ? 1 : 0 }
-    ' "$dir/dns.yaml" "$dir/config.yaml"; then
-        echo "❌ 运营商上游标签已存在，取消修改" >&2
-        return 1
-    fi
     tmp_dns="$(mktemp "$dir/.isp-dns.XXXXXX")" || return 1
     tmp_config="$(mktemp "$dir/.isp-config.XXXXXX")" || { rm -f "$tmp_dns"; return 1; }
-    if ! awk '
-        function wrapper() {
-            print ""
-            print "  # 运营商优先，失败或超时回退原阿里/腾讯组合"
-            print "  - tag: forward_direct_group"
-            print "    type: fallback"
-            print "    args:"
-            print "      primary: isp"
-            print "      secondary: forward_public_direct_group"
-            print "      threshold: 50"
-            print "      always_standby: true"
-            print ""
-        }
-        /^  - tag:/ && pending { wrapper(); pending=0 }
-        /^  - tag: forward_direct_group([[:space:]]|$)/ {
-            if (found++) exit 1
-            sub(/tag: forward_direct_group/, "tag: forward_public_direct_group")
-            pending=1
+    # Only replace the placeholder inside isp; never rewrite other upstreams.
+    if ! awk -v ips="$*" '
+        /^  - tag:/ { in_isp=($3 == "isp") }
+        in_isp && $0 == "        - addr: \"udp://192.0.2.1:53\"" {
+            found++; n=split(ips, a, " ");
+            for (i=1; i<=n; i++) print "        - addr: \"udp://" a[i] ":53\"";
+            next
         }
         { print }
-        END {
-            if (found != 1) exit 1
-            if (pending) wrapper()
+        END { if (found != 1) exit 1 }
+    ' "$dir/dns.yaml" > "$tmp_dns" || ! awk '
+        /^  - tag:/ { direct=($3 == "forward_direct_group") }
+        direct && $0 == "      - exec: $forward_public_direct_group" {
+            found++; sub(/forward_public_direct_group/, "forward_isp_direct_group")
         }
+        { print }
+        END { if (found != 1) exit 1 }
     ' "$dir/config.yaml" > "$tmp_config"; then
         rm -f "$tmp_dns" "$tmp_config"
-        echo "❌ 未找到唯一的国内转发组，取消修改" >&2
+        echo "❌ 模板占位或国内入口缺失/重复，取消修改" >&2
         return 1
     fi
-    cat "$dir/dns.yaml" > "$tmp_dns" || status=1
-    {
-        printf '\n  # 运营商 DNS（普通 UDP）\n  - tag: isp\n    type: forward\n    args:\n      concurrent: 2\n      upstreams:\n'
-        for ip in "$@"; do
-            printf '        - addr: "udp://%s:53"\n' "$ip"
-        done
-    } >> "$tmp_dns" || status=1
-    if [ "$status" -eq 0 ]; then
-        cat "$tmp_dns" > "$dir/dns.yaml" && cat "$tmp_config" > "$dir/config.yaml" || status=1
-    fi
+    local status=0
+    cat "$tmp_dns" > "$dir/dns.yaml" && cat "$tmp_config" > "$dir/config.yaml" || status=1
     rm -f "$tmp_dns" "$tmp_config"
     return "$status"
 }
