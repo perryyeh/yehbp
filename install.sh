@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.10.02.05"
+APP_VERSION="2026.10.02.06"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -3558,8 +3558,20 @@ select_mihomo_upstream() {
     port=""
     [[ "$MIHOMO_ENDPOINT4" == *:* ]] && port="${MIHOMO_ENDPOINT4#*:}"
     [ -n "$derived6" ] && [ -n "$port" ] && derived6="[$derived6]:$port"
-    [ -n "$derived6" ] && echo "推导的 Mihomo 或 Surge 的 DNS 地址（IPv6）：$derived6"
-    read -r -p "请输入 Mihomo 或 Surge 的 DNS 地址（IPv6，回车使用推导值；带端口请写 [IPv6]:端口）: " input6
+    if [ -n "$derived6" ]; then
+        if [ "$MIHOMO_IP4" = "198.18.0.2" ]; then
+            echo "Surge 预设 DNS 地址（IPv6）：$derived6（未验证连通性）"
+        else
+            echo "按所选 macvlan 地址规划推导的 Mihomo DNS 地址（IPv6）：$derived6（未验证连通性）"
+        fi
+        if [ "$MIHOMO_IP4" = "198.18.0.2" ]; then
+            read -r -p "请输入 Surge 的 DNS 地址（IPv6，回车采用上述地址；带端口请写 [IPv6]:端口）: " input6
+        else
+            read -r -p "请输入 Mihomo 或 Surge 的 DNS 地址（IPv6，回车采用上述地址；带端口请写 [IPv6]:端口）: " input6
+        fi
+    else
+        read -r -p "请输入 Mihomo 或 Surge 的 DNS 地址（IPv6，未取得默认值；带端口请写 [IPv6]:端口）: " input6
+    fi
     MIHOMO_ENDPOINT6="${input6:-$derived6}"
     MIHOMO_ENDPOINT6="$(normalize_mihomo_ipv6_endpoint "$MIHOMO_ENDPOINT6")"
     [ -n "$MIHOMO_ENDPOINT6" ] || return 1
