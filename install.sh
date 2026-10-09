@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.10.02.06"
+APP_VERSION="2026.10.09.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -751,17 +751,39 @@ openwrt_dockcheck_xargs_compatible() {
 }
 
 install_openwrt_dockcheck_dependencies() {
-    local dep
+    local dep package_manager
     local -a packages=()
 
     is_openwrt || return 0
+    if command -v apk >/dev/null 2>&1; then
+        package_manager=apk
+    elif command -v opkg >/dev/null 2>&1; then
+        package_manager=opkg
+    else
+        package_manager=""
+    fi
+
     command -v bash >/dev/null 2>&1 || packages+=(bash)
     command -v flock >/dev/null 2>&1 || packages+=(util-linux-flock)
-    openwrt_dockcheck_xargs_compatible || packages+=(findutils)
+    if ! openwrt_dockcheck_xargs_compatible; then
+        if [ "$package_manager" = apk ]; then
+            packages+=(findutils-xargs)
+        else
+            packages+=(findutils)
+        fi
+    fi
     [ ${#packages[@]} -eq 0 ] && return 0
+    if [ -z "$package_manager" ]; then
+        echo "❌ 未找到 apk 或 opkg，无法安装 Dockcheck 缺失依赖：${packages[*]}"
+        return 1
+    fi
 
-    echo "⬇️ OpenWrt Dockcheck 需要安装：${packages[*]}"
-    opkg update && opkg install "${packages[@]}" || return 1
+    echo "⬇️ OpenWrt Dockcheck 需要安装（${package_manager}）：${packages[*]}"
+    if [ "$package_manager" = apk ]; then
+        apk update && apk add "${packages[@]}" || return 1
+    else
+        opkg update && opkg install "${packages[@]}" || return 1
+    fi
     for dep in bash flock; do
         if ! command -v "$dep" >/dev/null 2>&1; then
             echo "❌ ${dep} 安装后仍未找到。"

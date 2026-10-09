@@ -7,7 +7,7 @@
 支持 IPv6，已在群晖 7.3+、飞牛 1.0+、Armbian（Linux 6.1+）上测试通过；并新增 iStoreOS/OpenWrt 后端。
 
 > [!NOTE]
-> iStoreOS/OpenWrt 使用 `opkg`、`procd` 和 `logd`，不是 systemd。该平台支持 Docker 容器安装、macvlan、macvlan bridge 持久化及 Docker `data_root` 迁移；不提供脚本内格式化/挂载磁盘、Docker 安装、journald 优化或 systemd Dockcheck timer；Dockcheck 可选使用 OpenWrt `cron` 每日执行。
+> iStoreOS/OpenWrt 使用 `apk` 或 `opkg`、`procd` 和 `logd`，不是 systemd。该平台支持 Docker 容器安装、macvlan、macvlan bridge 持久化及 Docker `data_root` 迁移；不提供脚本内格式化/挂载磁盘、Docker 安装、journald 优化或 systemd Dockcheck timer；Dockcheck 可选使用 OpenWrt `cron` 每日执行。
 
 ## ✅ 适用场景与前置要求
 
@@ -333,6 +333,8 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 #### 6.4 安装/设置/删除/升级 Dockcheck（菜单 65）
 
 菜单 `65` 管理 Dockcheck（状态、安装/设置、删除、升级）；组件安装在所选 `dockerapps/_auto_update`，Dockcheck 直接从上游下载。Linux/NAS 可选 systemd 定时更新；OpenWrt 可选创建带 YehBP 专用标记的每日 `cron` 任务，删除 Dockcheck 时会移除该任务。
+
+安装/设置 Dockcheck 时才检查并按需补装系统依赖，不会在启动 YehBP、查看状态或检查镜像时安装软件包。OpenWrt 自动识别 `apk`/`opkg`；若当前 `xargs` 不支持 `-P` 和 `-I`，`apk` 系统安装 `findutils-xargs`，`opkg` 系统安装 `findutils`。安装后会再次验证功能；依赖安装失败则停止，不覆盖现有 Dockcheck 配置。
 
 #### 6.5 检查/更新 Docker 镜像（菜单 66）
 
