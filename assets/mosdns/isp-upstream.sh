@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Render template ISP placeholder and switch only the domestic entry.
+# Render the ISP placeholder, use a 25 ms ISP fallback, and switch the domestic entry.
 
 mosdns_validate_isp_ipv4() {
     local ip="$1" part
@@ -36,12 +36,20 @@ mosdns_add_isp_upstream() {
         { print }
         END { if (found != 1) exit 1 }
     ' "$dir/dns.yaml" > "$tmp_dns" || ! awk '
-        /^  - tag:/ { direct=($3 == "forward_direct_group") }
+        /^  - tag:/ {
+            direct=($3 == "forward_direct_group")
+            isp_group=($3 == "forward_isp_direct_group")
+        }
+        isp_group && $1 == "threshold:" {
+            if ($2 !~ /^[0-9]+$/) exit 1
+            threshold_found++
+            sub(/threshold:[ \t]*[0-9]+/, "threshold: 25")
+        }
         direct && $0 == "      - exec: $forward_public_direct_group" {
             found++; sub(/forward_public_direct_group/, "forward_isp_direct_group")
         }
         { print }
-        END { if (found != 1) exit 1 }
+        END { if (found != 1 || threshold_found != 1) exit 1 }
     ' "$dir/config.yaml" > "$tmp_config"; then
         rm -f "$tmp_dns" "$tmp_config"
         echo "❌ 模板占位或国内入口缺失/重复，取消修改" >&2

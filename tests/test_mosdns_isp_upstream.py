@@ -344,13 +344,38 @@ class IspUpstreamTests(unittest.TestCase):
         expected = DNS.replace('        - addr: "udp://192.0.2.1:53"',
                                '        - addr: "udp://192.0.2.53:53"\n        - addr: "udp://198.51.100.53:53"')
         self.assertEqual(dns, expected)
-        self.assertEqual(config, CONFIG.replace('      - exec: $forward_public_direct_group',
-                                                '      - exec: $forward_isp_direct_group'))
+        expected_config = CONFIG.replace('      - exec: $forward_public_direct_group',
+                                         '      - exec: $forward_isp_direct_group')
+        expected_config = expected_config.replace(
+            '      secondary: forward_public_direct_group\n      threshold: 50',
+            '      secondary: forward_public_direct_group\n      threshold: 25')
+        self.assertEqual(config, expected_config)
         self.assert_clean()
 
     def test_single_isp(self):
         self.assertEqual(self.render('192.0.2.53').returncode, 0)
         self.assertEqual((self.root / 'dns.yaml').read_text(), DNS.replace('udp://192.0.2.1:53', 'udp://192.0.2.53:53'))
+
+    def test_missing_or_invalid_isp_threshold_is_safe(self):
+        old = '      secondary: forward_public_direct_group\n      threshold: 50\n'
+        for replacement in ('      secondary: forward_public_direct_group\n',
+                            '      secondary: forward_public_direct_group\n      threshold: invalid\n',
+                            old + '      threshold: 50\n'):
+            config = CONFIG.replace(old, replacement)
+            (self.root / 'config.yaml').write_text(config)
+            self.assertNotEqual(self.render('192.0.2.53').returncode, 0)
+            self.assertEqual((self.root / 'config.yaml').read_text(), config)
+            self.assertEqual((self.root / 'dns.yaml').read_text(), DNS)
+            self.assert_clean()
+
+    def test_isp_threshold_comment_is_preserved(self):
+        old = '      secondary: forward_public_direct_group\n      threshold: 50'
+        config = CONFIG.replace(old, old + ' # ISP only')
+        (self.root / 'config.yaml').write_text(config)
+        self.assertEqual(self.render('192.0.2.53').returncode, 0)
+        output = (self.root / 'config.yaml').read_text()
+        self.assertIn('      threshold: 25 # ISP only', output)
+        self.assertEqual(output.count('      threshold: 50\n'), 2)
 
     def test_invalid_addresses_leave_files_untouched(self):
         for ip in ('999.1.1.1', '01.2.3.4', '1.2.3', 'dns.example', '1.1.1.1:53',
@@ -437,6 +462,7 @@ run_option() {
         result = self.run_option('y\n\n999.1.1.1\n192.0.2.53 198.51.100.53\n')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('      - exec: $forward_isp_direct_group', (self.root / 'config.yaml').read_text())
+        self.assertIn('超过 25 ms', result.stdout)
         self.assert_clean()
 
     def test_eof_and_download_failure_stop_without_changes(self):
