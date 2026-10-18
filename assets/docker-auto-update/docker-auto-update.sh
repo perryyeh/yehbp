@@ -431,6 +431,7 @@ done
         exit "$mac_rc"
       fi
     elif [ "$mac_rc" -ne 0 ]; then
+      echo "❌ MAC 检查未通过（退出码 ${mac_rc}）；本次任务失败。"
       exit "$mac_rc"
     fi
   fi

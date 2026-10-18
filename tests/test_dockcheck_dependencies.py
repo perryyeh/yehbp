@@ -15,7 +15,7 @@ def function(name):
 
 class DockcheckDependenciesTest(unittest.TestCase):
     def run_case(self, manager="apk", compatible=False, install_ok=True,
-                 fixes_xargs=True, openwrt=True, update_ok=True):
+                 fixes_xargs=True, openwrt=True, update_ok=True, missing_flock=False):
         setup = f"""
 PATH=/usr/bin:/bin
 COMPAT={int(compatible)}
@@ -23,16 +23,27 @@ is_openwrt() {{ return {0 if openwrt else 1}; }}
 flock() {{ :; }}
 xargs() {{ [ "$COMPAT" = 1 ]; }}
 """
+        if missing_flock:
+            setup += '''
+FLOCK_READY=0
+command() {
+    if [ "$1" = -v ] && [ "$2" = flock ]; then [ "$FLOCK_READY" = 1 ]; return; fi
+    builtin command "$@"
+}
+'''
         if manager:
             setup += f"""
 {manager}() {{
     printf 'PKG %s\\n' "$*"
     if [ "$1" = update ]; then return {0 if update_ok else 1}; fi
     COMPAT={int(fixes_xargs)}
+    case " $* " in *" flock "*) FLOCK_READY=1 ;; esac
     return {0 if install_ok else 1}
 }}
 """
-        code = setup + function("openwrt_dockcheck_xargs_compatible") + "\n"
+        code = setup + function("openwrt_package_manager") + "\n"
+        code += function("install_openwrt_packages") + "\n"
+        code += function("openwrt_dockcheck_xargs_compatible") + "\n"
         code += function("install_openwrt_dockcheck_dependencies") + "\n"
         code += "install_openwrt_dockcheck_dependencies\n"
         return subprocess.run(["/bin/bash", "-c", code], text=True,
@@ -49,6 +60,13 @@ xargs() {{ [ "$COMPAT" = 1 ]; }}
         result = self.run_case(manager="opkg")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("PKG install findutils", result.stdout)
+
+    def test_missing_flock_uses_openwrt_package_name(self):
+        for manager, action in (("apk", "add"), ("opkg", "install")):
+            with self.subTest(manager=manager):
+                result = self.run_case(manager=manager, compatible=True, missing_flock=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn(f"PKG {action} flock\n", result.stdout)
 
     def test_compatible_xargs_does_not_install(self):
         result = self.run_case(compatible=True)

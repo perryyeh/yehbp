@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.10.13.01"
+APP_VERSION="2026.10.18.13"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -558,9 +558,12 @@ check_yehbp_update() {
 case "${1:-}" in
     install|--install)
         install_yehbp_cli
-        # Consume remaining stdin so curl doesn't get SIGPIPE
-        cat >/dev/null 2>&1
-        exit $?
+        install_rc=$?
+        # Drain only when Bash itself is reading the script from stdin.
+        case "$(basename "$0")" in
+            bash|sh|-bash|-sh) [ -t 0 ] || cat >/dev/null 2>&1 ;;
+        esac
+        exit "$install_rc"
         ;;
     "")
         # curl ... | sudo bash：脚本从 stdin 进入时默认执行安装。
@@ -569,9 +572,10 @@ case "${1:-}" in
             case "$(basename "$0")" in
                 bash|sh|-bash|-sh)
                     install_yehbp_cli
-                    # Consume remaining stdin so curl doesn't get SIGPIPE
+                    install_rc=$?
+                    # Consume remaining script input so curl does not get SIGPIPE.
                     cat >/dev/null 2>&1
-                    exit $?
+                    exit "$install_rc"
                     ;;
             esac
         fi
@@ -653,6 +657,28 @@ install_ipcalc_deb_fallback() {
     [ "$rc" -eq 0 ] && command -v ipcalc >/dev/null 2>&1
 }
 
+openwrt_package_manager() {
+    if command -v apk >/dev/null 2>&1; then
+        printf '%s\n' apk
+    elif command -v opkg >/dev/null 2>&1; then
+        printf '%s\n' opkg
+    else
+        echo "❌ 未找到 apk 或 opkg，无法安装 OpenWrt 依赖。" >&2
+        return 1
+    fi
+}
+
+install_openwrt_packages() {
+    local package_manager
+    package_manager="$(openwrt_package_manager)" || return 1
+    "$package_manager" update || return $?
+    if [ "$package_manager" = apk ]; then
+        apk add "$@"
+    else
+        opkg install "$@"
+    fi
+}
+
 install_dependencies() {
     echo "🔧 检查并安装基础依赖（自动适配系统：${PLATFORM}）..."
 
@@ -676,7 +702,7 @@ install_dependencies() {
         done
         [ ${#to_install[@]} -eq 0 ] && return 0
         echo "⬇️ 正在安装缺少的依赖: ${to_install[*]}"
-        opkg update && opkg install "${to_install[@]}"
+        install_openwrt_packages "${to_install[@]}"
         return $?
     fi
 
@@ -724,12 +750,12 @@ install_python3() {
 
     echo "⬇️ ${feature} 需要 python3，正在安装…"
     if is_openwrt; then
-        opkg update && opkg install python3
+        install_openwrt_packages python3 || return $?
     elif command -v apt-get >/dev/null 2>&1; then
-        apt-get update && apt-get install -y python3
+        apt-get update && apt-get install -y python3 || return $?
     elif [ -x /opt/bin/opkg ]; then
         export PATH=/opt/bin:$PATH
-        /opt/bin/opkg update && /opt/bin/opkg install python3
+        /opt/bin/opkg update && /opt/bin/opkg install python3 || return $?
     else
         echo "❌ 未识别的系统，无法自动安装 python3。"
         return 1
@@ -755,16 +781,10 @@ install_openwrt_dockcheck_dependencies() {
     local -a packages=()
 
     is_openwrt || return 0
-    if command -v apk >/dev/null 2>&1; then
-        package_manager=apk
-    elif command -v opkg >/dev/null 2>&1; then
-        package_manager=opkg
-    else
-        package_manager=""
-    fi
+    package_manager="$(openwrt_package_manager)" || package_manager=""
 
     command -v bash >/dev/null 2>&1 || packages+=(bash)
-    command -v flock >/dev/null 2>&1 || packages+=(util-linux-flock)
+    command -v flock >/dev/null 2>&1 || packages+=(flock)
     if ! openwrt_dockcheck_xargs_compatible; then
         if [ "$package_manager" = apk ]; then
             packages+=(findutils-xargs)
@@ -779,11 +799,7 @@ install_openwrt_dockcheck_dependencies() {
     fi
 
     echo "⬇️ OpenWrt Dockcheck 需要安装（${package_manager}）：${packages[*]}"
-    if [ "$package_manager" = apk ]; then
-        apk update && apk add "${packages[@]}" || return 1
-    else
-        opkg update && opkg install "${packages[@]}" || return 1
-    fi
+    install_openwrt_packages "${packages[@]}" || return 1
     for dep in bash flock; do
         if ! command -v "$dep" >/dev/null 2>&1; then
             echo "❌ ${dep} 安装后仍未找到。"
@@ -1882,6 +1898,26 @@ repo_stage_update() {
   return 1
 }
 
+# Keep validation output and traps inside a private subshell; rendered config
+# and diagnostics may contain interpolated credentials.
+validate_compose_config() {
+  (
+    umask 077
+    check_dir="$(mktemp -d "${TMPDIR:-/tmp}/yehbp-compose.XXXXXX")" || exit 1
+    trap 'rm -rf -- "$check_dir"' EXIT
+    trap 'exit 1' HUP INT TERM
+    schema_retry=0
+    while ! "${COMPOSE[@]}" "${pargs[@]}" "${fargs[@]}" config >/dev/null 2>"$check_dir/error"; do
+      if [ "$schema_retry" -ge 2 ] || ! apply_compose_schema_compatibility_fallback "$check_dir/error" "${files[@]}"; then
+        echo "❌ [$name] compose 校验失败；请检查 Compose 文件和环境变量（诊断可能包含敏感值，未显示）。" >&2
+        exit 1
+      fi
+      schema_retry=$((schema_retry + 1))
+      echo "🔎 [$name] 以兼容配置重新校验 docker compose..."
+    done
+  )
+}
+
 # 容器层（停旧 → 起新 → 更新/回滚）
 compose_deploy_with_repo_switch() {
   # 用法（推荐）：
@@ -1927,18 +1963,7 @@ compose_deploy_with_repo_switch() {
   done
 
   echo "🔎 [$name] docker compose config 校验..."
-  local schema_retry=0
-  while ! "${COMPOSE[@]}" "${pargs[@]}" "${fargs[@]}" config >/tmp/"$name".compose.check 2>/tmp/"$name".compose.err; do
-    # A single old Compose release can reject more than one newer service-
-    # network field, but only apply transformations after its exact error.
-    if [ "$schema_retry" -ge 2 ] || ! apply_compose_schema_compatibility_fallback /tmp/"$name".compose.err "${files[@]}"; then
-      echo "❌ [$name] compose 校验失败："
-      sed 's/^/  /' /tmp/"$name".compose.err
-      return 1
-    fi
-    schema_retry=$((schema_retry + 1))
-    echo "🔎 [$name] 以兼容配置重新校验 docker compose..."
-  done
+  validate_compose_config || return 1
 
   # Proxy-fetch all Compose images before touching the existing container.
   yehbp_prefetch_compose_images "${COMPOSE[@]}" "${pargs[@]}" "${fargs[@]}" || return 1
@@ -5930,14 +5955,66 @@ migrate_docker_datadir() {
     local BACKUP_SUFFIX
     BACKUP_SUFFIX="$(date +%Y%m%d-%H%M%S)"
 
+    # JSON 必须由真实解析器处理；缺少依赖时不自动安装或触碰服务。
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "❌ 迁移需要 python3 解析配置；请先准备依赖，已取消迁移。"
+        return 1
+    fi
+    docker_migration_json() {
+        python3 - "$DAEMON_JSON" "$@" <<'PY'
+import json
+import os
+import sys
+from decimal import Decimal
+
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("JSON 包含重复键：" + key)
+        result[key] = value
+    return result
+
+def checked_float(token):
+    value = float(token)
+    if not value == value or value in (float("inf"), -float("inf")) or Decimal(str(value)) != Decimal(token):
+        raise ValueError("JSON 小数无法无损写回：" + token)
+    return value
+
+try:
+    path, mode = sys.argv[1:3]
+    config = {}
+    if os.path.lexists(path):
+        if os.path.islink(path) or not os.path.isfile(path):
+            raise ValueError("配置不是普通文件")
+        with open(path, encoding="utf-8") as stream:
+            config = json.load(stream, object_pairs_hook=unique_object, parse_float=checked_float,
+                               parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)))
+        if not isinstance(config, dict):
+            raise ValueError("daemon.json 必须是 JSON 对象")
+    if mode == "root":
+        root = config.get("data-root", "")
+        if not isinstance(root, str):
+            raise ValueError("data-root 必须是字符串")
+        sys.stdout.write(root + "\n.")
+    else:
+        config["data-root"] = sys.argv[3]
+        print(json.dumps(config, ensure_ascii=True, allow_nan=False, indent=2))
+except (OSError, ValueError) as error:
+    print("❌ Docker JSON 配置准备失败：" + str(error), file=sys.stderr)
+    sys.exit(1)
+PY
+    }
+    local configured_root
+    configured_root="$(docker_migration_json root)" || return 1
+    configured_root="${configured_root%$'\n.'}"
+
     # 读取当前 Docker Root Dir（优先 docker info）
-    CURRENT_ROOT="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+    CURRENT_ROOT="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true; printf '.')"
+    CURRENT_ROOT="${CURRENT_ROOT%.}"
+    CURRENT_ROOT="${CURRENT_ROOT%$'\n'}"
     if [[ -z "$CURRENT_ROOT" ]]; then
-        # docker daemon 可能没起，兜底从 daemon.json 读
-        if [[ -f "$DAEMON_JSON" ]]; then
-            CURRENT_ROOT="$(sed -n 's/.*"data-root"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$DAEMON_JSON" | head -n1)"
-        fi
-        [[ -z "$CURRENT_ROOT" ]] && CURRENT_ROOT="$DEFAULT_ROOT"
+        CURRENT_ROOT="${configured_root:-$DEFAULT_ROOT}"
     fi
 
     echo "📌 Docker 默认目录：$DEFAULT_ROOT"
@@ -5961,127 +6038,218 @@ migrate_docker_datadir() {
         return 0
     fi
 
-    # 规范化路径：去掉末尾 /
-    NEW_ROOT="${NEW_ROOT%/}"
-
-    # 目标目录必须存在（按你原逻辑）
-    if [[ ! -d "$NEW_ROOT" ]]; then
-        echo "❌ 目录不存在：$NEW_ROOT  —— 已取消迁移。"
+    # 只接受可解析的现有目录；cd -P/pwd -P 解析 ..、尾斜杠与符号链接，
+    # 不依赖额外 realpath 工具。任何解析/读取失败均在服务与配置变更前退出。
+    if ! CURRENT_ROOT="$(CDPATH= cd -P -- "$CURRENT_ROOT" && pwd -P && printf '.')"; then
+        echo "❌ 无法解析 Docker 当前目录，已取消迁移。"
+        return 1
+    fi
+    # 哨兵保留路径末尾的换行；仅移除 pwd 自身输出的一个换行。
+    CURRENT_ROOT="${CURRENT_ROOT%$'\n.'}"
+    if ! NEW_ROOT="$(CDPATH= cd -P -- "$NEW_ROOT" && pwd -P && printf '.')"; then
+        echo "❌ 无法解析迁移目标目录，已取消迁移。"
+        return 1
+    fi
+    NEW_ROOT="${NEW_ROOT%$'\n.'}"
+    if [[ -z "$CURRENT_ROOT" || -z "$NEW_ROOT" || "$CURRENT_ROOT" == / || "$NEW_ROOT" == / || "$NEW_ROOT" == "$CURRENT_ROOT" ||
+          "$NEW_ROOT" == "$CURRENT_ROOT"/* || "$CURRENT_ROOT" == "$NEW_ROOT"/* ]]; then
+        echo "❌ 源目录与目标目录相同、重叠或为根目录，已取消迁移。"
+        return 1
+    fi
+    local target_entries
+    # -A 包括隐藏文件；-q 避免仅含换行的文件名被命令替换吞掉。
+    if ! target_entries="$(LC_ALL=C ls -Aq -- "$NEW_ROOT")"; then
+        echo "❌ 无法读取目标目录，已取消迁移。"
+        return 1
+    fi
+    if [[ -n "$target_entries" ]]; then
+        echo "❌ 目标目录非空（包括隐藏文件），请选择独立的空目录。"
         return 1
     fi
 
-    if [[ "$NEW_ROOT" == "$CURRENT_ROOT" ]]; then
-        echo "✅ 目标目录与当前目录相同，无需迁移。"
-        return 0
-    fi
-
-    # 停止 docker + socket（避免 socket 抢跑旧参数）
-    systemctl stop docker docker.socket >/dev/null 2>&1 || true
-
-    # 依赖：rsync
-    if ! command -v rsync >/dev/null 2>&1; then
-        echo "安装 rsync ..."
-        apt-get update -y && apt-get install -y rsync
-    fi
-
-    # 同步数据（从 CURRENT_ROOT -> NEW_ROOT）
-    mkdir -p "$NEW_ROOT"
-    if [[ -d "$CURRENT_ROOT" && -n "$(ls -A "$CURRENT_ROOT" 2>/dev/null || true)" ]]; then
-        rsync -aHAX --delete --numeric-ids "$CURRENT_ROOT"/ "$NEW_ROOT"/
-        echo "✅ 数据已同步到 $NEW_ROOT"
-    else
-        echo "ℹ️ $CURRENT_ROOT 为空或不存在，将创建全新 Docker 根目录"
-    fi
-
-    # 备份旧目录以便回滚（备份 CURRENT_ROOT）
-    local OLD_BAK=""
-    if [[ -d "$CURRENT_ROOT" ]]; then
+    # 在子 shell 内记录本轮阶段；所有失败均通过同一回滚出口处理。
+    (
+        # EXIT trap 在函数局部变量退出作用域后执行，保存其所需路径。
+        migration_current_root="$CURRENT_ROOT"
+        migration_daemon_json="$DAEMON_JSON"
         OLD_BAK="${CURRENT_ROOT}.bak-${BACKUP_SUFFIX}"
-        mv "$CURRENT_ROOT" "$OLD_BAK"
-        echo "🧩 已备份旧目录到 $OLD_BAK"
-    fi
-    mkdir -p "$CURRENT_ROOT"  # 占位，防止某些脚本依赖路径存在
+        OVERRIDE="/etc/systemd/system/docker.service.d/override.conf"
+        DAEMON_BAK="${DAEMON_JSON}.bak-${BACKUP_SUFFIX}"
+        OVERRIDE_BAK="${OVERRIDE}.bak-${BACKUP_SUFFIX}"
+        docker_active=0 socket_active=0 stop_attempted=0
+        old_moved=0 placeholder_created=0 config_changed=0
+        daemon_existed=0 rollback_ok=1
+        unit="" state=""
 
-    # 目录链权限：父目录至少 755；data-root 目录 711；所有权 root:root
-    chmod 755 "$(dirname "$NEW_ROOT")" 2>/dev/null || true
-    chmod 711 "$NEW_ROOT" 2>/dev/null || true
-    chown -R root:root "$NEW_ROOT" 2>/dev/null || true
+        # 未知服务状态不能安全恢复；inactive/failed（3）是正常的未运行状态。
+        for unit in docker docker.socket; do
+            systemctl is-active --quiet "$unit"
+            state=$?
+            case "$state" in
+                0) if [[ "$unit" == docker ]]; then docker_active=1; else socket_active=1; fi ;;
+                3) ;;
+                *) echo "❌ 无法确认 $unit 原运行状态，已取消迁移。"; exit 1 ;;
+            esac
+        done
 
-    # 备份并写回 daemon.json（显式设置 data-root + 日志轮转）
-    mkdir -p "$(dirname "$DAEMON_JSON")"
-    if [[ -f "$DAEMON_JSON" ]]; then
-        cp -a "$DAEMON_JSON" "${DAEMON_JSON}.bak-${BACKUP_SUFFIX}"
-        echo "🧩 已备份 $DAEMON_JSON 为 ${DAEMON_JSON}.bak-${BACKUP_SUFFIX}"
-    fi
-    tee "$DAEMON_JSON" >/dev/null <<EOF
-{
-  "data-root": "$NEW_ROOT",
-  "log-driver": "json-file",
-  "log-opts": {
-    "max-size": "20m",
-    "max-file": "3"
-  }
-}
-EOF
+        restore_services() {
+            local failed=0
+            if (( docker_active )); then systemctl start docker || failed=1; fi
+            if (( socket_active )); then systemctl start docker.socket || failed=1; fi
+            return "$failed"
+        }
 
-    # 如果 systemd 里写死了 --data-root，则覆写为不带该参数（使用 daemon.json）
-    if systemctl cat docker 2>/dev/null | grep -q -- "--data-root="; then
-        mkdir -p /etc/systemd/system/docker.service.d
-        tee /etc/systemd/system/docker.service.d/override.conf >/dev/null <<'OVR'
-[Service]
-ExecStart=
-ExecStart=/usr/bin/dockerd -H fd://
-OVR
-        echo "🧩 已写入 systemd override，移除 --data-root 覆盖"
-    fi
+        rollback_migration() {
+            local status=$?
+            trap - EXIT
+            (( status == 0 )) && return 0
+            echo "↩️ 迁移失败，恢复本轮已完成的阶段……"
+            # 切换后必须确认服务已停止，才能恢复目录与配置。
+            if (( old_moved || config_changed )); then
+                if ! systemctl stop docker docker.socket; then
+                    echo "❌ 回滚无法停止 Docker；保留所有数据和备份，请手动恢复。"
+                    return "$status"
+                fi
+                for unit in docker docker.socket; do
+                    systemctl is-active --quiet "$unit"
+                    if [[ "$?" != 3 ]]; then
+                        echo "❌ 回滚未确认 $unit 停止；保留所有数据和备份。"
+                        return "$status"
+                    fi
+                done
+            fi
+            if (( old_moved )); then
+                if [[ ! -d "$OLD_BAK" || -L "$OLD_BAK" ]]; then
+                    echo "❌ 旧目录备份不可用：$OLD_BAK；保留当前路径，请手动恢复。"
+                    return "$status"
+                fi
+                # 只删除本轮创建的空占位；非空、挂载点或替换过的路径均不递归删除。
+                if (( placeholder_created )) && [[ -e "$migration_current_root" || -L "$migration_current_root" ]]; then
+                    if [[ -L "$migration_current_root" ]] || ! rmdir -- "$migration_current_root"; then
+                        echo "❌ 无法安全移除占位目录，保留旧备份：$OLD_BAK"
+                        return "$status"
+                    fi
+                fi
+                if [[ -e "$migration_current_root" || -L "$migration_current_root" ]] || ! mv -- "$OLD_BAK" "$migration_current_root"; then
+                    echo "❌ 无法恢复旧目录，保留备份：$OLD_BAK"
+                    return "$status"
+                fi
+            fi
+            if (( config_changed )); then
+                if (( daemon_existed )); then
+                    cp -a -- "$DAEMON_BAK" "$migration_daemon_json" || rollback_ok=0
+                else
+                    rm -f -- "$migration_daemon_json" || rollback_ok=0
+                fi
+            fi
+            if (( config_changed )); then
+                systemctl daemon-reload || rollback_ok=0
+            fi
+            if (( rollback_ok && stop_attempted )); then
+                restore_services || rollback_ok=0
+            fi
+            if (( rollback_ok )); then
+                echo "已回滚至迁移前状态。"
+            else
+                echo "❌ 回滚未完成；数据与配置备份已保留，请手动检查。"
+            fi
+            return "$status"
+        }
+        trap rollback_migration EXIT
 
-    systemctl daemon-reload
-
-    # 启动 docker（不启动 socket，直接启 service）
-    systemctl start docker || { echo "❌ 启动 docker 失败，请查看：journalctl -u docker --no-pager -n 200"; goto_rollback=1; }
-
-    # 校验根目录是否生效
-    local ROOT_DIR
-    ROOT_DIR="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
-    if [[ "$ROOT_DIR" == "$NEW_ROOT" ]]; then
-        echo "✅ 迁移成功：Docker Root Dir = $ROOT_DIR"
-        if [[ -n "$OLD_BAK" ]]; then
-            echo "🧹 如确认正常，可删除备份释放空间：rm -rf $OLD_BAK"
+        # 在停止服务和移动数据前确认依赖与配置备份可用。
+        if ! command -v rsync >/dev/null 2>&1; then
+            echo "❌ 缺少 rsync；请先准备依赖，已取消迁移。"
+            exit 1
         fi
-        return 0
-    fi
+        if [[ -e "$OLD_BAK" || -L "$OLD_BAK" || -e "$DAEMON_BAK" || -L "$DAEMON_BAK" || -e "$OVERRIDE_BAK" || -L "$OVERRIDE_BAK" ]]; then
+            echo "❌ 本轮备份路径已存在，已取消迁移。"
+            exit 1
+        fi
+        # cp -a 会保留符号链接；tee 随后写穿链接会同时破坏所谓备份。
+        # 特殊文件也无法作为可恢复的配置快照，停止服务前拒绝。
+        for config_path in "$DAEMON_JSON" "$OVERRIDE"; do
+            if [[ -L "$config_path" ]] || { [[ -e "$config_path" ]] && [[ ! -f "$config_path" ]]; }; then
+                echo "❌ 配置不是普通文件：$config_path；已取消迁移。"
+                exit 1
+            fi
+        done
+        # show 返回合并 drop-in 后的有效 ExecStart；只检查，绝不重建命令。
+        # 该人类可读格式不是 argv 序列化协议，因此仅接受无转义的简单参数。
+        local effective_exec prepared_json
+        effective_exec="$(systemctl show docker --property=ExecStart --value)" || {
+            echo "❌ 无法读取 Docker 有效 ExecStart，已取消迁移。"; exit 1;
+        }
+        python3 - "$effective_exec" <<'PY' || exit 1
+import re
+import sys
+unit = sys.argv[1]
+match = re.fullmatch(
+    r"\{ path=(/[^ ;{}]+) ; argv\[\]=([^;{}]+) ; ignore_errors=(?:yes|no)"
+    r" ; start_time=\[[^\[\];{}\n]*\] ; stop_time=\[[^\[\];{}\n]*\]"
+    r" ; pid=[0-9]+ ; code=[A-Za-z0-9()_-]+ ; status=-?[0-9]+(?:/[A-Za-z0-9_-]+)? \}", unit)
+reason = "无法安全识别单一直接 dockerd ExecStart（不支持 shell、变量、转义或多命令）"
+if match:
+    path, arguments = match.groups()
+    if path in ("/usr/bin/dockerd", "/usr/sbin/dockerd") and re.fullmatch(r"[A-Za-z0-9_./:=,@+ -]+", arguments):
+        # 仅在上面的受限字母表内按空格检查；不执行、拼接或写回参数。
+        args = arguments.split()
+        if args and args[0] == path:
+            reason = ""
+            for arg in args[1:]:
+                if arg.startswith(("--data-root", "--config-file", "-g")):
+                    reason = "ExecStart 指定了 data-root/-g 或 config-file；请先手动统一 Docker 配置"
+                    break
+                if arg.startswith("-") and not arg.startswith("--") and arg not in ("-H", "-D"):
+                    reason = "无法安全识别 ExecStart 短参数；请先手动检查 Docker 配置"
+                    break
+if reason:
+    print("❌ " + reason + "，已取消迁移。", file=sys.stderr)
+    sys.exit(1)
+PY
+        prepared_json="$(docker_migration_json update "$NEW_ROOT")" || exit 1
+        mkdir -p "$(dirname "$DAEMON_JSON")" || exit 1
+        if [[ -e "$DAEMON_JSON" || -L "$DAEMON_JSON" ]]; then
+            cp -a -- "$DAEMON_JSON" "$DAEMON_BAK" || exit 1
+            daemon_existed=1
+        fi
 
-    # 未生效则回滚
-    echo "❌ 迁移校验失败：当前 Docker Root Dir = ${ROOT_DIR:-未知}"
-    echo "↩️ 回滚到迁移前……"
+        stop_attempted=1
+        systemctl stop docker docker.socket || { echo "❌ 停止 Docker 失败，未复制数据。"; exit 1; }
+        # stop 返回成功后仍确认服务和 socket 都已停止。
+        for unit in docker docker.socket; do
+            systemctl is-active --quiet "$unit"
+            [[ "$?" == 3 ]] || { echo "❌ $unit 未确认停止，未复制数据。"; exit 1; }
+        done
+        mkdir -p "$NEW_ROOT" || exit 1
+        if [[ -d "$CURRENT_ROOT" ]]; then
+            rsync -aHAX --numeric-ids "$CURRENT_ROOT"/ "$NEW_ROOT"/ || {
+                echo "❌ 数据复制失败，未切换目录。"; exit 1;
+            }
+            mv -- "$CURRENT_ROOT" "$OLD_BAK" || { echo "❌ 旧目录备份失败，未切换配置。"; exit 1; }
+            old_moved=1
+            echo "🧩 已备份旧目录到 $OLD_BAK"
+        fi
+        mkdir -p "$CURRENT_ROOT" || exit 1
+        placeholder_created=1
 
-    systemctl stop docker docker.socket >/dev/null 2>&1 || true
+        # rsync -aHAX --numeric-ids 已保留源目录及数据的所有权和权限。
+        # 不重写目标或父目录元数据，避免破坏容器内 UID/GID 与访问权限。
 
-    # 恢复 daemon.json：回滚到 CURRENT_ROOT（迁移前）
-    tee "$DAEMON_JSON" >/dev/null <<EOF
-{
-  "data-root": "$CURRENT_ROOT",
-  "log-driver": "json-file",
-  "log-opts": {
-    "max-size": "20m",
-    "max-file": "3"
-  }
-}
-EOF
-
-    # 恢复目录：移除占位，恢复备份
-    rm -rf "$CURRENT_ROOT"
-    if [[ -n "$OLD_BAK" && -d "$OLD_BAK" ]]; then
-        mv "$OLD_BAK" "$CURRENT_ROOT"
-        echo "🧩 已恢复旧目录：$CURRENT_ROOT"
-    else
-        echo "⚠️ 未找到旧目录备份（$OLD_BAK），请手动检查。"
-    fi
-
-    systemctl daemon-reload
-    systemctl start docker >/dev/null 2>&1 || true
-    echo "已回滚至迁移前状态。"
-    return 1
+        # 写入之前标记，确保部分写入失败也恢复文件原貌。
+        config_changed=1
+        printf '%s\n' "$prepared_json" | tee "$DAEMON_JSON" >/dev/null || exit 1
+        systemctl daemon-reload || exit 1
+        systemctl start docker || { echo "❌ 启动 Docker 失败。"; exit 1; }
+        local ROOT_DIR
+        ROOT_DIR="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+        [[ "$ROOT_DIR" == "$NEW_ROOT" ]] || {
+            echo "❌ 迁移校验失败：当前 Docker Root Dir = ${ROOT_DIR:-未知}"; exit 1;
+        }
+        echo "✅ 迁移成功：Docker Root Dir = $ROOT_DIR"
+        (( old_moved )) && echo "🧩 旧目录备份：$OLD_BAK"
+        exit 0
+    )
 }
 
 # =====================
@@ -6372,7 +6540,7 @@ manage_native_mihomo_subscription() {
 
 # ========== 主循环 ==========
 
-install_dependencies
+install_dependencies || exit $?
 show_menu
 
 while true; do
