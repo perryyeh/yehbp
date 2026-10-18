@@ -374,6 +374,10 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 - https://github.com/perryyeh/ddnsgo
 - https://github.com/perryyeh/lucky
 
+## 🧪 开发测试
+
+长期回归测试随仓库维护在 [`tests/`](tests/README.md)。在仓库根目录运行 `python3 -m unittest discover -s tests -v`；依赖、隔离方式、跳过条件和真实集成边界见测试说明。
+
 ## 📚 参考文献：
 - https://github.com/IrineSistiana/mosdns
 - https://github.com/AdguardTeam/AdGuardHome
