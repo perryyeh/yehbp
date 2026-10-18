@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.10.18.14"
+APP_VERSION="2026.10.18.16"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -899,11 +899,15 @@ macvlan_networks_for_parent() {
 }
 
 macvlan_parent_in_use() {
-    local wanted_parent="$1" net parent
+    # 0: referenced; 1: confirmed unused; 2: unknown (never delete).
+    local wanted_parent="$1" net parent networks
+    networks="$(docker network ls --filter driver=macvlan --format '{{.Name}}' 2>/dev/null)" || return 2
     while IFS= read -r net; do
-        parent="$(docker network inspect "$net" -f '{{.Options.parent}}' 2>/dev/null)"
+        [ -n "$net" ] || continue
+        parent="$(docker network inspect "$net" -f '{{.Options.parent}}' 2>/dev/null)" || return 2
+        [ -n "$parent" ] && [ "$parent" != '<no value>' ] || return 2
         [ "$parent" = "$wanted_parent" ] && return 0
-    done < <(docker network ls --filter driver=macvlan --format '{{.Name}}')
+    done <<< "$networks"
     return 1
 }
 
@@ -1385,6 +1389,9 @@ select_dockerapps_dir() {
 }
 
 calculate_ip_mac() {
+  calculated_ip="" calculated_ip6="" calculated_mac=""
+  calculated_gateway="" calculated_gateway6=""
+  local network_info
   local last_octet=$1
   local net_name="${2:-${SELECTED_MACVLAN:-macvlan}}"
 
@@ -1442,7 +1449,8 @@ calculate_ip_mac() {
 
   # 4) MAC
   local mac
-  mac=$(ip_to_mac "$ip")
+  mac=$(ip_to_mac "$ip") || return 1
+  [ -n "$mac" ] || return 1
 
   # 5) 输出/回填
   echo "Network: $net_name"
@@ -1628,26 +1636,18 @@ docker_server_api_at_least() {
   (( 10#$major > 10#$required_major || (10#$major == 10#$required_major && 10#$minor >= 10#$required_minor) ))
 }
 
-convert_compose_network_mac_for_legacy_docker() {
-  local compose_file="$1" api mac count tmp
+# Shared only by the two compatibility entry points below.
+convert_compose_single_network_mac() {
+  local compose_file="$1" reason="$2" success_message="$3" mac count tmp
   [ -f "$compose_file" ] || return 0
-
-  api="$(docker version --format '{{.Server.APIVersion}}' 2>/dev/null)" || return 0
-  if docker_server_api_at_least 1 44; then
-    return 0
-  fi
-
-  # Docker API < 1.44 cannot accept EndpointConfig.MacAddress (the Compose
-  # network-level form). Its long-supported service-level mac_address works
-  # for YehBP's single-macvlan service templates.
-  count="$(awk '/^        mac_address:[[:space:]]*/ {n++} END {print n+0}' "$compose_file")"
+  count="$(awk '/^        mac_address:[[:space:]]*/ {n++} END {print n+0}' "$compose_file")" || return 1
   [ "$count" -eq 0 ] && return 0
   if [ "$count" -ne 1 ]; then
-    echo "❌ [$compose_file] Docker API $api 不支持网络级 mac_address，且该模板含 $count 个 MAC；拒绝进行不安全转换。"
+    echo "❌ [$compose_file] $reason 不支持网络级 mac_address，且该模板含 $count 个 MAC；拒绝进行不安全转换。"
     return 1
   fi
 
-  mac="$(awk '/^        mac_address:[[:space:]]*/ {sub(/^[[:space:]]*mac_address:[[:space:]]*/, ""); print; exit}' "$compose_file")"
+  mac="$(awk '/^        mac_address:[[:space:]]*/ {sub(/^[[:space:]]*mac_address:[[:space:]]*/, ""); print; exit}' "$compose_file")" || return 1
   [ -n "$mac" ] || { echo "❌ [$compose_file] 无法读取网络级 mac_address。"; return 1; }
 
   tmp="$(mktemp "${compose_file}.legacy-mac.XXXXXX")" || return 1
@@ -1660,38 +1660,24 @@ convert_compose_network_mac_for_legacy_docker() {
     { print }
   ' "$compose_file" > "$tmp" || { rm -f "$tmp"; return 1; }
   mv "$tmp" "$compose_file" || { rm -f "$tmp"; return 1; }
-  echo "ℹ️ Docker API $api：已将 $compose_file 的网络级 mac_address 转为旧版兼容的服务级写法。"
+  echo "$success_message"
+}
+
+convert_compose_network_mac_for_legacy_docker() {
+  local compose_file="$1" api
+  [ -f "$compose_file" ] || return 0
+  api="$(docker version --format '{{.Server.APIVersion}}' 2>/dev/null)" || return 0
+  if docker_server_api_at_least 1 44; then
+    return 0
+  fi
+  convert_compose_single_network_mac "$compose_file" "Docker API $api" \
+    "ℹ️ Docker API $api：已将 $compose_file 的网络级 mac_address 转为旧版兼容的服务级写法。"
 }
 
 convert_compose_network_mac_for_legacy_compose() {
-  local compose_file="$1" mac count tmp
-  [ -f "$compose_file" ] || return 0
-
-  # Compose v2.18 and earlier reject the network-level mac_address form even
-  # when the Docker daemon API itself supports it. YehBP's service templates
-  # contain one macvlan endpoint, so the equivalent service-level form is
-  # safe after that exact schema error has been observed.
-  count="$(awk '/^        mac_address:[[:space:]]*/ {n++} END {print n+0}' "$compose_file")"
-  [ "$count" -eq 0 ] && return 0
-  if [ "$count" -ne 1 ]; then
-    echo "❌ [$compose_file] 当前 Docker Compose 不支持网络级 mac_address，且该模板含 $count 个 MAC；拒绝进行不安全转换。"
-    return 1
-  fi
-
-  mac="$(awk '/^        mac_address:[[:space:]]*/ {sub(/^[[:space:]]*mac_address:[[:space:]]*/, ""); print; exit}' "$compose_file")"
-  [ -n "$mac" ] || { echo "❌ [$compose_file] 无法读取网络级 mac_address。"; return 1; }
-
-  tmp="$(mktemp "${compose_file}.legacy-compose-mac.XXXXXX")" || return 1
-  awk -v mac="$mac" '
-    /^    networks:[[:space:]]*$/ && !inserted {
-      print "    mac_address: " mac
-      inserted = 1
-    }
-    /^        mac_address:[[:space:]]*/ { next }
-    { print }
-  ' "$compose_file" > "$tmp" || { rm -f "$tmp"; return 1; }
-  mv "$tmp" "$compose_file" || { rm -f "$tmp"; return 1; }
-  echo "ℹ️ 当前 Docker Compose 不支持网络级 mac_address，已仅在本次部署配置中转为服务级写法。"
+  # Only called after the exact network-level MAC schema error.
+  convert_compose_single_network_mac "$1" "当前 Docker Compose" \
+    "ℹ️ 当前 Docker Compose 不支持网络级 mac_address，已仅在本次部署配置中转为服务级写法。"
 }
 
 apply_compose_schema_compatibility_fallback() {
@@ -3183,6 +3169,49 @@ validate_compose_app_name() {
     fi
 }
 
+# YehBP templates use one service at two spaces and scalar fields at four.
+# Keep image names, nested values, comments and similarly named scalars intact.
+rename_compose_app_fields() {
+    local file="$1" source_service="$2" source_container="$3" source_host="$4" target="$5" tmp
+    [ -f "$file" ] || return 1
+    tmp="$(mktemp "${file}.names.XXXXXX")" || return 1
+    awk -v service="$source_service" -v container="$source_container" \
+        -v host="$source_host" -v target="$target" '
+        # Match a complete plain/quoted scalar and preserve its formatting.
+        function renamed(line, prefix, old, replacement, key, rest, q, token, tail, n) {
+            hit = 0
+            if (substr(line, 1, length(prefix)) != prefix) return line
+            rest = substr(line, length(prefix) + 1)
+            q = substr(rest, 1, 1)
+            if (q != "\"" && q != sprintf("%c", 39)) q = ""
+            token = q old q
+            n = length(token)
+            if (substr(rest, 1, n) != token) return line
+            tail = substr(rest, n + 1)
+            if (key ? tail !~ /^:[[:space:]]*(#.*)?$/ : tail !~ /^([[:space:]]+#.*|[[:space:]]*)$/) return line
+            hit = 1
+            return prefix q replacement q tail
+        }
+        /^[^[:space:]#]/ {
+            renamed($0, "", "services", "services", 1)
+            in_services = hit
+            in_app = 0
+        }
+        in_services && /^  [^[:space:]#]/ {
+            $0 = renamed($0, "  ", service, target, 1)
+            in_app = hit
+        }
+        in_app && /^    (container_name|hostname):[[:space:]]*/ {
+            match($0, /^    (container_name|hostname):[[:space:]]*/)
+            prefix = substr($0, 1, RLENGTH)
+            old = ($0 ~ /^    container_name:/) ? container : host
+            $0 = renamed($0, prefix, old, target, 0)
+        }
+        { print }
+    ' "$file" > "$tmp" || { rm -f "$tmp"; return 1; }
+    mv "$tmp" "$file" || { rm -f "$tmp"; return 1; }
+}
+
 install_librespeed() {
 
     echo "🔧 安装 LibreSpeed（需要选择 macvlan 网络）"
@@ -3201,7 +3230,7 @@ install_librespeed() {
       "请输入 LibreSpeed IPv4 最后一段（1-254，回车默认 111）: " 111)" || return 1
 
     # 3) 计算 IP / IPv6 / MAC（基于 SELECTED_MACVLAN）
-    calculate_ip_mac "$last_octet"
+    calculate_ip_mac "$last_octet" || return 1
     librespeed="$calculated_ip"
     librespeed6="$calculated_ip6"
     librespeedmac="$calculated_mac"
@@ -3251,12 +3280,7 @@ install_librespeed() {
 
     # 7) 替换compose配置中的容器相关字段
     if [ "$CONTAINER_NAME" != "$DEFAULT_CONTAINER_NAME" ]; then
-        # 1. 替换services下一级的服务名称
-        sed -i "s/^  $DEFAULT_CONTAINER_NAME:/  $CONTAINER_NAME:/" compose.yaml
-        # 2. 替换container_name
-        sed -i "s/container_name: $DEFAULT_CONTAINER_NAME/container_name: $CONTAINER_NAME/" compose.yaml
-        # 3. 替换hostname
-        sed -i "s/hostname: $DEFAULT_CONTAINER_NAME/hostname: $CONTAINER_NAME/" compose.yaml
+        rename_compose_app_fields compose.yaml "$DEFAULT_CONTAINER_NAME" "$DEFAULT_CONTAINER_NAME" "$DEFAULT_CONTAINER_NAME" "$CONTAINER_NAME" || return 1
         echo "✅ 已自定义容器名称/目录为：$CONTAINER_NAME"
     fi
 
@@ -3356,7 +3380,7 @@ install_adguardhome() {
                   "请输入 mosdns IPv4 最后一段（1-254，回车默认 119）: " \
                   119
                 )" || return 1
-                calculate_ip_mac "$mosdns_last"
+                calculate_ip_mac "$mosdns_last" || return 1
                 mosdns="$calculated_ip"
                 mosdns6="$calculated_ip6"
                 break
@@ -3386,7 +3410,7 @@ install_adguardhome() {
       "请输入 adguard IPv4 最后一段（1-254，回车默认 114）: " \
       114
     )" || return 1
-    calculate_ip_mac "$adg_last"
+    calculate_ip_mac "$adg_last" || return 1
     adguard="$calculated_ip"
     adguard6="$calculated_ip6"
     adguardmac="$calculated_mac"
@@ -3417,12 +3441,7 @@ install_adguardhome() {
 
     # 6) 替换compose配置中的容器相关字段
     if [ "$CONTAINER_NAME" != "$DEFAULT_CONTAINER_NAME" ]; then
-        # 1. 替换services下一级的服务名称
-        sed -i "s/^  $DEFAULT_CONTAINER_NAME:/  $CONTAINER_NAME:/" compose.yaml
-        # 2. 替换container_name
-        sed -i "s/container_name: $DEFAULT_CONTAINER_NAME/container_name: $CONTAINER_NAME/" compose.yaml
-        # 3. 替换hostname
-        sed -i "s/hostname: $DEFAULT_CONTAINER_NAME/hostname: $CONTAINER_NAME/" compose.yaml
+        rename_compose_app_fields compose.yaml "$DEFAULT_CONTAINER_NAME" "$DEFAULT_CONTAINER_NAME" "$DEFAULT_CONTAINER_NAME" "$CONTAINER_NAME" || return 1
         echo "✅ 已自定义容器名称/目录为：$CONTAINER_NAME"
     fi
 
@@ -3599,8 +3618,9 @@ select_mihomo_upstream() {
     if [ "$MIHOMO_IP4" = "198.18.0.2" ]; then
         derived6="2001:2:0:6152::2"
     else
-        calculate_ip_mac "${MIHOMO_IP4##*.}"
-        [ "$calculated_ip" = "$MIHOMO_IP4" ] && derived6="$calculated_ip6"
+        if calculate_ip_mac "${MIHOMO_IP4##*.}"; then
+            [ "$calculated_ip" = "$MIHOMO_IP4" ] && derived6="$calculated_ip6"
+        fi
     fi
     port=""
     [[ "$MIHOMO_ENDPOINT4" == *:* ]] && port="${MIHOMO_ENDPOINT4#*:}"
@@ -3657,7 +3677,7 @@ install_mosdns() {
       "请输入 mosdns IPv4 最后一段（1-254，回车默认 119）: " 119)" || return 1
 
     # 3) 计算 mosdns IP / IPv6 / MAC / 网关（基于 SELECTED_MACVLAN）
-    calculate_ip_mac "$mosdns_last"
+    calculate_ip_mac "$mosdns_last" || return 1
     local mosdns mosdns6 mosdnsmac gateway
     mosdns="$calculated_ip"
     mosdns6="$calculated_ip6"
@@ -3696,12 +3716,7 @@ install_mosdns() {
 
     # 7) 替换compose配置中的容器相关字段
     if [ "$CONTAINER_NAME" != "$DEFAULT_CONTAINER_NAME" ]; then
-        # 1. 替换services下一级的服务名称
-        sed -i "s/^  $DEFAULT_CONTAINER_NAME:/  $CONTAINER_NAME:/" compose.yaml
-        # 2. 替换container_name
-        sed -i "s/container_name: $DEFAULT_CONTAINER_NAME/container_name: $CONTAINER_NAME/" compose.yaml
-        # 3. 替换hostname
-        sed -i "s/hostname: $DEFAULT_CONTAINER_NAME/hostname: $CONTAINER_NAME/" compose.yaml
+        rename_compose_app_fields compose.yaml "$DEFAULT_CONTAINER_NAME" "$DEFAULT_CONTAINER_NAME" "$DEFAULT_CONTAINER_NAME" "$CONTAINER_NAME" || return 1
         echo "✅ 已自定义容器名称/目录为：$CONTAINER_NAME"
     fi
 
@@ -4002,7 +4017,7 @@ install_mihomo() {
         mihomo_last="$(prompt_ipv4_last_octet \
           "请输入 mihomo IPv4 最后一段（1-254，回车默认 120）: " 120)" || return 1
 
-        calculate_ip_mac "$mihomo_last"
+        calculate_ip_mac "$mihomo_last" || return 1
         mihomo="$calculated_ip"
         mihomo6="$calculated_ip6"
         mihomomac="$calculated_mac"
@@ -4093,12 +4108,7 @@ PY
     # 名称虽为 mihomoin，仍必须从这个模板原始名称替换。
     local TEMPLATE_CONTAINER_NAME="mihomo"
     if [ "$CONTAINER_NAME" != "$TEMPLATE_CONTAINER_NAME" ]; then
-        # 1. 替换services下一级的服务名称
-        sed -i "s/^  $TEMPLATE_CONTAINER_NAME:/  $CONTAINER_NAME:/" compose.yaml
-        # 2. 替换container_name
-        sed -i "s/container_name: $TEMPLATE_CONTAINER_NAME/container_name: $CONTAINER_NAME/" compose.yaml
-        # 3. 替换hostname
-        sed -i "s/hostname: $TEMPLATE_CONTAINER_NAME/hostname: $CONTAINER_NAME/" compose.yaml
+        rename_compose_app_fields compose.yaml "$TEMPLATE_CONTAINER_NAME" "$TEMPLATE_CONTAINER_NAME" "$TEMPLATE_CONTAINER_NAME" "$CONTAINER_NAME" || return 1
         echo "✅ 已自定义容器名称/目录为：$CONTAINER_NAME"
     fi
 
@@ -4220,7 +4230,7 @@ install_ddnsgo() {
         ddnsgo_last="$(prompt_ipv4_last_octet \
           "请输入 ddns-go IPv4 最后一段（1-254，回车默认 198）: " 198)" || return 1
 
-        calculate_ip_mac "$ddnsgo_last"
+        calculate_ip_mac "$ddnsgo_last" || return 1
         ddnsgo_ip="$calculated_ip"
         ddnsgo6="$calculated_ip6"
         ddnsgomac="$calculated_mac"
@@ -4268,12 +4278,7 @@ install_ddnsgo() {
 
     # 6) 替换compose配置中的容器相关字段
     if [ "$CONTAINER_NAME" != "$DEFAULT_CONTAINER_NAME" ]; then
-        # 1. 替换services下一级的服务名称（ddns-go 默认服务名带连字符）
-        sed -i "s/^  $DEFAULT_SERVICE_NAME:/  $CONTAINER_NAME:/" compose.yaml
-        # 2. 替换container_name
-        sed -i "s/container_name: $DEFAULT_CONTAINER_NAME/container_name: $CONTAINER_NAME/" compose.yaml
-        # 3. 替换hostname
-        sed -i "s/hostname: $DEFAULT_CONTAINER_NAME/hostname: $CONTAINER_NAME/" compose.yaml
+        rename_compose_app_fields compose.yaml "$DEFAULT_SERVICE_NAME" "$DEFAULT_CONTAINER_NAME" "$DEFAULT_CONTAINER_NAME" "$CONTAINER_NAME" || return 1
         echo "✅ 已自定义容器名称/目录为：$CONTAINER_NAME"
     fi
 
@@ -4384,7 +4389,7 @@ install_lucky() {
         lucky_last="$(prompt_ipv4_last_octet \
           "请输入 Lucky IPv4 最后一段（1-254，回车默认 166）: " 166)" || return 1
 
-        calculate_ip_mac "$lucky_last"
+        calculate_ip_mac "$lucky_last" || return 1
         lucky="$calculated_ip"
         lucky6="$calculated_ip6"
         luckymac="$calculated_mac"
@@ -4431,12 +4436,7 @@ install_lucky() {
 
     # 6) 替换compose配置中的容器相关字段
     if [ "$CONTAINER_NAME" != "$DEFAULT_CONTAINER_NAME" ]; then
-        # 1. 替换services下一级的服务名称
-        sed -i "s/^  $DEFAULT_CONTAINER_NAME:/  $CONTAINER_NAME:/" compose.yaml
-        # 2. 替换container_name
-        sed -i "s/container_name: $DEFAULT_CONTAINER_NAME/container_name: $CONTAINER_NAME/" compose.yaml
-        # 3. 替换hostname
-        sed -i "s/hostname: $DEFAULT_CONTAINER_NAME/hostname: $CONTAINER_NAME/" compose.yaml
+        rename_compose_app_fields compose.yaml "$DEFAULT_CONTAINER_NAME" "$DEFAULT_CONTAINER_NAME" "$DEFAULT_CONTAINER_NAME" "$CONTAINER_NAME" || return 1
         echo "✅ 已自定义容器名称/目录为：$CONTAINER_NAME"
     fi
 
@@ -4925,24 +4925,6 @@ clean_macvlan_network() {
         return 0
     fi
 
-    if bash_supports_associative_arrays; then
-        # Bash 4：预先统计未删除网络对各 VLAN parent 的引用。
-        declare -A remain_key_count
-        for net in "${macvlan_networks[@]}"; do
-            skip=false
-            for del in "${to_delete[@]}"; do
-                [[ "$net" == "$del" ]] && { skip=true; break; }
-            done
-            $skip && continue
-            if [[ "$net" =~ ^macvlan_([A-Za-z0-9_-]+)_([0-9]+)$ ]]; then
-                phys="${BASH_REMATCH[1]}"
-                vid="${BASH_REMATCH[2]}"
-                key="${phys}_${vid}"
-                remain_key_count["$key"]=$(( ${remain_key_count["$key"]:-0} + 1 ))
-            fi
-        done
-    fi
-
     for net in "${to_delete[@]}"; do
         echo
         echo "🧻 准备删除 macvlan 网络: $net"
@@ -4970,14 +4952,20 @@ clean_macvlan_network() {
             phys_safe="${BASH_REMATCH[1]}"
             vid="${BASH_REMATCH[2]}"
 
-            # Bash 4 使用创建前的索引；Bash 3.2 则在删除后查询剩余网络。
-            if bash_supports_associative_arrays && [ "${remain_key_count[$key]:-0}" -gt 0 ]; then
-                echo "ℹ️ 仍有其它 macvlan 使用 ${phys_safe}.${vid}，跳过删除该 VLAN 子接口。"
-                continue
-            elif ! bash_supports_associative_arrays && macvlan_parent_in_use "${phys_safe}.${vid}"; then
-                echo "ℹ️ 仍有其它 macvlan 使用 ${phys_safe}.${vid}，跳过删除该 VLAN 子接口。"
-                continue
-            fi
+            local parent_status
+            macvlan_parent_in_use "${phys_safe}.${vid}"
+            parent_status=$?
+            case "$parent_status" in
+                1) ;; # Only confirmed absence permits the existing VLAN prompt.
+                0)
+                    echo "ℹ️ 仍有其它 macvlan 使用 ${phys_safe}.${vid}，跳过删除该 VLAN 子接口。"
+                    continue
+                    ;;
+                *)
+                    echo "⚠️ 无法确认 ${phys_safe}.${vid} 的网络引用，保留该 VLAN 子接口。"
+                    continue
+                    ;;
+            esac
 
             # 推断真实物理口名（之前创建时仅做过“安全字符替换”，常见 eth0/eno1/enpXsY 均一致）
             phys="$phys_safe"
