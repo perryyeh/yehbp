@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.10.19.13"
+APP_VERSION="2026.10.19.14"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -6451,9 +6451,11 @@ manage_rtp2httpd_menu() {
     local choice
 
     printf '📺 安装/删除/升级 IPTV（rtp2httpd）\n'
-    echo "上海电信可直接使用此参考脚本获取频道数据并生成播放列表，"
-    echo "其他地区或运营商需自行适配。"
-    echo "使用说明：https://github.com/perryyeh/yehbp/tree/main/assets/iptv#readme"
+    echo "本菜单用于安装和配置 rtp2httpd 直播、回放转发服务。"
+    echo "如需获取频道数据并生成播放列表，请参考："
+    echo "https://github.com/perryyeh/yehbp/tree/main/assets/iptv#readme"
+    echo "演示代码：assets/iptv/iptv.py"
+    echo "该代码已在上海电信环境下测试通过，可直接使用；其他环境需自行适配。"
     echo "1）查看已安装信息"
     echo "2）安装/设置 rtp2httpd"
     echo "3）删除配置"

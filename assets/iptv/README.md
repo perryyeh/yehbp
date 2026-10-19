@@ -4,7 +4,7 @@
 
 ```sh
 # 首次全参数：保存配置、获取原始数据并生成playlist（身份仅为示意）
-python3 iptv.py config=tel userinfo=USER SN=BOX_SN MAC=00:11:22:33:44:55 \
+python3 iptv.py config=tel userinfo=YOUR_USER_ID SN=YOUR_BOX_SN MAC=YOUR_BOX_MAC \
   interface=iptv85 multicast_interface=iptv51 fcc_interface=iptv85 \
   baseURL=http://127.0.0.1:5140
 # 后续最简：离线转换，主产物仍为tel/playlist.m3u；另导出指定完整路径
@@ -18,9 +18,28 @@ python3 iptv.py configure --config-dir /your/iptv/tel --stdin
 python3 iptv.py run --config-dir /your/iptv/tel
 ```
 
-主入口使用 `key=value`。`config=tel` 是 **iptv.py所在目录下的tel子目录**，不需前置或结尾斜杠；所有相对config路径统一相对脚本目录，与调用cwd无关，也接受绝对路径。首次省略config时，必须明确提供 `interface=所选接口`，使用该接口名作为脚本同级配置子目录名，绝不默认猜eth0。缺少身份或接口会失败，不写不完整配置。
+主入口使用 `key=value`，参数之间以空格分隔。下表默认值仅用于新配置；已有配置未提供的字段保留原值。身份占位符须替换为本人已授权的机顶盒信息，不能用STBID或主机网卡MAC替代。
 
-准确键名为 `config`、`output`、`userinfo`（也接受`userid`）、`SN`（`sn`）、`MAC`（`mac`）、`interface`、`multicast_interface`、`fcc_interface`、`baseURL`（`base_url`）、`auth_origin`、`live_path`、`replay_path`、`seek_template`、`allowed_origins`（空格分隔的一个参数）。身份全参数会出现在进程argv及可能的shell历史中；脚本不打印身份或完整认证URL，可选受保护stdin入口见下文。出现任一配置字段即保存配置并fetch、convert；只给config/output时严格离线。成功写入同名文件时逐文件原子替换，失败不保证跨文件事务。
+| 参数（别名） | 用途 | 必填 / 默认 | 示例或备注 |
+|---|---|---|---|
+| `config` | 配置目录，也是唯一实例 | 可省略；省略时必须明确提供 `interface`，以接口名为目录名 | `config=tel` 指向脚本同级tel目录；相对路径均以脚本目录为基准，与调用cwd无关，也接受绝对路径 |
+| `output` | 额外导出的完整目的路径 | 可选；省略不导出 | `output=/your/export/channels.m3u`；目录与末级文件名规则见下文，主产物始终为配置目录内 `playlist.m3u` |
+| `userinfo`（`userid`） | IPTV UserID | 首次必填 | `userinfo=YOUR_USER_ID` |
+| `SN`（`sn`） | 机顶盒独立SN | 首次必填 | `SN=YOUR_BOX_SN` |
+| `MAC`（`mac`） | 机顶盒MAC | 首次必填 | `MAC=YOUR_BOX_MAC`；实际值须为冒号分隔的六组两位十六进制数 |
+| `interface` | 鉴权及回放接口 | 首次必填；不猜测eth0 | `interface=iptv85`；接口名为1–15位字母、数字或 `_.:-` |
+| `baseURL`（`base_url`） | rtp2httpd服务基址 | 可选；`http://127.0.0.1:5140` | `baseURL=http://127.0.0.1:5140`；支持HTTP/HTTPS及路径前缀，不接受查询参数、片段或用户凭据 |
+| `multicast_interface` | 组播接口 | 可选；空值沿用 `interface` | `multicast_interface=iptv51`；`multicast_interface=` 清空已有覆盖 |
+| `fcc_interface` | FCC接口 | 可选；空值不另指定 | `fcc_interface=iptv85`；`fcc_interface=` 清空已有覆盖 |
+| `auth_origin` | 鉴权入口 | 可选；`http://222.68.208.73:7001` | 仅HTTP/HTTPS origin，不含业务路径或查询参数 |
+| `live_path` | rtp2httpd直播路径 | 可选；`/rtp/` | `live_path=/udp/`；首尾为 `/`，中间仅字母、数字、下划线、连字符或 `/` |
+| `replay_path` | rtp2httpd回放路径 | 可选；`/rtsp/` | `replay_path=/proxy/rtsp/`；路径格式同上 |
+| `seek_template` | 回放时间模板 | 可选；`{utc:YmdHMS}-{utcend:YmdHMS}` | 例如 `'seek_template=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}'`；用单引号防shell展开，模板不得为空或含 `&`、`#`、`?` |
+| `allowed_origins` | 额外允许的鉴权/门户origin | 可选；空列表 | `'allowed_origins=http://example.test:8080 http://example.test:8081'`；多个origin须放在同一个参数中，`allowed_origins=` 清空；须先核实目标 |
+
+首次提供身份、接口及所需播放覆盖参数，验证通过后保存配置并fetch、convert；缺少必要身份或接口会失败，不写不完整配置。**出现任一配置字段（除config/output外的表中参数）即保存配置并主动fetch、convert**，并非只修改离线播放设置；只给config/output时严格离线。别名不能与原键重复传入，未知键或重复键会报错。`directory_metadata` 已移除，无需设置：fetch始终获取完整频道目录。
+
+身份全参数会出现在进程argv及可能的shell历史中；脚本不打印身份或完整认证URL，可选受保护stdin入口见下文。成功写入同名文件时逐文件原子替换，失败不保证跨文件事务。
 
 `output`是完整目的路径。结尾 `/` 或已存在目录认定纯目录，用配置目录basename加`.m3u`；含目录部分的非目录值视完整文件名，例如 `/dir/file.m3u` 或 `./file.m3u`。不存在且无斜杠的 `foo.m3u` 或 `newdir` 不导出，不猜成目录。相对output按调用cwd解析。省略output也不导出；每次转换仍生成配置目录内`playlist.m3u`。
 
@@ -36,9 +55,26 @@ python3 iptv.py run --config-dir /your/iptv/tel
 
 配置目录与额外输出目录可不存在，但其父目录必须已经存在，脚本只创建末级目录（0700，不递归创建父目录）。现存用户目录、脚本父目录、服务目录一律不修改权限；目录须属当前用户且路径不经过符号链接。所有新写文件及锁为0600；身份配置要求当前用户所有且0600。目录应由用户选择为适当私有位置。
 
-辅助旧式参数（相对`--config-dir`按调用cwd解析）仍兼容：`--output-dir` 是主输出之外的副本，默认名 `playlist.m3u`；`--output-name` 仅改变副本名，必须同时提供输出目录，接受不含路径、控制字符且非隐藏的安全basename。两个目录指向同一路径且名称相同时只写一次；同目录不同名会额外生成副本。禁止导出覆盖本实例配置、原始数据、目录、锁或脚本。不生成 raw/named/override。每个文件成功时同目录原子替换；主输出先完成，额外导出失败返回非零并明确提示主playlist已生成，需检查导出产物状态。这不是跨文件事务；替换前失败保留旧文件，替换后的fsync失败可能已写入新文件。
+辅助子命令仍受支持，与主key=value入口分别使用；所有子命令均需 `--config-dir`。省略子命令（例如 `python3 iptv.py --config-dir /your/iptv/tel`）等同显式 `convert`，裸运行脚本仍会因缺少 `--config-dir` 报错。
 
-默认无命令与显式 `convert` 完全相同：仅读取已有catchup/channels，不鉴权、不发网络请求。缺少catchup时提示先执行fetch；缺少channels时以原始名称或ChannelID占位。`fetch` 和 `run` 才主动刷新；`run` 的fetch失败时不会继续convert。
+| 子命令 | 用途 | 是否主动联网 | 示例 |
+|---|---|---|---|
+| `configure` | 交互或stdin录入并保存配置 | 否 | `python3 iptv.py configure --config-dir /your/iptv/tel` |
+| `fetch` | 获取原始频道及完整名称目录，不转换 | 是 | `python3 iptv.py fetch --config-dir /your/iptv/tel` |
+| `convert`（默认） | 从已有数据生成主playlist及可选副本 | 否 | `python3 iptv.py convert --config-dir /your/iptv/tel` |
+| `run` | 先fetch，成功后再convert | 是 | `python3 iptv.py run --config-dir /your/iptv/tel` |
+
+| 辅助参数 | 用途 | 必填 / 默认 | 示例或备注 |
+|---|---|---|---|
+| `--config-dir DIR` | 配置、源数据和主playlist目录 | 所有子命令必填 | `--config-dir ./tel` 相对调用cwd解析；与主入口 `config=tel` 的基准不同 |
+| `--output-dir DIR` | 主输出之外的副本目录 | 可选；仅convert/run | `--output-dir /your/export`；默认副本名为 `playlist.m3u`，不使用配置目录basename |
+| `--output-name NAME` | 指定副本文件名 | 可选；默认 `playlist.m3u`，需同时提供 `--output-dir` | `--output-name channels.m3u`；必须为不含路径、控制字符且非隐藏的安全basename |
+| `--stdin` | 按固定顺序从受保护stdin读取12行配置 | 可选；仅configure，默认交互输入 | `configure --config-dir /your/iptv/tel --stdin`；行顺序及空行规则见下文 |
+| `-h`、`--help` | 显示CLI帮助 | 可选 | `python3 iptv.py --help` |
+
+两个目录指向同一路径且名称相同时只写一次；同目录不同名会额外生成副本。禁止导出覆盖本实例配置、原始数据、目录、锁或脚本。不生成 raw/named/override。每个文件成功时同目录原子替换；主输出先完成，额外导出失败返回非零并明确提示主playlist已生成，需检查导出产物状态。这不是跨文件事务；替换前失败保留旧文件，替换后的fsync失败可能已写入新文件。
+
+默认convert仅读取已有catchup/channels，不鉴权、不发网络请求。缺少catchup时提示先执行fetch；缺少channels时以原始名称或ChannelID占位。辅助命令中 `fetch` 和 `run` 才主动刷新；`run` 的fetch失败时不会继续convert。
 
 `configure` 依次询问 UserID、盒子独立SN、盒子MAC（均隐藏且不显示已有身份）、鉴权/回放接口、组播接口、FCC接口、鉴权origin、rtp2httpd base URL、直播路径、回放路径、时间模板、额外允许origin。空输入保留已有值；首次缺少必要身份或鉴权接口会失败，不猜主机接口或盒子信息。不能用STBID或主机网卡MAC替代盒子身份。组播/FCC输入 `-` 可清空，额外origin以空格分隔或 `-` 清空。默认组播沿用鉴权接口，FCC不另指定。fetch/run和首次全参数获取始终同时刷新完整频道目录。
 
@@ -50,7 +86,7 @@ fetch重新读取鉴权接口唯一全局IPv4，禁用环境代理并绑定已�
 
 fetch不合并、不改名。目录阶段始终沿用同一认证cookie会话登录门户、保留DynamicAuthIP，调用12分类getChannelList，不下载逐节目EPG/XMLTV。每分类完整JSON响应（status/data/额外字段、分类及重复记录）包存在channels.json，不写回catchup。目录解析、分类、失败状态或空总目录异常均使fetch退出1并保留原有两文件。候选完成验证后分别原子替换，文件间不是事务；磁盘写入故障可能出现新目录与旧catchup，修复后需重跑。
 
-名称优先原始ChannelName，其次按精确 `UserChannelID ↔ mixNo` 匹配目录；仅当不同name候选唯一时使用原文。HD、高清、4K、括号、前后及连续空格全部保留。不按mixNo去重原始频道。冲突候选保留在目录，统计ambiguous并以精确ChannelID占位；无目录或未匹配统计unmatched并占位。convert打印source/matched/ambiguous/unmatched数量。分组字段保留在目录，M3U不推断分组；不得按复用回放地址猜名字。M3U无法安全表达的换行、双引号等使转换失败，不静默修改名称，保留上次主输出。
+名称优先原始ChannelName，其次按精确 `UserChannelID ↔ mixNo` 匹配目录；仅当不同name候选唯一时使用原文。HD、高清、4K、括号、前后及连续空格全部保留。不按mixNo去重原始频道。冲突候选保留在目录；原始名称缺失时，目录候选不唯一则统计ambiguous，无目录或未匹配则统计unmatched，均以精确ChannelID占位。convert打印source/matched/ambiguous/unmatched数量。分组字段保留在目录，M3U不推断分组；不得按复用回放地址猜名字。M3U无法安全表达的换行、双引号等使转换失败，不静默修改名称，保留上次主输出。
 
 直播经 `/rtp/<组播IP:端口>`；有效FCC地址端口才追加 `fcc=IP:port`，缺失不写 `fcc=:`。鉴权/回放用interface，组播用multicast_interface（省略则沿用interface），FCC可另设fcc_interface，通过每请求r2h-ifname参数选择，不修改服务。回放经 `/rtsp/<主机:端口>/<路径>`，默认RTSP端口554；原始查询字符原样保留，包括百分号大小写、`+`、重复键，尾部追加playseek和接口参数。已有playseek或非空坏地址使整个convert失败。TimeShiftURL为null、空或字面null时写 `catchup="none"`。默认模板 `{utc:YmdHMS}-{utcend:YmdHMS}`，亦可配置播放器 `${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}`；不擅自增加8小时或启用Range。参考 [rtp2httpd URL](https://rtp2httpd.com/en/guide/url-formats)及 [M3U](https://rtp2httpd.com/en/guide/m3u-integration)，此前实测版本v3.16.0；本轮目录模型仅本机离线验证。
 
