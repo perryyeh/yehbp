@@ -73,14 +73,25 @@ if [ "$FAIL" = yes ]; then exit 1; fi
         self.assertEqual(self.state.stat().st_mode & 0o777, 0o600)
         self.assertEqual(self.log.read_text(), 'show --property=ActiveState --value rtp2httpd_demo.service\nrestart rtp2httpd_demo.service\nis-active --quiet rtp2httpd_demo.service\n')
         self.assertTrue(list(self.base.glob('*.bak-*')))
+        self.assertEqual(r.stdout.splitlines(), [
+            '✅ 已应用所选字段并重启 rtp2httpd_demo.service',
+            'RTSP 接口（回放）：wan.7',
+        ])
 
     def test_route_retains_general_and_reports_fallback(self):
-        r = self.apply('')
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn('upstream-interface = media', self.conf.read_text())
-        self.assertNotIn('\nupstream-interface-rtsp =', self.conf.read_text())
-        self.assertIn('media', r.stdout)
-        self.assertIn('RTSP_IF=\n', self.state.read_text())
+        for general, expected in [('media', '未设置（沿用通用接口：media）'),
+                                  ('', '未设置（沿用系统路由）')]:
+            with self.subTest(general=general):
+                self.conf.write_text(self.original.replace('upstream-interface = media', 'upstream-interface = ' + general))
+                r = self.apply('')
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertIn('upstream-interface = ' + general + '\n', self.conf.read_text())
+                self.assertNotIn('\nupstream-interface-rtsp =', self.conf.read_text())
+                self.assertEqual(r.stdout.splitlines(), [
+                    '✅ 已应用所选字段并重启 rtp2httpd_demo.service',
+                    'RTSP 接口（回放）：' + expected,
+                ])
+                self.assertIn('RTSP_IF=\n', self.state.read_text())
 
     def test_missing_state_supported(self):
         self.state.unlink()

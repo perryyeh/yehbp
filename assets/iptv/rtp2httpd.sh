@@ -562,6 +562,10 @@ def stage(path, data, metadata):
         raise
 
 
+def rtsp_display(dedicated, fallback):
+    return dedicated or ('未设置（沿用通用接口：' + fallback + '）' if fallback else '未设置（沿用系统路由）')
+
+
 def main():
     action, config_name, state_name, *args = sys.argv[1:]
     config, state = Path(config_name), Path(state_name)
@@ -624,7 +628,7 @@ def main():
                     raise ValueError('不支持的 bind 语法')
                 print(match[2 if field == 'address' else 4])
             elif field == 'rtsp-display':
-                print(dedicated or ('未设置（沿用通用接口：' + fallback + '）' if fallback else '未设置（沿用系统路由）'))
+                print(rtsp_display(dedicated, fallback))
             else:
                 print(values.get('upstream-interface-' + field, ''))
             return
@@ -716,7 +720,7 @@ def main():
                 raise ValueError('服务应用失败')
             print('✅ 已应用所选字段并重启 ' + service)
             if field == 'rtsp':
-                print('RTSP 实际回退：' + (value or fallback or '系统路由') + '（URL r2h-ifname 优先；通用接口保留）')
+                print('RTSP 接口（回放）：' + rtsp_display(value, fallback))
         except BaseException:
             for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
                 signal.signal(signum, signal.SIG_IGN)
