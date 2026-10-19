@@ -49,7 +49,7 @@ bash -n assets/iptv/rtp2httpd.sh
 | `test_dockcheck_dependencies.py` | OpenWrt 包管理与 xargs/flock 依赖选择 |
 | `test_docker_datadir_migration.py` | 迁移前置校验、复制失败、回滚、JSON 精度与沙箱元数据保留 |
 | `test_iptv_profile_deletion.py` | NetworkManager UUID 所有权校验、删除失败及状态保留 |
-| `test_rtp2httpd_rtsp.py` | 安装 RTSP 四选项、同名配置单项设置、精确字节及元数据保留、旧 / 无 env、路由回退、异常语法拒绝、仅所选服务应用及失败回滚；systemctl/ip/nmcli 均为 sandbox mock |
+| `test_rtp2httpd_rtsp.py` | 安装 RTSP 四选项、真实菜单2发现/选择已有实例（跨目录）或新建、无实例首次流程、取消无操作、同名配置单项设置、安全ExecStart/drop-in拒绝、精确字节及元数据保留、旧 / 无 env、路由回退、异常语法拒绝、仅所选服务应用及失败回滚；systemctl/ip/nmcli 均为 sandbox mock |
 | `test_iptv_reference_*.py` | 独立单文件参考脚本：三步协议与完整数据、默认完整目录获取/旧false忽略与只读保留、无开关配置/12行stdin顺序、目录隔离、首次/重入交互、两参数离线且禁止socket、目录补名及HD/高清/4K保留、主输出与副本字节一致、key=value首次获取/相对脚本目录/output边界、并发锁/脚本碰撞保护、自定义名/同目录去重、父目录权限与原子失败保护（35项） |
 | `test_compose_mac_check.py` | Compose 文件/项目/环境恢复、MAC 覆盖检查、wrapper 退出状态 |
 | `test_remaining_fixes.py` | 安装退出状态、VLAN 输入、依赖失败、Compose 私有临时文件与信号清理 |

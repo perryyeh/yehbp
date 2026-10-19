@@ -48,6 +48,7 @@ class VLANTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='vlan-eof-', dir=SCRATCH) as temp:
             code = self.code + function('rtp2httpd_install', source) + '''
 rtp2httpd_require_commands() { :; }
+rtp2httpd_list_instances() { RTP2HTTPD_LIST_SERVICES=(); }
 select_dockerapps_dir() { SELECTED_DOCKERAPPS_DIR="$SANDBOX"; }
 rtp2httpd_prompt_instance() {
     RTP2HTTPD_INSTANCE=test
@@ -65,7 +66,7 @@ rtp2httpd_install
                 r = run(code, data, env=dict(os.environ, SANDBOX=temp))
                 self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
                 self.assertNotIn('UNEXPECTED', r.stdout + r.stderr)
-                self.assertEqual(list((Path(temp) / 'rtp2httpd').iterdir()), [])
+                self.assertFalse((Path(temp) / 'rtp2httpd').exists())
 
 
 class InstallerStatusTests(unittest.TestCase):

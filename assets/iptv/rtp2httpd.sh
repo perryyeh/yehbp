@@ -263,7 +263,7 @@ rtp2httpd_fcc_routing_params() {
 
 rtp2httpd_prompt_instance() {
     local input n=1
-    read -r -p "请输入配置名（例如 tel；回车自动分配 _1、_2…）: " input
+    read -r -p "请输入配置名（例如 tel；回车自动分配 _1、_2…）: " input || return 2
     if [ -z "$input" ]; then
         while :; do
             RTP2HTTPD_INSTANCE="$n"
@@ -800,12 +800,38 @@ rtp2httpd_settings() {
 rtp2httpd_install() {
     local dockerapps answer mcast_name fcc_name mcast_sysctl_if tmp_conf tmp_service fcc_network_start_pre
     local shared_vlan=0 fcc_ipv4_args=()
+    local choice service instance i
+    # Use the same service inventory as “查看已安装信息”, across app directories.
+    # Existing settings resolve ExecStart safely; no install/network dependency
+    # checks or directory creation are needed until explicitly creating an instance.
+    rtp2httpd_list_instances
+    if [ "${#RTP2HTTPD_LIST_SERVICES[@]}" -gt 0 ]; then
+        echo "请选择已有实例进行设置，或新建实例："
+        for i in "${!RTP2HTTPD_LIST_SERVICES[@]}"; do
+            service="${RTP2HTTPD_LIST_SERVICES[$i]}"
+            instance="${service#${RTP2HTTPD_SERVICE_BASE}}"
+            instance="${instance%.service}"
+            instance="${instance#_}"
+            printf '  %d）%s（%s）\n' "$((i + 1))" "${instance:-默认}" "$service"
+        done
+        echo "  n）新建实例"
+        echo "  0）返回"
+        read -r -p "请输入要操作的序号: " choice || return 0
+        case "$choice" in
+            n|N) ;;
+            *)
+                [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#RTP2HTTPD_LIST_SERVICES[@]}" ] || return 0
+                rtp2httpd_settings "${RTP2HTTPD_LIST_SERVICES[$((choice - 1))]}"
+                return $?
+                ;;
+        esac
+    fi
     rtp2httpd_require_commands || return 1
     select_dockerapps_dir "安装IPTV(rtp2httpd)"
     case $? in 0) dockerapps="$SELECTED_DOCKERAPPS_DIR" ;; 2) return 0 ;; *) return 1 ;; esac
     RTP2HTTPD_APP_DIR="${dockerapps}/rtp2httpd"
-    mkdir -p "$RTP2HTTPD_APP_DIR" || return 1
-    rtp2httpd_prompt_instance || return 1
+    rtp2httpd_prompt_instance
+    case $? in 0) ;; 2) return 0 ;; *) return 1 ;; esac
 
     if [ -e "$RTP2HTTPD_CONFIG_PATH" ] || [ -e "$RTP2HTTPD_STATE_PATH" ] || [ -e "$RTP2HTTPD_SERVICE_PATH" ]; then
         echo "ℹ️ 已有配置 ${RTP2HTTPD_INSTANCE}：载入当前服务参数；父接口 / VLAN / 地址获取方式保持现状。"
@@ -832,6 +858,7 @@ rtp2httpd_install() {
     [ "$rtsp_result" -eq 0 ] || return "$rtsp_result"
     rtp2httpd_fcc_routing_params || return 1
 
+    mkdir -p "$RTP2HTTPD_APP_DIR" || return 1
     if [ ! -x "${RTP2HTTPD_APP_DIR}/rtp2httpd" ]; then
         echo "⬇️ 未找到共享 rtp2httpd 二进制，正在下载…"
         rtp2httpd_download_binary "$RTP2HTTPD_APP_DIR" || return 1
@@ -1122,7 +1149,7 @@ manage_rtp2httpd() {
     local choice
     printf '\n=== IPTV（rtp2httpd） ===\n'
     echo "1）查看配置"
-    echo "2）安装 / 替换配置"
+    echo "2）安装/设置 rtp2httpd"
     echo "3）删除配置"
     echo "4）升级rtp2httpd版本"
     echo "5）重启 rtp2httpd 实例"

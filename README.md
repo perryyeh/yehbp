@@ -70,7 +70,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 70 | 迁移 Docker 目录               |
 | 71 | 优化 Docker 日志               |
 | 72 | 优化 journald 日志             |
-| 80 | 安装/设置/删除/升级/重启 IPTV（rtp2httpd；同名配置单项修改） |
+| 80 | 安装/设置/删除/升级/重启 IPTV（rtp2httpd；先选已有实例或新建，再单项修改） |
 | 89 | 安装/管理 SOCKS5 代理（含安装镜像） |
 | 90 | 创建macvlan bridge            |
 | 91 | 删除macvlan bridge            |
@@ -329,7 +329,9 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 
 #### 6.3 查看已安装信息/安装/删除/升级/重启 IPTV（rtp2httpd）（菜单 80）
 
-仅支持 **NetworkManager + systemd** 的 Linux/NAS，不支持 OpenWrt。菜单 80 的 `2）安装 / 替换配置` 对新配置执行首次安装：输入组播 VLAN、FCC VLAN、FCC 地址方式及本机 IPv4 监听地址/端口（默认 `5140`）。FCC 默认 DHCP；静态 IPv4 需输入 `地址/前缀` 与同网段网关。RTSP 上游必须明确选择复用 FCC、复用组播、指定已有接口或系统路由 / 通用接口回退；不额外创建 VLAN，不根据运营商或 VLAN ID 猜测。实际选择保存到本实例 env 的 `RTSP_IF`。
+仅支持 **NetworkManager + systemd** 的 Linux/NAS，不支持 OpenWrt。菜单 80 的 `2）安装/设置 rtp2httpd` 先沿用“查看已安装信息”的 service 扫描列出已有实例；选择 `tel` 等实例后，按其 service 的安全 ExecStart 解析读取真实 conf / 同目录 env，直接进入单项设置，无需选择 dockerapps 目录或重新输入配置名。可选择 `n）新建实例` 才进入目录、配置名和首次安装流程；没有实例时直接进入首次安装。选择返回、空输入或输入结束不执行修改。新建时若遇到已有同名配置，仍进入已有配置的安全单项设置。
+
+新配置首次安装需输入组播 VLAN、FCC VLAN、FCC 地址方式及本机 IPv4 监听地址/端口（默认 `5140`）。FCC 默认 DHCP；静态 IPv4 需输入 `地址/前缀` 与同网段网关。RTSP 上游必须明确选择复用 FCC、复用组播、指定已有接口或系统路由 / 通用接口回退；不额外创建 VLAN，不根据运营商或 VLAN ID 猜测。实际选择保存到本实例 env 的 `RTSP_IF`。
 
 同名配置进入单项设置，展示实际 conf 中的监听地址、端口、组播、FCC、RTSP 接口；选择一项修改，其他字段原样保留，回车返回保留当前值。此入口仅修改服务 conf 字段，父接口、VLAN、FCC 地址获取方式和 NetworkManager profile 保持现状；需要调整网络参数时请先自行规划网络变更。应用前确认，仅重启选定实例；先备份并原子替换，重启或运行状态检查失败时恢复旧配置 / env，并尝试恢复该服务原先的运行 / 停止状态；TERM / HUP / INT 同样触发回滚，恢复失败会明确提示检查日志。旧 env 或无 env 不代表默认使用 FCC。
 

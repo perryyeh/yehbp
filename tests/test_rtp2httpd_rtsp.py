@@ -26,7 +26,8 @@ case "$*" in
 stop*) echo inactive > "$LOG.state"; exit 0;;
 is-active*) [ ! -e "$LOG.state" ] || [ "$(< "$LOG.state")" = active ]; exit $?;;
 *--property=DropInPaths*) echo "$DROPINS"; exit 0;;
-cat*) printf '%s\\n' "$UNIT"; exit 0;;
+cat*)
+ if [ -n "$UNIT_DIR" ]; then /bin/cat "$UNIT_DIR/${@: -1}"; else printf '%s\\n' "$UNIT"; fi; exit 0;;
 restart*)
  if [ "$SIGNAL" = yes ] && [ ! -e "$LOG.once" ]; then
   touch "$LOG.once"; kill -TERM "$PPID"; exit 0
@@ -207,6 +208,124 @@ rtp2httpd_install'''
         self.assertEqual(state.read_text(), 'FCC_PROFILE_UUID=keep\n')
         self.assertNotIn('forbidden', self.log.read_text())
         self.assertNotIn('6）', r.stdout)
+
+    def run_install_menu(self, stdin, instances=('tel',), extra=''):
+        units = self.base / 'units'
+        units.mkdir(exist_ok=True)
+        for instance in instances:
+            (units / f'rtp2httpd_{instance}.service').touch()
+        # Exercise the real filesystem discovery with only its systemd root relocated.
+        asset = self.base / 'asset.sh'
+        asset.write_text(SCRIPT.read_text().replace('/etc/systemd/system/', str(units) + '/'))
+        installer = (ROOT / 'install.sh').read_text()
+        start = installer.index('manage_rtp2httpd_menu() {')
+        menu = installer[start:installer.index('\n}\n', start) + 3]
+        body = f'''source {shlex.quote(str(asset))}
+{menu}
+load_rtp2httpd_asset() {{ :; }}
+select_dockerapps_dir() {{ echo directory >> "$LOG"; SELECTED_DOCKERAPPS_DIR={shlex.quote(str(self.base))}; }}
+rtp2httpd_require_commands() {{ echo require >> "$LOG"; }}
+rtp2httpd_select_parent() {{ echo parent >> "$LOG"; return 2; }}
+{extra}
+manage_rtp2httpd_menu'''
+        return self.run_shell(body, stdin)
+
+    def test_menu_two_discovers_tel_and_edits_real_path_without_directory(self):
+        peer = self.base / 'peer.conf'
+        peer.write_text('unrelated service config')
+        before = self.state.read_bytes()
+        r = self.run_install_menu('2\n1\n2\n6002\ny\n')
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn('tel', r.stdout)
+        self.assertIn('新建实例', r.stdout)
+        self.assertIn('监听端口：5140', r.stdout)
+        self.assertEqual(self.conf.read_text(), self.original.replace('127.0.0.1 5140', '127.0.0.1 6002'))
+        self.assertEqual(self.state.read_bytes(), before)
+        self.assertEqual(peer.read_text(), 'unrelated service config')
+        log = self.log.read_text()
+        for forbidden in ('directory', 'require', 'parent', 'forbidden', 'peer'):
+            self.assertNotIn(forbidden, log)
+        self.assertIn('restart rtp2httpd_tel.service', log)
+
+    def test_menu_two_new_instance_and_first_install_select_directory(self):
+        for instances, stdin in [(('tel',), '2\nn\nnew\n'), ((), '2\nnew\n')]:
+            with self.subTest(instances=instances):
+                for unit in (self.base / 'units').glob('*') if (self.base / 'units').exists() else []:
+                    unit.unlink()
+                self.log.unlink(missing_ok=True)
+                r = self.run_install_menu(stdin, instances)
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertEqual(self.log.read_text(), 'require\ndirectory\nparent\n')
+                self.assertFalse((self.base / 'rtp2httpd').exists())
+
+    def test_menu_two_new_instance_eof_at_name_does_not_write(self):
+        for instances, stdin in [(('tel',), '2\nn\n'), ((), '2\n')]:
+            with self.subTest(instances=instances):
+                for unit in (self.base / 'units').glob('*') if (self.base / 'units').exists() else []:
+                    unit.unlink()
+                self.log.unlink(missing_ok=True)
+                r = self.run_install_menu(stdin, instances)
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertEqual(self.log.read_text(), 'require\ndirectory\n')
+                self.assertFalse((self.base / 'rtp2httpd').exists())
+
+    def test_menu_two_cancel_and_eof_do_nothing(self):
+        for stdin in ('2\n0\n', '2\n\n', '2\n', '2\nx\n', '2\n99\n', '2\n1\n0\n'):
+            with self.subTest(stdin=stdin):
+                self.log.unlink(missing_ok=True)
+                before = self.state.read_bytes()
+                r = self.run_install_menu(stdin)
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertEqual(self.conf.read_text(), self.original)
+                self.assertEqual(self.state.read_bytes(), before)
+                log = self.log.read_text() if self.log.exists() else ''
+                for forbidden in ('directory', 'require', 'parent', 'restart', 'forbidden'):
+                    self.assertNotIn(forbidden, log)
+                self.assertFalse(list(self.base.glob('*.bak-*')))
+
+    def test_menu_two_multiple_directories_resolve_selected_service(self):
+        other = self.base / 'other'
+        other.mkdir()
+        conf = other / 'rtp2httpd_zeta.conf'
+        conf.write_text(self.original.replace('5140', '6100'))
+        units = self.base / 'units'
+        units.mkdir()
+        self.env['UNIT_DIR'] = str(units)
+        (units / 'rtp2httpd_tel.service').write_text(self.env['UNIT'])
+        (units / 'rtp2httpd_zeta.service').write_text(f'[Service]\nExecStart=/elsewhere/rtp2httpd -c {conf}')
+        r = self.run_install_menu('2\n2\n2\n6101\ny\n', ('tel', 'zeta'))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn('监听端口：6100', r.stdout)
+        self.assertEqual(conf.read_text(), self.original.replace('5140', '6101'))
+        self.assertEqual(self.conf.read_text(), self.original)
+        self.assertIn('restart rtp2httpd_zeta.service', self.log.read_text())
+        self.assertNotIn('directory', self.log.read_text())
+
+    def test_menu_two_new_same_name_still_edits_existing_config(self):
+        app = self.base / 'rtp2httpd'
+        app.mkdir()
+        conf = app / 'rtp2httpd_tel.conf'
+        conf.write_text(self.original)
+        self.env['UNIT'] = f'[Service]\nExecStart=/opt/rtp2httpd -c {conf}'
+        r = self.run_install_menu('2\nn\ntel\n2\n6200\ny\n')
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(conf.read_text(), self.original.replace('5140', '6200'))
+        self.assertIn('directory', self.log.read_text())
+        self.assertNotIn('parent', self.log.read_text())
+        self.assertNotIn('forbidden', self.log.read_text())
+
+    def test_menu_two_rejects_dropins_or_ambiguous_execstart(self):
+        for env in ({'DROPINS': '/override.conf'}, {'UNIT': self.env['UNIT'] + '\nExecStart=/bad/rtp2httpd -c /bad.conf'}):
+            with self.subTest(env=env):
+                self.log.unlink(missing_ok=True)
+                original_env = self.env.copy()
+                self.env.update(env)
+                r = self.run_install_menu('2\n1\n2\n6000\ny\n')
+                self.env = original_env
+                self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertEqual(self.conf.read_text(), self.original)
+                self.assertNotIn('restart', self.log.read_text())
+                self.assertNotIn('directory', self.log.read_text())
 
     def test_env_rtsp_comment_preserved(self):
         self.state.write_text('# keep\nRTSP_IF=media # operator\nUUID=keep\n')
