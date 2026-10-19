@@ -2,6 +2,7 @@
 import contextlib
 import io
 from pathlib import Path
+import os
 import subprocess
 import sys
 import tempfile
@@ -26,8 +27,8 @@ class DirectoryModelTests(unittest.TestCase):
             root=Path(tmp).resolve(); paths=self.prepare(root)
             before={p:p.read_bytes() for p in (paths[1],paths[2],c.metadata_path(paths))}
             with patch.object(c.socket,'socket',side_effect=AssertionError('network forbidden')), patch.object(c,'login',side_effect=AssertionError('login forbidden')):
-                self.assertEqual(c.main(['--config-dir',str(paths[0]),'--output-dir',str(root/'export')]),0)
-            self.assertEqual(paths[3].read_bytes(),(root/'export/playlist.m3u').read_bytes())
+                self.assertEqual(c.main(['config='+str(paths[0]),'output='+str(root/'export')]),0)
+            self.assertEqual(paths[3].read_bytes(),(root/'export/instance.m3u').read_bytes())
             self.assertEqual(paths[3].read_text().count('#EXTINF:'),2)
             self.assertIn(' 高清 HD 4K ',paths[3].read_text())
             self.assertEqual(before,{p:p.read_bytes() for p in before})
@@ -46,7 +47,7 @@ class DirectoryModelTests(unittest.TestCase):
                     self.assertEqual(c.main(['config=eth0.85']),0)
                 self.assertEqual(login.call_count,1)
             elsewhere=root/'cwd';elsewhere.mkdir()
-            result=subprocess.run([sys.executable,str(script),'config=eth0.85','output=bare.m3u'],cwd=elsewhere,capture_output=True,text=True)
+            result=subprocess.run([sys.executable,str(script),'config=eth0.85'],cwd=elsewhere,capture_output=True,text=True)
             self.assertEqual(result.returncode,0,result.stderr);self.assertEqual(list(elsewhere.iterdir()),[])
             with patch.object(c,'__file__',str(script)), contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(c.main(['userinfo=fixture']),1)
@@ -67,30 +68,33 @@ class DirectoryModelTests(unittest.TestCase):
     def test_output_path_boundaries_and_other_instance_protection(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp).resolve();paths=self.prepare(root);export=root/'export';export.mkdir()
-            self.assertIsNone(c.export_path('missing',paths[0]))
-            self.assertIsNone(c.export_path('foo.m3u',paths[0]))
+            self.assertEqual(c.export_path('file.m3u',paths[0]),Path(os.path.abspath('file.m3u')))
+            self.assertEqual(c.export_path('FILE.M3U',paths[0]),Path(os.path.abspath('FILE.M3U')))
+            self.assertEqual(c.export_path('exports',paths[0]),Path(os.path.abspath('exports'))/'instance.m3u')
             self.assertEqual(c.export_path(str(export),paths[0]),export/'instance.m3u')
             self.assertEqual(c.export_path(str(root/'new')+'/',paths[0]),root/'new/instance.m3u')
             self.assertEqual(c.export_path(str(root/'new/file.m3u'),paths[0]),root/'new/file.m3u')
+            self.assertEqual(c.export_path(str(root/'lists.backup'),paths[0]),root/'lists.backup/instance.m3u')
             for output in (str(export),str(root/'new')+'/',str(root/'chosen.m3u')):
                 self.assertEqual(c.main(['config='+str(paths[0]),'output='+output]),0)
                 self.assertEqual(paths[3].read_bytes(),c.export_path(output,paths[0]).read_bytes())
+            primary=paths[3].read_bytes()
             beta=root/'beta';beta.mkdir();c.atomic_json(beta/'config.json',config());c.atomic_json(beta/'catchup.json',[row()])
             before={p:p.read_bytes() for p in beta.iterdir()}
             err=io.StringIO()
             with contextlib.redirect_stderr(err):
                 self.assertEqual(c.main(['config='+str(paths[0]),'output='+str(beta/'catchup.json')]),1)
-            self.assertEqual(before,{p:p.read_bytes() for p in beta.iterdir()});self.assertIn('主playlist.m3u已生成',err.getvalue())
+            self.assertEqual(before,{p:p.read_bytes() for p in beta.iterdir()});self.assertIn('不能覆盖已有文件',err.getvalue());self.assertEqual(paths[3].read_bytes(),primary)
 
     def test_same_directory_once_custom_name_and_basename_validation(self):
         with tempfile.TemporaryDirectory() as tmp:
             paths=self.prepare(Path(tmp).resolve())
             with patch.object(c,'atomic_text',wraps=c.atomic_text) as write:
-                c.convert(paths,paths[0]); self.assertEqual(write.call_count,1)
-            c.convert(paths,paths[0],'custom.m3u')
+                c.convert(paths, destination=paths[0]/'playlist.m3u'); self.assertEqual(write.call_count,1)
+            c.convert(paths, destination=paths[0]/'custom.m3u')
             self.assertEqual(paths[3].read_bytes(),(paths[0]/'custom.m3u').read_bytes())
             old=paths[1].read_bytes()
-            with self.assertRaises(c.SafeError): c.convert(paths,paths[0],'config.json')
+            with self.assertRaises(c.SafeError): c.convert(paths, destination=paths[0]/'config.json')
             self.assertEqual(old,paths[1].read_bytes())
             for name in ('../bad','a/b','a\\b','.iptv.lock','..','bad\nname'):
                 with self.assertRaises(c.SafeError): c.output_basename(name)
@@ -102,7 +106,7 @@ class DirectoryModelTests(unittest.TestCase):
             export=root/'export'; export.mkdir(mode=0o751)
             modes={p:p.stat().st_mode for p in (root,service,export,Path(c.__file__).parent)}
             paths=c.config_paths(service); c.atomic_json(paths[1],config());c.atomic_json(paths[2],[row()])
-            c.convert(paths,export)
+            c.convert(paths, destination=export/'playlist.m3u')
             self.assertEqual(modes,{p:p.stat().st_mode for p in modes})
             for p in service.iterdir(): self.assertEqual(p.stat().st_mode&0o777,0o600)
             self.assertEqual((export/'playlist.m3u').stat().st_mode&0o777,0o600)
@@ -113,11 +117,12 @@ class DirectoryModelTests(unittest.TestCase):
             legacy=paths[0]/'catchup_tel.json';legacy.write_text('old')
             out=io.StringIO()
             with contextlib.redirect_stderr(out), patch.object(c.socket,'socket',side_effect=AssertionError('network')), patch.object(c,'login',side_effect=AssertionError('login')):
-                self.assertEqual(c.main(['--config-dir',str(paths[0])]),1)
+                self.assertEqual(c.main(['config='+str(paths[0])]),1)
             self.assertIn('先执行fetch',out.getvalue());self.assertFalse(paths[3].exists());self.assertEqual(legacy.read_text(),'old')
-            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
-                c.main(['--config-dir',str(paths[0]),'--instance','tel'])
-            self.assertEqual(error.exception.code,2)
+            err=io.StringIO()
+            with contextlib.redirect_stderr(err):
+                self.assertEqual(c.main(['config='+str(paths[0]),'--instance','tel']),1)
+            self.assertIn('config=',err.getvalue())
 
     def test_export_failure_reports_primary_and_preserves_old_export(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -129,33 +134,31 @@ class DirectoryModelTests(unittest.TestCase):
                 return replace(source,target)
             err=io.StringIO()
             with patch.object(c.os,'replace',side_effect=fail_export), contextlib.redirect_stderr(err):
-                self.assertEqual(c.main(['--config-dir',str(paths[0]),'--output-dir',str(export)]),1)
-            self.assertIn('主playlist.m3u已生成',err.getvalue());self.assertIn('额外导出失败',err.getvalue())
+                self.assertEqual(c.main(['config='+str(paths[0]),'output='+str(export/'playlist.m3u')]),1)
+            self.assertIn(str(paths[3]),err.getvalue())
             self.assertNotIn('secret',err.getvalue());self.assertEqual(old.read_text(),'old');self.assertTrue(paths[3].exists())
             self.assertFalse(list(export.glob('.iptv-*')))
 
     def test_interactive_first_and_reentry_hide_identity_keep_unknown(self):
         with tempfile.TemporaryDirectory() as tmp:
-            d=Path(tmp).resolve()/'instance'; args=['configure','--config-dir',str(d)]
-            # Three secret prompts, nine ordinary prompts; no provider traffic.
-            with patch.object(c.getpass,'getpass',side_effect=['fixture','box','00:11:22:33:44:55']) as hidden, patch('builtins.input',side_effect=['eth0.85','eth0.51','eth0.85','','','','','','']), patch.object(c.socket,'socket',side_effect=AssertionError('network')):
+            d=Path(tmp).resolve()/'instance'; args=['configure','config='+str(d)]
+            with patch.object(c.getpass,'getpass',side_effect=['fixture','box','00:11:22:33:44:55','eth0.85','eth0.51','eth0.85']+['']*6) as hidden, patch.object(c.socket,'socket',side_effect=AssertionError('network')):
                 self.assertEqual(c.main(args),0)
-            self.assertEqual(hidden.call_count,3)
+            self.assertEqual(hidden.call_count,12)
             paths=c.config_paths(d); cfg=c.load(paths[1]);cfg['extra']={'null':None,'duplicates':[1,1]};c.atomic_json(paths[1],cfg)
-            with patch.object(c.getpass,'getpass',return_value=''),patch('builtins.input',return_value=''):
+            with patch.object(c.getpass,'getpass',return_value=''):
                 self.assertEqual(c.main(args),0)
             self.assertEqual(c.load(paths[1]),cfg)
             err=io.StringIO()
-            with patch('sys.stdin',io.StringIO('\n')),contextlib.redirect_stderr(err):
+            with contextlib.redirect_stderr(err):
                 self.assertEqual(c.main(args+['--stdin']),1)
-            self.assertEqual(c.load(paths[1]),cfg);self.assertIn('stdin输入不足',err.getvalue())
-            self.assertNotIn('fixture',err.getvalue())
+            self.assertIn('config=',err.getvalue());self.assertNotIn('fixture',err.getvalue())
 
     def test_single_runtime_file_real_cli_independent_of_cwd(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp).resolve();paths=self.prepare(root);script=root/'iptv.py';script.write_bytes(Path(c.__file__).read_bytes())
             elsewhere=root/'elsewhere';elsewhere.mkdir()
-            result=subprocess.run([sys.executable,str(script),'--config-dir',str(paths[0]),'--output-dir',str(root/'export'),'--output-name','chosen.m3u'],cwd=elsewhere,capture_output=True,text=True)
+            result=subprocess.run([sys.executable,str(script),'config='+str(paths[0]),'output='+str(root/'export/chosen.m3u')],cwd=elsewhere,capture_output=True,text=True)
             self.assertEqual(result.returncode,0,result.stderr)
             self.assertEqual(paths[3].read_bytes(),(root/'export/chosen.m3u').read_bytes());self.assertEqual(list(elsewhere.iterdir()),[])
             verifier=Path(__file__).with_name('verify_iptv_artifacts.py')

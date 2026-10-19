@@ -61,16 +61,16 @@ class CliTests(unittest.TestCase):
         for invalid in ('http://host/a','rtsp://u:p@host/a','rtsp://host/a#frag','rtsp://host/a?playseek=old'):
             with self.assertRaises(auth.SafeError): c.replay_url(invalid,config())
 
-    def test_native_config_stdin_permissions_retention_isolation(self):
+    def test_native_config_prompts_permissions_retention_isolation(self):
         with tempfile.TemporaryDirectory() as tmp:
             d=Path(tmp).resolve()/'private'
-            args=['configure','--config-dir',str(d),'--stdin']
-            with patch('sys.stdin',io.StringIO('fixture\nfixture-sn\n00:11:22:33:44:55\neth0.85\n' + '\n'*8)): self.assertEqual(c.main(args),0)
+            args=['configure','config='+str(d)]
+            with patch.object(c.getpass,'getpass',side_effect=['fixture','fixture-sn','00:11:22:33:44:55','eth0.85']+['']*8): self.assertEqual(c.main(args),0)
             paths=c.config_paths(d)
             cfg=c.load(paths[1]); self.assertEqual(cfg['sn'],'fixture-sn')
             self.assertEqual(d.stat().st_mode&0o777,0o700)
             self.assertEqual(paths[1].stat().st_mode&0o777,0o600)
-            with patch('sys.stdin',io.StringIO('\n'*12)): self.assertEqual(c.main(args),0)
+            with patch.object(c.getpass,'getpass',return_value=''): self.assertEqual(c.main(args),0)
             self.assertEqual(c.load(paths[1]),cfg)
             beta=c.config_paths(d.parent/'beta'); auth.private_dir(beta[0]); auth.atomic_json(beta[1],cfg)
             from test_iptv_reference_directory import directory
@@ -94,7 +94,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(paths[2].read_bytes(),before[0])
             paths[2].write_text('[{"ChannelID":"42","TimeShiftURL":"rtsp://secret/?AuthInfo=secret"}]')
             out=io.StringIO()
-            with contextlib.redirect_stderr(out): self.assertEqual(c.main(['convert','--config-dir',str(d)]),1)
+            with contextlib.redirect_stderr(out): self.assertEqual(c.main(['convert','config='+str(d)]),1)
             self.assertNotIn('secret',out.getvalue()); self.assertEqual(paths[3].read_bytes(),before[1])
             with patch.object(os,'replace',side_effect=OSError('fixture')):
                 with self.assertRaises(OSError): c.atomic_text(paths[3],'new')

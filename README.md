@@ -339,7 +339,7 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 
 二进制从 [stackia/rtp2httpd](https://github.com/stackia/rtp2httpd) 官方 release 下载并校验 SHA-256。删除只移除 YehBP 创建的配置、service 与 VLAN profile，保留共享二进制和既有网络配置。
 
-独立参考实现：[assets/iptv/iptv.py](assets/iptv/iptv.py)，完整用法见 [参考脚本说明](assets/iptv/README.md)。它不是 YehBP 菜单功能；可只复制这一个运行文件到 rtp2httpd 目录，用户自行适配本地。提供 `configure`（配置）、`fetch`（完整原始列表及可选频道目录）、`convert`（生成 rtp2httpd M3U），`run` 依次获取和转换。M3U 输出目录和文件名均可配置，默认数据及输出位置为脚本目录（可用 `--directory` 改为专用私有目录，目录会设为 0700）；不创建定时任务或服务。保留完整字段、顺序和重复记录，不筛选、不合并，名称中的 HD、高清、4K 及空格原样保留；拿到列表和频道信息后由用户自行整理，无 EPG 节目单抓取。
+独立参考实现：[assets/iptv/iptv.py](assets/iptv/iptv.py)，完整用法见 [参考脚本说明](assets/iptv/README.md)。它不是 YehBP 菜单功能；只需复制这一个文件。用全参数 `config=目录` 保存并获取，`run config=目录` 重新获取，`config=目录` 离线生成。不创建定时任务或服务。名称中的 HD、高清、4K 及空格原样保留。
 
 上海电信协议参考 [pcg562240/pcg-iptv 固定提交 38653f0bd722c4dececae434efa3593be97e8aca](https://github.com/pcg562240/pcg-iptv/blob/38653f0bd722c4dececae434efa3593be97e8aca/shctiptv.py)，该提交没有许可文件，未复制其 AES/客户端实现；本脚本独立实现并调用 OpenSSL。其他地区需自行适配，不保证通用。私有身份、原始 JSON 和 M3U 不应加入 Git 或公开订阅。
 

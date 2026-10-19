@@ -38,7 +38,7 @@ class DirectoryDefaultsTests(unittest.TestCase):
                         context.update(ctx)
                         return meta
                     with patch.object(c, 'local_ipv4', return_value='192.0.2.1'), patch.object(c, 'login', side_effect=login), patch.object(c, 'portal_directory', side_effect=portal) as fetch_directory:
-                        self.assertEqual(c.main([command, '--config-dir', str(paths[0])]), 0)
+                        self.assertEqual(c.main([command, 'config=' + str(paths[0])]), 0)
                     fetch_directory.assert_called_once()
                     self.assertEqual(context, {'session': 'fixture'})
                     self.assertEqual(c.read_json(paths[2]), rows)
@@ -67,17 +67,15 @@ class DirectoryDefaultsTests(unittest.TestCase):
                 self.assertEqual(c.main(['config=' + str(paths[0]), 'baseURL=http://127.0.0.1:5140']), 0)
             self.assertNotIn('directory_metadata', c.load(paths[1]))
 
-    def test_twelve_stdin_lines_keep_identity_and_all_fields_in_order(self):
+    def test_interactive_prompts_keep_identity_and_field_order(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp).resolve(); paths = c.config_paths(root / 'new')
             lines = ['fixture', 'box', '00:11:22:33:44:55', 'eth0.85', 'eth0.51',
                      'eth0.86', c.DEFAULT_ORIGIN, 'http://127.0.0.1:5555',
                      '/udp/', '/proxy/rtsp/', '${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}',
                      'http://example.test:8080']
-            stdin = io.StringIO('\n'.join(lines) + '\nSENTINEL\n')
-            with patch('sys.stdin', stdin), patch.object(c.socket, 'socket', side_effect=AssertionError('network forbidden')):
-                self.assertEqual(c.main(['configure', '--config-dir', str(paths[0]), '--stdin']), 0)
-            self.assertEqual(stdin.readline(), 'SENTINEL\n')
+            with patch.object(c.getpass, 'getpass', side_effect=lines), patch.object(c.socket, 'socket', side_effect=AssertionError('network forbidden')):
+                self.assertEqual(c.main(['configure', 'config=' + str(paths[0])]), 0)
             cfg = c.load(paths[1])
             keys = ['userid', 'sn', 'mac', 'interface', 'multicast_interface', 'fcc_interface',
                     'auth_origin', 'base_url', 'live_path', 'replay_path', 'seek_template']
@@ -87,11 +85,11 @@ class DirectoryDefaultsTests(unittest.TestCase):
             cfg['directory_metadata'] = False; cfg['extra'] = 'keep'
             c.atomic_json(paths[1], cfg)
             before = paths[1].read_bytes()
-            with patch('sys.stdin', io.StringIO('\n' * 11)), contextlib.redirect_stderr(io.StringIO()):
-                self.assertEqual(c.main(['configure', '--config-dir', str(paths[0]), '--stdin']), 1)
+            with patch.object(c.getpass, 'getpass', side_effect=[''] * 11), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(c.main(['configure', 'config=' + str(paths[0])]), 1)
             self.assertEqual(paths[1].read_bytes(), before)
-            with patch('sys.stdin', io.StringIO('\n' * 12)):
-                self.assertEqual(c.main(['configure', '--config-dir', str(paths[0]), '--stdin']), 0)
+            with patch.object(c.getpass, 'getpass', return_value=''):
+                self.assertEqual(c.main(['configure', 'config=' + str(paths[0])]), 0)
             cfg.pop('directory_metadata')
             self.assertEqual(c.load(paths[1]), cfg)
 
@@ -125,5 +123,5 @@ class DirectoryDefaultsTests(unittest.TestCase):
             c.convert(paths)
             before = {p: p.read_bytes() for p in (paths[1], paths[2], paths[3], c.metadata_path(paths))}
             with patch.object(c, 'local_ipv4', return_value='192.0.2.1'), patch.object(c, 'login', return_value=[row(), row()]), patch.object(c, 'portal_directory', side_effect=c.SafeError('fixture')), patch.object(c, 'convert', side_effect=AssertionError('convert forbidden')), contextlib.redirect_stderr(io.StringIO()):
-                self.assertEqual(c.main(['run', '--config-dir', str(paths[0])]), 1)
+                self.assertEqual(c.main(['run', 'config=' + str(paths[0])]), 1)
             self.assertEqual(before, {p: p.read_bytes() for p in before})

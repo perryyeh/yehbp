@@ -44,7 +44,7 @@ class DirectoryTests(unittest.TestCase):
             failed=copy.deepcopy(old);failed['categories'][0]['response']['status']='0'
             with self.assertRaises(c.SafeError): c.directory_index(failed)
             with patch.object(c,'local_ipv4',return_value='192.0.2.1'),patch.object(c,'login',return_value=[row(),row()]),patch.object(c,'portal_directory',side_effect=c.SafeError('bad')):
-                self.assertEqual(c.main(['fetch','--config-dir',str(paths[0])]),1)
+                self.assertEqual(c.main(['fetch','config='+str(paths[0])]),1)
             self.assertEqual((paths[2].read_bytes(),meta.read_bytes()),before)
 
     def test_portal_protocol_context_cookies_and_raw_response(self):
