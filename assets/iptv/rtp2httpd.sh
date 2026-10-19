@@ -694,6 +694,14 @@ def main():
         if active not in ('active', 'inactive', 'failed'):
             raise ValueError('服务状态不稳定或无法确定；取消应用')
         staged, backups, replaced = [], [], []
+        service_restored = True
+
+        def report_retained(message):
+            retained = [name for name in backups if name and os.path.exists(name)]
+            print(message, file=sys.stderr)
+            if retained:
+                print('❌ 已保留本次可恢复备份：' + '、'.join(retained), file=sys.stderr)
+
         try:
             for path, old, new, metadata in paths:
                 staged.append(stage(path, new, metadata))
@@ -721,31 +729,71 @@ def main():
             print('✅ 已应用所选字段并重启 ' + service)
             if field == 'rtsp':
                 print('RTSP 接口（回放）：' + rtsp_display(value, fallback))
-        except BaseException:
+        except BaseException as error:
+            service_restored = not replaced
             for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
                 signal.signal(signum, signal.SIG_IGN)
+            restore_error = None
             for n in reversed(replaced):
                 path, old, new, metadata = paths[n]
-                if old is None:
-                    path.unlink()
-                else:
-                    os.replace(stage(path, old, metadata), path)
+                temporary = None
+                try:
+                    if old is None:
+                        path.unlink()
+                    else:
+                        temporary = stage(path, old, metadata)
+                        os.replace(temporary, path)
+                        temporary = None
+                except BaseException as item_error:
+                    service_restored = False
+                    if restore_error is None:
+                        restore_error = item_error
+                finally:
+                    if temporary and os.path.exists(temporary):
+                        try:
+                            os.unlink(temporary)
+                        except OSError:
+                            pass
+            if restore_error is not None:
+                report_retained('❌ 恢复配置 / 状态失败：' + str(restore_error))
+                print('❌ 配置 / 状态未完整恢复；未删除本次备份。', file=sys.stderr)
             if replaced:
                 operation = 'restart' if active == 'active' else 'stop'
-                print('⚠️ 已恢复旧配置 / 状态；尝试恢复所选实例原先的运行状态。', file=sys.stderr)
+                if restore_error is None:
+                    print('⚠️ 已恢复旧配置 / 状态；尝试恢复所选实例原先的运行状态。', file=sys.stderr)
                 result = subprocess.run(['systemctl', operation, service]).returncode
                 restored = subprocess.run(['systemctl', 'is-active', '--quiet', service]).returncode
-                if result or (restored == 0) != (active == 'active'):
+                service_matches = not result and (restored == 0) == (active == 'active')
+                if restore_error is None:
+                    service_restored = service_matches
+                    if not service_restored:
+                        report_retained('❌ 恢复运行状态失败，请检查 journalctl -u ' + service)
+                elif not service_matches:
                     print('❌ 恢复运行状态失败，请检查 journalctl -u ' + service, file=sys.stderr)
+            if restore_error is not None:
+                raise restore_error from error
             raise
         finally:
             for name in staged:
                 if os.path.exists(name):
-                    os.unlink(name)
-            # Retain named .bak files, remove only unpublished temporary backups.
-            for name in backups:
-                if name and '.bak-' not in name and os.path.exists(name):
-                    os.unlink(name)
+                    try:
+                        os.unlink(name)
+                    except OSError:
+                        pass
+            # Remove only this transaction's backups after the files and service
+            # are back in their intended state. A failed restore keeps them.
+            # Deletion failure must not turn a completed apply into a settings failure.
+            if service_restored:
+                failed = []
+                for name in backups:
+                    if not name or not os.path.exists(name):
+                        continue
+                    try:
+                        os.unlink(name)
+                    except OSError as cleanup_error:
+                        failed.append(name + '（' + str(cleanup_error) + '）')
+                if failed:
+                    print('⚠️ 配置已完成，但删除本次备份失败：' + '、'.join(failed), file=sys.stderr)
 
 
 try:

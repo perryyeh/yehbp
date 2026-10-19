@@ -23,17 +23,23 @@ class RTSPTests(unittest.TestCase):
 echo "$*" >> "$LOG"
 case "$*" in
 *--property=ActiveState*) echo "${ACTIVE:-active}"; exit 0;;
-stop*) echo inactive > "$LOG.state"; exit 0;;
-is-active*) [ ! -e "$LOG.state" ] || [ "$(< "$LOG.state")" = active ]; exit $?;;
+stop*)
+ if [ "$RESTORE_FAIL" = stop ]; then exit 1; fi
+ echo inactive > "$LOG.state"; exit 0;;
+is-active*)
+ if [ "$RESTORE_FAIL" = active ]; then exit 1; fi
+ [ ! -e "$LOG.state" ] || [ "$(< "$LOG.state")" = active ]; exit $?;;
 *--property=DropInPaths*) echo "$DROPINS"; exit 0;;
 cat*)
  if [ -n "$UNIT_DIR" ]; then /bin/cat "$UNIT_DIR/${@: -1}"; else printf '%s\\n' "$UNIT"; fi; exit 0;;
 restart*)
  if [ "$SIGNAL" = yes ] && [ ! -e "$LOG.once" ]; then
-  touch "$LOG.once"; kill -TERM "$PPID"; exit 0
- fi;;
+  touch "$LOG.once"; kill -"$SIGNAL_NAME" "$PPID"; exit 0
+ fi
+ if [ "$RESTORE_FAIL" = restart ]; then exit 1; fi
+ if [ "$FAIL" = yes ]; then printf x >> "$LOG.count"; [ "$(< "$LOG.count")" = xx ]; exit $?; fi;;
 esac
-if [ "$FAIL" = yes ]; then exit 1; fi
+exit 0
 ''',
             'nmcli': '#!/bin/bash\necho forbidden >> "$LOG"\nexit 99\n',
             'ip': '#!/bin/bash\ncase "$*" in\n"-o link show") printf "1: lo: flags\\n2: wan.7@wan: flags\\n3: media: flags\\n";;\n"link show dev wan.7"|"link show dev media") exit 0;;\n*) exit 1;; esac\n',
@@ -72,7 +78,8 @@ if [ "$FAIL" = yes ]; then exit 1; fi
         self.assertEqual((self.conf.stat().st_uid, self.conf.stat().st_gid), (before.st_uid, before.st_gid))
         self.assertEqual(self.state.stat().st_mode & 0o777, 0o600)
         self.assertEqual(self.log.read_text(), 'show --property=ActiveState --value rtp2httpd_demo.service\nrestart rtp2httpd_demo.service\nis-active --quiet rtp2httpd_demo.service\n')
-        self.assertTrue(list(self.base.glob('*.bak-*')))
+        self.assertFalse(list(self.base.glob('*.bak-*')))
+        self.assertFalse(list(self.base.glob('.rtp2httpd*')))
         self.assertEqual(r.stdout.splitlines(), [
             '✅ 已应用所选字段并重启 rtp2httpd_demo.service',
             'RTSP 接口（回放）：wan.7',
@@ -127,7 +134,18 @@ if [ "$FAIL" = yes ]; then exit 1; fi
         self.assertEqual(self.conf.read_text(), self.original)
         self.assertEqual(self.state.read_bytes(), old_state)
         self.assertEqual(self.log.read_text().splitlines(), ['show --property=ActiveState --value rtp2httpd_demo.service', 'restart rtp2httpd_demo.service', 'restart rtp2httpd_demo.service', 'is-active --quiet rtp2httpd_demo.service'])
-        self.assertIn('恢复', r.stdout + r.stderr)
+        self.assertNotIn('恢复运行状态失败', r.stdout + r.stderr)
+        self.assertFalse(list(self.base.glob('*.bak-*')))
+        self.assertFalse(list(self.base.glob('.rtp2httpd*')))
+
+    def test_successful_apply_preserves_preexisting_backups(self):
+        kept = self.base / 'rtp2httpd_demo.conf.bak-user'
+        kept.write_text('operator backup')
+        r = self.apply()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(kept.read_text(), 'operator backup')
+        self.assertEqual(list(self.base.glob('*.bak-*')), [kept])
+        self.assertFalse(list(self.base.glob('.rtp2httpd*')))
 
     def test_status_never_sources_state(self):
         r = self.run_shell(f'rtp2httpd_rtsp_config status {shlex.quote(str(self.conf))} {shlex.quote(str(self.state))}')
@@ -365,14 +383,23 @@ manage_rtp2httpd_menu'''
         self.assertEqual(self.state.read_text(), '# keep\nRTSP_IF=wan.7 # operator\nUUID=keep\n')
 
     def test_signal_rolls_back_and_restores_active_service(self):
-        self.env['SIGNAL'] = 'yes'
-        before = self.state.read_bytes()
-        r = self.apply()
-        self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertEqual(self.conf.read_text(), self.original)
-        self.assertEqual(self.state.read_bytes(), before)
-        self.assertEqual(self.log.read_text().count('restart rtp2httpd_demo.service'), 2)
-        self.assertIn('恢复', r.stderr)
+        for name in ('TERM', 'HUP', 'INT'):
+            with self.subTest(signal=name):
+                self.conf.write_text(self.original)
+                self.state.write_text('# custom\nFCC_PROFILE_UUID=unchanged\nCUSTOM=$(touch NEVER)\n')
+                before = self.state.read_bytes()
+                self.log.unlink(missing_ok=True)
+                Path(str(self.log) + '.once').unlink(missing_ok=True)
+                self.env.update(SIGNAL='yes', SIGNAL_NAME=name)
+                r = self.apply()
+                self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertEqual(self.conf.read_text(), self.original)
+                self.assertEqual(self.state.read_bytes(), before)
+                self.assertEqual(self.log.read_text().count('restart rtp2httpd_demo.service'), 2)
+                self.assertIn('恢复', r.stderr)
+                self.assertNotIn('恢复运行状态失败', r.stderr)
+                self.assertFalse(list(self.base.glob('*.bak-*')))
+                self.assertFalse(list(self.base.glob('.rtp2httpd*')))
 
     def test_inactive_service_stays_stopped_after_failure(self):
         self.env.update(ACTIVE='inactive', FAIL='yes')
@@ -383,6 +410,7 @@ manage_rtp2httpd_menu'''
         self.assertEqual(Path(str(self.log) + '.state').read_text().strip(), 'inactive')
         self.assertNotIn('恢复运行状态失败', r.stderr)
         self.assertEqual(self.log.read_text().count('restart rtp2httpd_demo.service'), 1)
+        self.assertFalse(list(self.base.glob('*.bak-*')))
 
     def test_execstart_safe_parser_rejects_ambiguity(self):
         body = 'rtp2httpd_service_config_path rtp2httpd_demo.service'
@@ -425,6 +453,126 @@ os.replace = replace
         self.assertEqual((self.base.stat().st_mode, self.base.stat().st_uid, self.base.stat().st_gid),
                          (before.st_mode, before.st_uid, before.st_gid))
         self.assertIn('injected', r.stderr)
+        self.assertFalse(list(self.base.glob('.rtp2httpd*')))
+        self.assertFalse(list(self.base.glob('*.bak-*')))
+
+    def test_restore_failure_keeps_this_run_backups_and_reports_paths(self):
+        kept = self.base / 'rtp2httpd_demo.conf.bak-user'
+        kept.write_text('operator backup')
+        self.env.update(FAIL='yes', RESTORE_FAIL='restart')
+        before = self.state.read_bytes()
+        r = self.apply()
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(self.conf.read_text(), self.original)
+        self.assertEqual(self.state.read_bytes(), before)
+        self.assertIn('恢复运行状态失败', r.stderr)
+        created = sorted(self.base.glob('*.bak-*'))
+        self.assertEqual(len(created), 3)
+        self.assertIn(kept, created)
+        self.assertEqual(kept.read_text(), 'operator backup')
+        for path in created:
+            if path != kept:
+                self.assertIn(str(path), r.stderr)
+        self.assertFalse(list(self.base.glob('.rtp2httpd*')))
+
+    def test_file_restore_failure_keeps_backups_and_exits_nonzero(self):
+        hook = self.base / 'hooks'
+        hook.mkdir()
+        (hook / 'sitecustomize.py').write_text('''import os
+_real = os.replace
+_calls = 0
+def replace(src, dst):
+    global _calls
+    _calls += 1
+    if _calls == 6 and str(dst).endswith('.conf'):
+        raise OSError('injected config restore failure')
+    return _real(src, dst)
+os.replace = replace
+''')
+        self.env.update(PYTHONPATH=str(hook), FAIL='yes')
+        before = self.conf.read_bytes()
+        r = self.apply()
+        self.assertNotEqual(r.returncode, 0)
+        self.assertNotEqual(self.conf.read_bytes(), before)
+        self.assertIn('恢复配置 / 状态失败', r.stderr)
+        self.assertIn('未完整恢复', r.stderr)
+        created = list(self.base.glob('*.bak-*'))
+        self.assertEqual(len(created), 2)
+        for path in created:
+            self.assertIn(str(path), r.stderr)
+        self.assertNotIn('已应用所选字段', r.stdout)
+
+    def test_backup_cleanup_failure_keeps_success_and_reports_paths(self):
+        hook = self.base / 'hooks'
+        hook.mkdir()
+        (hook / 'sitecustomize.py').write_text('''import os
+_real = os.unlink
+def unlink(name):
+    if '.bak-' in str(name):
+        raise OSError('injected backup unlink failure')
+    return _real(name)
+os.unlink = unlink
+''')
+        self.env['PYTHONPATH'] = str(hook)
+        kept = self.base / 'rtp2httpd_demo.conf.bak-user'
+        kept.write_text('operator backup')
+        r = self.apply()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn('已应用所选字段', r.stdout)
+        self.assertIn('删除本次备份失败', r.stderr)
+        created = sorted(self.base.glob('*.bak-*'))
+        self.assertEqual(len(created), 3)
+        self.assertEqual(kept.read_text(), 'operator backup')
+        self.assertNotIn(str(kept), r.stderr)
+        for path in created:
+            if path != kept:
+                self.assertIn(str(path), r.stderr)
+        self.assertFalse(list(self.base.glob('.rtp2httpd*')))
+
+    def test_partial_file_restore_continues_and_keeps_backups(self):
+        hook = self.base / 'hooks'
+        hook.mkdir()
+        (hook / 'sitecustomize.py').write_text('''import os
+_real = os.replace
+_calls = 0
+def replace(src, dst):
+    global _calls
+    _calls += 1
+    if _calls == 5 and str(dst).endswith('.env'):
+        raise OSError('injected env restore failure')
+    return _real(src, dst)
+os.replace = replace
+''')
+        self.env.update(PYTHONPATH=str(hook), FAIL='yes')
+        before = self.state.read_bytes()
+        r = self.apply()
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(self.conf.read_text(), self.original)
+        self.assertNotEqual(self.state.read_bytes(), before)
+        self.assertIn('恢复配置 / 状态失败', r.stderr)
+        self.assertIn('未完整恢复', r.stderr)
+        self.assertIn('restart rtp2httpd_demo.service', self.log.read_text())
+        created = sorted(self.base.glob('*.bak-*'))
+        self.assertEqual(len(created), 2)
+        for path in created:
+            self.assertIn(str(path), r.stderr)
+        self.assertFalse(list(self.base.glob('.rtp2httpd*')))
+        self.assertNotIn('已应用所选字段', r.stdout)
+
+    def test_missing_env_failure_keeps_only_existing_backup(self):
+        self.state.unlink()
+        self.env.update(FAIL='yes', RESTORE_FAIL='restart')
+        before_mode = self.base.stat().st_mode
+        r = self.apply()
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(self.conf.read_text(), self.original)
+        self.assertFalse(self.state.exists())
+        self.assertEqual(self.base.stat().st_mode, before_mode)
+        created = list(self.base.glob('*.bak-*'))
+        self.assertEqual(len(created), 1)
+        self.assertTrue(created[0].name.startswith('rtp2httpd_demo.conf.bak-'))
+        self.assertIn(str(created[0]), r.stderr)
+        self.assertIn('恢复运行状态失败', r.stderr)
         self.assertFalse(list(self.base.glob('.rtp2httpd*')))
 
     def prompt_with_inventory(self, stdin, args='wan.7 media', planned=False):
