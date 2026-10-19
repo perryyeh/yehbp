@@ -70,7 +70,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 70 | 迁移 Docker 目录               |
 | 71 | 优化 Docker 日志               |
 | 72 | 优化 journald 日志             |
-| 80 | 安装/设置/删除/升级/重启 IPTV（rtp2httpd） |
+| 80 | 安装/设置/删除/升级/重启 IPTV（rtp2httpd；同名配置单项修改） |
 | 89 | 安装/管理 SOCKS5 代理（含安装镜像） |
 | 90 | 创建macvlan bridge            |
 | 91 | 删除macvlan bridge            |
@@ -329,7 +329,11 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 
 #### 6.3 查看已安装信息/安装/删除/升级/重启 IPTV（rtp2httpd）（菜单 80）
 
-仅支持 **NetworkManager + systemd** 的 Linux/NAS，不支持 OpenWrt。菜单可查看一个或全部实例的已安装信息，并提供安装/设置 rtp2httpd、删除配置、升级共享二进制和重启选定实例；安装/设置时需输入组播 VLAN、FCC VLAN、FCC 地址方式及本机 IPv4 监听地址/端口（默认 `5140`）。FCC 地址方式默认 DHCP；选择静态 IPv4 时需输入 `地址/前缀` 与同网段网关。
+仅支持 **NetworkManager + systemd** 的 Linux/NAS，不支持 OpenWrt。菜单 80 的 `2）安装 / 替换配置` 对新配置执行首次安装：输入组播 VLAN、FCC VLAN、FCC 地址方式及本机 IPv4 监听地址/端口（默认 `5140`）。FCC 默认 DHCP；静态 IPv4 需输入 `地址/前缀` 与同网段网关。RTSP 上游必须明确选择复用 FCC、复用组播、指定已有接口或系统路由 / 通用接口回退；不额外创建 VLAN，不根据运营商或 VLAN ID 猜测。实际选择保存到本实例 env 的 `RTSP_IF`。
+
+同名配置进入单项设置，展示实际 conf 中的监听地址、端口、组播、FCC、RTSP 接口；选择一项修改，其他字段原样保留，回车返回保留当前值。此入口仅修改服务 conf 字段，父接口、VLAN、FCC 地址获取方式和 NetworkManager profile 保持现状；需要调整网络参数时请先自行规划网络变更。应用前确认，仅重启选定实例；先备份并原子替换，重启或运行状态检查失败时恢复旧配置 / env，并尝试恢复该服务原先的运行 / 停止状态；TERM / HUP / INT 同样触发回滚，恢复失败会明确提示检查日志。旧 env 或无 env 不代表默认使用 FCC。
+
+按 [官方 v3.16.0 配置](https://github.com/stackia/rtp2httpd/blob/v3.16.0/docs/en/reference/configuration.md) 与 [URL 参数](https://github.com/stackia/rtp2httpd/blob/v3.16.0/docs/en/guide/url-formats.md)，优先级为请求 URL `r2h-ifname` > `upstream-interface-rtsp` > 通用 `upstream-interface` > 系统路由。选择系统路由会注释 RTSP 专用项；若仍有通用接口，实际回退到该接口并明确显示，不删除通用参数。查看配置显示 RTSP 设置与有效回退。设置按文本读取 conf / env，不执行状态文件；重复 global/key、非普通文件或无法安全解释的语法明确失败。服务路径只接受可确定的直接 ExecStart；存在 systemd drop-in、变量或路径转义时拒绝自动修改。升级二进制不自动改写已有 RTSP 配置。
 
 二进制从 [stackia/rtp2httpd](https://github.com/stackia/rtp2httpd) 官方 release 下载并校验 SHA-256。删除只移除 YehBP 创建的配置、service 与 VLAN profile，保留共享二进制和既有网络配置。
 

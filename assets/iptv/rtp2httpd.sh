@@ -413,12 +413,388 @@ FCC_IPV4_GATEWAY=${RTP2HTTPD_FCC_IPV4_GATEWAY}
 FCC_ROUTE_TABLE=${RTP2HTTPD_FCC_ROUTE_TABLE}
 FCC_ROUTE_PRIORITY=${RTP2HTTPD_FCC_ROUTE_PRIORITY}
 IGMP_VERSION=${RTP2HTTPD_IGMP_VERSION}
+RTSP_IF=${RTP2HTTPD_RTSP_IF}
 BIND_ADDRESS=${RTP2HTTPD_BIND_ADDRESS}
 PORT=${RTP2HTTPD_PORT}
 MULTICAST_PROFILE_UUID=${RTP2HTTPD_MULTICAST_PROFILE_UUID}
 FCC_PROFILE_UUID=${RTP2HTTPD_FCC_PROFILE_UUID}
 EOF
     chmod 0600 "$state"
+}
+
+rtp2httpd_valid_interface() {
+    [[ "$1" =~ ^[A-Za-z0-9_][A-Za-z0-9_.:-]*$ ]] && [ "${#1}" -le 15 ] && ip link show dev "$1" >/dev/null 2>&1
+}
+
+rtp2httpd_prompt_rtsp() {
+    local fcc="$1" multicast="$2" choice iface
+    echo "RTSP 上游：URL r2h-ifname > RTSP 专用接口 > 通用 upstream-interface > 系统路由。"
+    echo "已有接口候选（无需 IPv4 也会列出；请确认接口能到达 RTSP 服务）："
+    ip -o link show
+    echo "  1）复用 FCC 接口（${fcc:-未配置}；单播 / 回看通常需要可路由接口）"
+    echo "  2）复用组播接口（${multicast:-未配置}；请确认具备单播路由）"
+    echo "  3）指定已有接口（不创建 VLAN）"
+    echo "  4）系统路由 / 通用接口回退（移除 RTSP 专用项，保留通用参数）"
+    echo "  0）返回"
+    read -r -p "请输入要操作的序号（无默认）: " choice || return 2
+    case "$choice" in
+        1) iface="$fcc" ;;
+        2) iface="$multicast" ;;
+        3) read -r -p "请输入已有接口名: " iface || return 2 ;;
+        4) RTP2HTTPD_RTSP_IF=""; return 0 ;;
+        *) return 2 ;;
+    esac
+    # Installation may select its planned FCC/multicast VLAN before creation.
+    if [ "${RTP2HTTPD_RTSP_PLANNED:-0}" = 1 ] &&
+       { [ "$choice" = 1 ] || [ "$choice" = 2 ]; }; then
+        [[ "$iface" =~ ^[A-Za-z0-9_][A-Za-z0-9_.:-]*$ ]] && [ "${#iface}" -le 15 ] || return 1
+    else
+        rtp2httpd_valid_interface "$iface" || { echo "❌ 接口名无效或接口不存在。"; return 1; }
+    fi
+    RTP2HTTPD_RTSP_IF="$iface"
+}
+
+rtp2httpd_rtsp_line() {
+    if [ -n "${RTP2HTTPD_RTSP_IF:-}" ]; then
+        printf 'upstream-interface-rtsp = %s\n' "$RTP2HTTPD_RTSP_IF"
+    else
+        printf '# RTSP: no dedicated interface; fallback to upstream-interface, then system routing\n'
+    fi
+}
+
+# Parse text as data; never source instance state. Reject ambiguous syntax before
+# staging either file. Keep unrelated bytes, metadata and comments unchanged.
+rtp2httpd_rtsp_config() {
+    python3 - "$@" <<'PY'
+import contextlib
+import datetime
+import fcntl
+import ipaddress
+import os
+from pathlib import Path
+import re
+import signal
+import stat
+import subprocess
+import sys
+import tempfile
+
+
+def interrupted(signum, frame):
+    raise InterruptedError('收到信号 ' + str(signum))
+
+
+for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+    signal.signal(signum, interrupted)
+
+
+def interface(value):
+    if not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.:-]{0,14}', value):
+        raise ValueError('接口名无效')
+    if subprocess.run(['ip', 'link', 'show', 'dev', value], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
+        raise ValueError('接口不存在')
+
+
+def snapshot(path, optional=False):
+    if not path.exists() and not path.is_symlink() and optional:
+        return None, None
+    s = path.lstat()
+    if not stat.S_ISREG(s.st_mode) or s.st_nlink != 1:
+        raise ValueError('配置 / 状态必须是普通文件且无硬链接')
+    return path.read_bytes(), s
+
+
+def stage(path, data, metadata):
+    fd, name = tempfile.mkstemp(prefix='.' + path.name + '.', dir=str(path.parent))
+    try:
+        with os.fdopen(fd, 'wb') as f:
+            f.write(data)
+            if metadata:
+                os.fchown(f.fileno(), metadata.st_uid, metadata.st_gid)
+            os.fchmod(f.fileno(), stat.S_IMODE(metadata.st_mode) if metadata else 0o600)
+            f.flush()
+            os.fsync(f.fileno())
+        return name
+    except BaseException:
+        os.unlink(name)
+        raise
+
+
+def main():
+    action, config_name, state_name, *args = sys.argv[1:]
+    config, state = Path(config_name), Path(state_name)
+    if config == state or config.parent != state.parent:
+        raise ValueError('配置 / 状态路径必须为同目录不同文件')
+    # Lock the directory without leaving a lock file in existing installations.
+    with contextlib.ExitStack() as stack:
+        directory = os.open(str(config.parent), os.O_RDONLY)
+        stack.callback(os.close, directory)
+        fcntl.flock(directory, fcntl.LOCK_EX)
+        original, meta = snapshot(config)
+        env_original, env_meta = snapshot(state, True)
+        text = original.decode('utf-8')
+        lines = text.splitlines(keepends=True)
+        section = None
+        sections = set()
+        values, indices = {}, {}
+        binds = []
+        for i, line in enumerate(lines):
+            clean = line.strip()
+            if not clean or clean.startswith(('#', ';')):
+                continue
+            header = re.fullmatch(r'\[([a-z][a-z0-9_-]*)\]\s*(?:[#;].*)?', clean)
+            if header:
+                section = header[1]
+                if section in sections:
+                    raise ValueError('重复配置段；请先人工整理')
+                sections.add(section)
+                continue
+            if clean.startswith('[') or section is None:
+                raise ValueError('不支持的配置段语法或段外参数')
+            if section == 'global':
+                match = re.fullmatch(r'\s*([a-z][a-z0-9_-]*)\s*=\s*([^#;\r\n]*?)(\s*(?:[#;].*)?)(\r?\n)?', line)
+                if not match or match[1] in values:
+                    raise ValueError('global 语法不明确或存在重复 key；请先人工整理')
+                values[match[1]] = match[2].strip()
+                indices[match[1]] = i
+            elif section == 'bind':
+                binds.append(i)
+        if 'global' not in sections:
+            raise ValueError('缺少唯一 [global]')
+        env_lines = (env_original or b'').decode('utf-8').splitlines(keepends=True)
+        env_indices = [i for i, line in enumerate(env_lines) if re.match(r'^\s*(?:export\s+)?RTSP_IF\s*=', line)]
+        if len(env_indices) > 1:
+            raise ValueError('env 存在重复 RTSP_IF')
+        dedicated = values.get('upstream-interface-rtsp', '')
+        fallback = values.get('upstream-interface', '')
+        effective = dedicated or fallback or '系统路由'
+        if action == 'status':
+            print('RTSP 专用接口：' + (dedicated or '未设置') + '；有效接口：' + effective + '；移除专用项后回退：' + (fallback or '系统路由'))
+            print('优先级：URL r2h-ifname > RTSP > upstream-interface > 系统路由')
+            return
+        if action == 'get':
+            field = args[0]
+            if field in ('address', 'port'):
+                if len(binds) != 1:
+                    raise ValueError('监听配置非单一行；本入口不支持修改')
+                match = re.fullmatch(r'(\s*)(\S+)(\s+)(\d+)(\s*(?:[#;].*)?)(\r?\n)?', lines[binds[0]])
+                if not match:
+                    raise ValueError('不支持的 bind 语法')
+                print(match[2 if field == 'address' else 4])
+            else:
+                print(values.get('upstream-interface-' + field, ''))
+            return
+        if action != 'apply':
+            raise ValueError('未知操作')
+        service, field, value = args
+        if not re.fullmatch(r'rtp2httpd(?:_[A-Za-z0-9][A-Za-z0-9_-]*)?\.service', service):
+            raise ValueError('service 名无效')
+        if field in ('rtsp', 'multicast', 'fcc'):
+            if value:
+                interface(value)
+            elif field != 'rtsp':
+                raise ValueError('接口不能为空')
+            key = 'upstream-interface-' + field
+            replacement = key + ' = ' + value if value else '# RTSP: fallback to upstream-interface, then system routing'
+            if key in indices:
+                i = indices[key]
+                match = re.fullmatch(r'(\s*' + re.escape(key) + r'\s*=\s*)([^#;\r\n]*?)(\s*(?:[#;].*)?)(\r?\n)?', lines[i])
+                lines[i] = (match[1] + value if value else replacement) + match[3] + (match[4] or '')
+            else:
+                i = next(i for i, line in enumerate(lines) if re.fullmatch(r'\s*\[global\]\s*(?:[#;].*)?\s*', line)) + 1
+                if not lines[i-1].endswith('\n'):
+                    lines[i-1] += '\n'
+                lines.insert(i, replacement + '\n')
+        elif field in ('address', 'port'):
+            if len(binds) != 1:
+                raise ValueError('监听配置非单一行；本入口不支持修改')
+            i = binds[0]
+            match = re.fullmatch(r'(\s*)(\S+)(\s+)(\d+)(\s*(?:[#;].*)?)(\r?\n)?', lines[i])
+            if not match:
+                raise ValueError('不支持的 bind 语法')
+            parts = list(match.groups())
+            if field == 'address':
+                ipaddress.ip_address(value)
+                parts[1] = value
+            else:
+                if not value.isascii() or not value.isdigit() or not 1 <= int(value) <= 65535:
+                    raise ValueError('端口必须为 1–65535')
+                parts[3] = value
+            lines[i] = ''.join(p or '' for p in parts)
+        else:
+            raise ValueError('未知字段')
+        candidate = ''.join(lines).encode('utf-8')
+        env_candidate = env_original
+        if field == 'rtsp':
+            replacement = 'RTSP_IF=' + value + '\n'
+            if env_indices:
+                old_line = env_lines[env_indices[0]]
+                match = re.fullmatch(r'(\s*(?:export\s+)?RTSP_IF\s*=\s*)([^#;\r\n]*?)([ \t]*(?:[#;].*)?)(\r?\n)?', old_line)
+                if not match:
+                    raise ValueError('env RTSP_IF 语法不明确')
+                env_lines[env_indices[0]] = match[1] + value + match[3] + (match[4] or '')
+            else:
+                if env_lines and not env_lines[-1].endswith('\n'):
+                    env_lines[-1] += '\n'
+                env_lines.append(replacement)
+            env_candidate = ''.join(env_lines).encode('utf-8')
+        paths = [(config, original, candidate, meta)]
+        if field == 'rtsp':
+            paths.append((state, env_original, env_candidate, env_meta))
+        active = subprocess.run(['systemctl', 'show', '--property=ActiveState', '--value', service],
+                                capture_output=True, text=True, check=True).stdout.strip()
+        if active not in ('active', 'inactive', 'failed'):
+            raise ValueError('服务状态不稳定或无法确定；取消应用')
+        staged, backups, replaced = [], [], []
+        try:
+            for path, old, new, metadata in paths:
+                staged.append(stage(path, new, metadata))
+                backups.append(stage(path, old, metadata) if old is not None else None)
+            for path, old, new, metadata in paths:
+                current, current_meta = snapshot(path, old is None)
+                identity = lambda s: (s.st_dev, s.st_ino, s.st_mode, s.st_uid, s.st_gid, s.st_mtime_ns) if s else None
+                if current != old or identity(current_meta) != identity(metadata):
+                    raise ValueError('文件已被外部修改；取消应用')
+            stamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S%f')
+            for (path, old, new, metadata), backup in zip(paths, backups):
+                if backup:
+                    dest = str(path) + '.bak-' + stamp
+                    os.replace(backup, dest)
+                    backups[backups.index(backup)] = dest
+            for n, (path, old, new, metadata) in enumerate(paths):
+                blocked = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM, signal.SIGHUP, signal.SIGINT})
+                try:
+                    os.replace(staged[n], path)
+                    replaced.append(n)
+                finally:
+                    signal.pthread_sigmask(signal.SIG_SETMASK, blocked)
+            if subprocess.run(['systemctl', 'restart', service]).returncode or subprocess.run(['systemctl', 'is-active', '--quiet', service]).returncode:
+                raise ValueError('服务应用失败')
+            print('✅ 已应用所选字段并重启 ' + service)
+            if field == 'rtsp':
+                print('RTSP 实际回退：' + (value or fallback or '系统路由') + '（URL r2h-ifname 优先；通用接口保留）')
+        except BaseException:
+            for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+                signal.signal(signum, signal.SIG_IGN)
+            for n in reversed(replaced):
+                path, old, new, metadata = paths[n]
+                if old is None:
+                    path.unlink()
+                else:
+                    os.replace(stage(path, old, metadata), path)
+            if replaced:
+                operation = 'restart' if active == 'active' else 'stop'
+                print('⚠️ 已恢复旧配置 / 状态；尝试恢复所选实例原先的运行状态。', file=sys.stderr)
+                result = subprocess.run(['systemctl', operation, service]).returncode
+                restored = subprocess.run(['systemctl', 'is-active', '--quiet', service]).returncode
+                if result or (restored == 0) != (active == 'active'):
+                    print('❌ 恢复运行状态失败，请检查 journalctl -u ' + service, file=sys.stderr)
+            raise
+        finally:
+            for name in staged:
+                if os.path.exists(name):
+                    os.unlink(name)
+            # Retain named .bak files, remove only unpublished temporary backups.
+            for name in backups:
+                if name and '.bak-' not in name and os.path.exists(name):
+                    os.unlink(name)
+
+
+try:
+    main()
+except (OSError, ValueError, UnicodeError) as error:
+    print('❌ 设置失败：' + str(error), file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
+rtp2httpd_apply_rtsp() {
+    rtp2httpd_rtsp_config apply "$2" "$3" "$1" rtsp "$4"
+}
+
+rtp2httpd_service_config_path() {
+    # Accept only the installer's direct binary -c absolute-path unit syntax.
+    python3 - "$1" <<'PY'
+import re
+import subprocess
+import sys
+service = sys.argv[1]
+if not re.fullmatch(r'rtp2httpd(?:_[A-Za-z0-9][A-Za-z0-9_-]*)?\.service', service):
+    sys.exit('service 名无效')
+# Refuse overrides rather than guessing which ExecStart is effective.
+if subprocess.check_output(['systemctl', 'show', '--property=DropInPaths', '--value', service], text=True).strip():
+    sys.exit('存在 service drop-in；请先人工核对配置路径')
+unit = subprocess.check_output(['systemctl', 'cat', '--', service], text=True)
+section = None
+lines = []
+for line in unit.splitlines():
+    if line.strip().startswith(('#', ';')) or not line.strip():
+        continue
+    if line.startswith('['):
+        section = line.strip()
+    elif section == '[Service]' and line.startswith('ExecStart='):
+        lines.append(line)
+if len(lines) != 1:
+    sys.exit('无法确定唯一 ExecStart；未修改')
+m = re.fullmatch(r'ExecStart=(/[^\s"\x27]+/rtp2httpd) -c (/[^\s"\x27]+\.conf)', lines[0])
+if not m or any(c in m[1] + m[2] for c in '%$\\'):
+    sys.exit('不支持的 ExecStart 参数 / 转义；未修改')
+print(m[2])
+PY
+}
+
+rtp2httpd_settings() {
+    local choice service="${1:-}" config="${2:-}" state address port multicast fcc rtsp field value answer i
+    if [ -z "$service" ]; then
+    rtp2httpd_list_instances
+    [ "${#RTP2HTTPD_LIST_SERVICES[@]}" -gt 0 ] || { echo "ℹ️ 未找到实例。"; return 0; }
+    echo "请选择要设置的实例："
+    for i in "${!RTP2HTTPD_LIST_SERVICES[@]}"; do
+        printf '  %d）%s\n' "$((i + 1))" "${RTP2HTTPD_LIST_SERVICES[$i]}"
+    done
+    echo "  0）返回"
+    read -r -p "请输入要操作的序号: " choice || return 0
+    [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#RTP2HTTPD_LIST_SERVICES[@]}" ] || return 0
+    service="${RTP2HTTPD_LIST_SERVICES[$((choice - 1))]}"
+    fi
+    config="$(rtp2httpd_service_config_path "$service")" || return 1
+    state="${config%.conf}.env"
+    address="$(rtp2httpd_rtsp_config get "$config" "$state" address)" || return 1
+    port="$(rtp2httpd_rtsp_config get "$config" "$state" port)" || return 1
+    multicast="$(rtp2httpd_rtsp_config get "$config" "$state" multicast)" || return 1
+    fcc="$(rtp2httpd_rtsp_config get "$config" "$state" fcc)" || return 1
+    rtsp="$(rtp2httpd_rtsp_config get "$config" "$state" rtsp)" || return 1
+    echo "仅修改服务 conf 字段；不修改 VLAN / NetworkManager。未选字段保留原值。"
+    echo "  1）监听地址：${address}"
+    echo "  2）监听端口：${port}"
+    echo "  3）组播接口：${multicast:-未设置}"
+    echo "  4）FCC 接口：${fcc:-未设置}"
+    echo "  5）RTSP 接口：${rtsp:-未设置}"
+    rtp2httpd_rtsp_config status "$config" "$state" || return 1
+    echo "  0）返回"
+    read -r -p "请选择单项修改: " choice || return 0
+    case "$choice" in
+        1) field=address ;;
+        2) field=port ;;
+        3) field=multicast ;;
+        4) field=fcc ;;
+        5)
+            field=rtsp
+            rtp2httpd_prompt_rtsp "$fcc" "$multicast" || return 0
+            value="$RTP2HTTPD_RTSP_IF"
+            ;;
+        *) return 0 ;;
+    esac
+    if [ "$field" != rtsp ]; then
+        read -r -p "请输入新值（回车保留当前值并返回；接口必须已存在）: " value || return 0
+        [ -n "$value" ] || return 0
+    fi
+    if [ "$field" = rtsp ] && [ -z "$value" ]; then
+        echo "ℹ️ 将移除 RTSP 专用项；若通用 upstream-interface 存在，实际仍回退到该接口，不会删除通用项。"
+    fi
+    read -r -p "将备份并应用所选字段，仅重启 ${service}；失败恢复旧配置并尝试恢复服务。继续？[y/N]: " answer || return 0
+    [[ "$answer" =~ ^[yY]([eE][sS])?$ ]] || return 0
+    rtp2httpd_rtsp_config apply "$config" "$state" "$service" "$field" "$value"
 }
 
 rtp2httpd_install() {
@@ -432,9 +808,9 @@ rtp2httpd_install() {
     rtp2httpd_prompt_instance || return 1
 
     if [ -e "$RTP2HTTPD_CONFIG_PATH" ] || [ -e "$RTP2HTTPD_STATE_PATH" ] || [ -e "$RTP2HTTPD_SERVICE_PATH" ]; then
-        read -r -p "检测到配置 ${RTP2HTTPD_INSTANCE} 已存在；是否替换其配置和开机启动服务？[y/N]: " answer
-        [[ "$answer" =~ ^[yY]([eE][sS])?$ ]] || return 0
-        rtp2httpd_remove_instance "$RTP2HTTPD_SERVICE" "$RTP2HTTPD_CONFIG_PATH" "$RTP2HTTPD_STATE_PATH" || return 1
+        echo "ℹ️ 已有配置 ${RTP2HTTPD_INSTANCE}：载入当前服务参数；父接口 / VLAN / 地址获取方式保持现状。"
+        rtp2httpd_settings "$RTP2HTTPD_SERVICE" "$RTP2HTTPD_CONFIG_PATH"
+        return $?
     fi
 
     rtp2httpd_select_parent
@@ -449,6 +825,11 @@ rtp2httpd_install() {
     case $? in 0) ;; 2) return 0 ;; *) return 1 ;; esac
     rtp2httpd_prompt_igmp_version || return 0
     rtp2httpd_prompt_bind || return 0
+    RTP2HTTPD_RTSP_PLANNED=1
+    rtp2httpd_prompt_rtsp "${RTP2HTTPD_PARENT_IF}.${RTP2HTTPD_FCC_VLAN}" "${RTP2HTTPD_PARENT_IF}.${RTP2HTTPD_MULTICAST_VLAN}"
+    local rtsp_result=$?
+    RTP2HTTPD_RTSP_PLANNED=0
+    [ "$rtsp_result" -eq 0 ] || return "$rtsp_result"
     rtp2httpd_fcc_routing_params || return 1
 
     if [ ! -x "${RTP2HTTPD_APP_DIR}/rtp2httpd" ]; then
@@ -511,6 +892,7 @@ rtp2httpd_install() {
     rtp2httpd_render_template "${RTP2HTTPD_APP_DIR}/rtp2httpd.conf.tpl" "$tmp_conf" \
         "__MULTICAST_IF__=${RTP2HTTPD_PARENT_IF}.${RTP2HTTPD_MULTICAST_VLAN}" \
         "__FCC_IF__=${RTP2HTTPD_PARENT_IF}.${RTP2HTTPD_FCC_VLAN}" \
+        "__RTSP_INTERFACE_CONFIG__=$(rtp2httpd_rtsp_line)" \
         "__BIND_ADDRESS__=${RTP2HTTPD_BIND_ADDRESS}" "__PORT__=${RTP2HTTPD_PORT}" || return 1
     rtp2httpd_render_template "${RTP2HTTPD_APP_DIR}/rtp2httpd.service.tpl" "$tmp_service" \
         "__APP_DIR__=${RTP2HTTPD_APP_DIR}" "__CONFIG_PATH__=${RTP2HTTPD_CONFIG_PATH}" \
@@ -593,6 +975,7 @@ rtp2httpd_show_config() {
         fi
         printf '\n=== %s（%s）===\n' "$service" "$config"
         cat "$config"
+        rtp2httpd_rtsp_config status "$config" "${config%.conf}.env" || return 1
     done
 }
 
