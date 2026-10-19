@@ -39,7 +39,7 @@ python3 iptv.py config=tel output=/path/channels.m3u
 | `multicast_interface` / `fcc_interface` | 播放接口覆盖；默认不添加，使用rtp2httpd实例配置。只填组播时FCC可能跟着回退，需要分开时两个一起填 |
 | `auth` | 鉴权地址；多个以空格分隔，第一个作为入口，其余允许跳转。默认 `http://222.68.208.73:7001` |
 | `live` / `replay` | 直播/回放路径，默认 `/rtp/`、`/rtsp/` |
-| `seek` | 回放时间格式 |
+| `seek` | 回放时间格式，默认 `${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}`；已保存配置保留原值，可用 `seek` 显式更新 |
 
 只写 `config`（可再加 `output`）时不联网。`run` 会联网。命令里出现身份或其他配置字段时，保留没写的旧字段，保存后获取并生成；首次缺身份不会留下半份配置。身份写在命令里会被 shell 记住。
 

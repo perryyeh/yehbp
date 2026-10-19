@@ -569,7 +569,7 @@ import tempfile
 from urllib.parse import urlsplit, quote
 auth = sys.modules[__name__]  # Internal namespace; single runtime file.
 
-SEEK = '{utc:YmdHMS}-{utcend:YmdHMS}'
+SEEK = '${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}'
 
 
 def text(value):
