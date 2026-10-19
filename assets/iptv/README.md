@@ -4,6 +4,12 @@
 
 下载 iptv.py 后运行，使用方法及参数说明见下文。身份请换成自己机顶盒的 UserID、SN 和 MAC。
 
+下载脚本：
+
+```sh
+curl -fL https://raw.githubusercontent.com/perryyeh/yehbp/main/assets/iptv/iptv.py -o iptv.py
+```
+
 ```sh
 # 首次或修改：保存、获取并生成 tel/playlist.m3u。改一项时只写要改的字段
 python3 iptv.py config=tel userinfo=YOUR_USER_ID SN=YOUR_BOX_SN MAC=YOUR_BOX_MAC \
@@ -34,4 +40,4 @@ python3 iptv.py config=tel output=/path/channels.m3u
 
 只写 `config`（可再加 `output`）时不联网。`run` 会联网。命令里出现身份或其他配置字段时，保留没写的旧字段，保存后获取并生成；首次缺身份不会留下半份配置。身份写在命令里会被 shell 记住。
 
-协议参考 [pcg562240/pcg-iptv 固定提交 38653f0](https://github.com/pcg562240/pcg-iptv/blob/38653f0bd722c4dececae434efa3593be97e8aca/shctiptv.py)；该文件写明参考 [denymz/sh-tel-iptv-spider](https://github.com/denymz/sh-tel-iptv-spider)。
+协议参考 [pcg562240/pcg-iptv](https://github.com/pcg562240/pcg-iptv)。
