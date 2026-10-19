@@ -396,6 +396,112 @@ os.replace = replace
         self.assertIn('injected', r.stderr)
         self.assertFalse(list(self.base.glob('.rtp2httpd*')))
 
+    def prompt_with_inventory(self, stdin, args='wan.7 media', planned=False):
+        (self.bin / 'ip').write_text('''#!/bin/bash
+printf '%s\\n' "$*" >> "$LOG.ip"
+case "$*" in
+'-o link show')
+ printf '%s\\n' '2: wan.7@wan: <UP> mtu 1500 state UP link/ether aa:bb:cc:dd:ee:ff' '3: media: <UP> mtu 1500 state UNKNOWN link/ether aa:bb:cc:dd:ee:ff' '4: tailscale0: <UP> mtu 1280 state UNKNOWN link/none' '5: br-demo: <DOWN> mtu 1500 state DOWN link/ether aa:bb:cc:dd:ee:ff' '6: veth123@if77: <UP> mtu 1500 state UP link/ether aa:bb:cc:dd:ee:ff';;
+'-o -4 addr show') printf '%s\\n' '2: wan.7 inet 192.0.2.2/24 scope global wan.7' '5: br-demo inet 198.51.100.1/24 scope global br-demo';;
+'link show dev wan.7'|'link show dev media'|'link show dev tailscale0'|'link show dev br-demo'|'link show dev veth123') exit 0;;
+*) exit 1;;
+esac
+''')
+        return self.run_shell(f'''RTP2HTTPD_RTSP_IF=keep
+RTP2HTTPD_RTSP_PLANNED={int(planned)}
+rtp2httpd_prompt_rtsp {args}
+rc=$?
+printf '\\nRESULT=%s\\n' "$RTP2HTTPD_RTSP_IF"
+exit "$rc"''', stdin)
+
+    def test_rtsp_reuse_and_fallback_do_not_enumerate(self):
+        for choice, expected in [('1', 'wan.7'), ('2', 'media'), ('4', '')]:
+            with self.subTest(choice=choice):
+                Path(str(self.log) + '.ip').unlink(missing_ok=True)
+                r = self.prompt_with_inventory(choice + '\n')
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertIn('RESULT=' + expected + '\n', r.stdout)
+                calls = Path(str(self.log) + '.ip')
+                self.assertNotIn('-o', calls.read_text() if calls.exists() else '')
+                self.assertNotIn('tailscale0', r.stdout)
+                self.assertNotIn('aa:bb', r.stdout)
+                self.assertFalse(self.log.exists())
+
+    def test_rtsp_other_interfaces_are_compact_and_numbered(self):
+        for selection, expected in [('1', 'wan.7'), ('2', 'media'), ('3', 'tailscale0'),
+                                    ('4', 'br-demo'), ('5', 'veth123'), ('wan.7', 'wan.7')]:
+            with self.subTest(selection=selection):
+                r = self.prompt_with_inventory('3\n' + selection + '\n')
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertIn('RESULT=' + expected + '\n', r.stdout)
+                for text in ('wan.7', '192.0.2.2/24', 'media', '无 IPv4', 'UNKNOWN', 'DOWN', 'tailscale0', 'br-demo', 'veth123'):
+                    self.assertIn(text, r.stdout)
+                for text in ('link/ether', 'aa:bb:cc:dd:ee:ff', '@if77', 'mtu', 'link/none'):
+                    self.assertNotIn(text, r.stdout)
+                self.assertIn('link show dev ' + expected, Path(str(self.log) + '.ip').read_text())
+                self.assertFalse(self.log.exists())
+
+    def test_rtsp_cancel_eof_and_bad_selection_preserve_value(self):
+        for stdin, status in [('', 2), ('0\n', 2), ('\n', 2), ('3\n', 2), ('3\n0\n', 2),
+                              ('3\n\n', 2), ('3\n99999999999999999999999\n', 1), ('3\nabsent\n', 1)]:
+            with self.subTest(stdin=stdin):
+                r = self.prompt_with_inventory(stdin)
+                self.assertEqual(r.returncode, status, r.stdout + r.stderr)
+                self.assertIn('RESULT=keep\n', r.stdout)
+                self.assertFalse(self.log.exists())
+
+    def test_rtsp_missing_reuse_and_planned_install(self):
+        for choice in ('1', '2'):
+            r = self.prompt_with_inventory(choice + '\n', args='"" ""', planned=True)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn('未配置', r.stdout)
+            self.assertIn('RESULT=keep\n', r.stdout)
+        r = self.prompt_with_inventory('1\n', args='planned.7 media', planned=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn('RESULT=planned.7\n', r.stdout)
+
+    def test_rtsp_inventory_failure_and_disappeared_interface(self):
+        for mode in ('link-failure', 'addr-failure', 'disappeared'):
+            with self.subTest(mode=mode):
+                self.prompt_with_inventory('0\n')
+                ip = self.bin / 'ip'
+                text = ip.read_text()
+                if mode == 'link-failure':
+                    text = text.replace("'-o link show')", "'-o link show') exit 1;;\nunused)")
+                elif mode == 'addr-failure':
+                    text = text.replace("'-o -4 addr show')", "'-o -4 addr show') exit 1;;\nunused)")
+                else:
+                    text = text.replace("'link show dev wan.7'|", '')
+                ip.write_text(text)
+                r = self.run_shell('''RTP2HTTPD_RTSP_IF=keep
+rtp2httpd_prompt_rtsp wan.7 media
+rc=$?
+printf '\\nRESULT=%s\\n' "$RTP2HTTPD_RTSP_IF"
+exit "$rc"''', '3\n1\n')
+                self.assertEqual(r.returncode, 0 if mode == 'addr-failure' else 1, r.stdout + r.stderr)
+                self.assertIn('RESULT=wan.7\n' if mode == 'addr-failure' else 'RESULT=keep\n', r.stdout)
+                if mode == 'addr-failure':
+                    self.assertIn('IPv4 未知', r.stdout)
+                    self.assertNotIn('无 IPv4', r.stdout)
+                self.assertFalse(self.log.exists())
+
+    def test_settings_rtsp_numeric_selection_and_cancel(self):
+        self.prompt_with_inventory('0\n')
+        body = f'''rtp2httpd_list_instances() {{ RTP2HTTPD_LIST_SERVICES=(rtp2httpd_demo.service); }}
+rtp2httpd_service_config_path() {{ printf '%s\\n' {shlex.quote(str(self.conf))}; }}
+rtp2httpd_settings'''
+        before = self.state.read_bytes()
+        for stdin in ('1\n5\n0\n', '1\n5\n3\n0\n', '1\n5\n3\n'):
+            r = self.run_shell(body, stdin)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual(self.conf.read_text(), self.original)
+            self.assertEqual(self.state.read_bytes(), before)
+            self.assertFalse(self.log.exists())
+        r = self.run_shell(body, '1\n5\n3\n3\ny\n')
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.conf.read_text(), self.original.replace('= media # operator', '= tailscale0 # operator'))
+        self.assertNotIn('forbidden', self.log.read_text())
+
     def test_no_implicit_choice(self):
         r = self.run_shell('rtp2httpd_prompt_rtsp "" ""', '\n')
         self.assertNotEqual(r.returncode, 0)

@@ -426,21 +426,63 @@ rtp2httpd_valid_interface() {
     [[ "$1" =~ ^[A-Za-z0-9_][A-Za-z0-9_.:-]*$ ]] && [ "${#1}" -le 15 ] && ip link show dev "$1" >/dev/null 2>&1
 }
 
+rtp2httpd_select_rtsp_interface() {
+    local links addresses addr_status=0 name state ipv4 selection i=0
+    local -a interfaces=()
+    links=$(ip -o link show 2>/dev/null) || { echo "❌ 无法读取已有接口。"; return 1; }
+    addresses=$(ip -o -4 addr show 2>/dev/null) || addr_status=1
+    echo "已有接口（名称 / IPv4 / 状态；不代表能到达 RTSP 服务）："
+    while IFS='|' read -r name state ipv4; do
+        [ -n "$name" ] || continue
+        interfaces+=("$name")
+        i=$((i + 1))
+        [ "$addr_status" = 0 ] || ipv4="IPv4 未知"
+        printf '  %s）%s / %s / %s\n' "$i" "$name" "$ipv4" "$state"
+    done < <(printf '%s\n' "$links" | RTP2HTTPD_RTSP_ADDRESSES="$addresses" awk '
+        BEGIN {
+            n = split(ENVIRON["RTP2HTTPD_RTSP_ADDRESSES"], lines, "\n")
+            for (i = 1; i <= n; i++) {
+                split(lines[i], fields, /[[:space:]]+/)
+                name = fields[2]; sub(/@.*/, "", name)
+                if (fields[3] == "inet") ips[name] = ips[name] (ips[name] ? ", " : "") fields[4]
+            }
+        }
+        /^[0-9]+: / {
+            name = $2; sub(/:$/, "", name); sub(/@.*/, "", name)
+            if (seen[name]++) next
+            state = "UNKNOWN"
+            for (i = 3; i < NF; i++) if ($i == "state") state = $(i + 1)
+            printf "%s|%s|%s\n", name, state, (ips[name] ? ips[name] : "无 IPv4")
+        }')
+    echo "  0）返回"
+    read -r -p "请选择接口序号或输入已有接口名（回车返回）: " selection || return 2
+    case "$selection" in
+        ""|0) return 2 ;;
+        *[!0-9]*) RTP2HTTPD_SELECTED_RTSP_IF="$selection" ;;
+        *)
+            # Compare strings to avoid interpreting untrusted input as shell arithmetic.
+            for ((i = 0; i < ${#interfaces[@]}; i++)); do
+                if [ "$selection" = "$((i + 1))" ]; then
+                    RTP2HTTPD_SELECTED_RTSP_IF="${interfaces[$i]}"
+                    return 0
+                fi
+            done
+            echo "❌ 接口序号无效。"; return 1 ;;
+    esac
+}
+
 rtp2httpd_prompt_rtsp() {
-    local fcc="$1" multicast="$2" choice iface
-    echo "RTSP 上游：URL r2h-ifname > RTSP 专用接口 > 通用 upstream-interface > 系统路由。"
-    echo "已有接口候选（无需 IPv4 也会列出；请确认接口能到达 RTSP 服务）："
-    ip -o link show
-    echo "  1）复用 FCC 接口（${fcc:-未配置}；单播 / 回看通常需要可路由接口）"
-    echo "  2）复用组播接口（${multicast:-未配置}；请确认具备单播路由）"
-    echo "  3）指定已有接口（不创建 VLAN）"
-    echo "  4）系统路由 / 通用接口回退（移除 RTSP 专用项，保留通用参数）"
+    local fcc="$1" multicast="$2" choice iface RTP2HTTPD_SELECTED_RTSP_IF
+    echo "  1）复用 FCC 接口（${fcc:-未配置}）"
+    echo "  2）复用组播接口（${multicast:-未配置}）"
+    echo "  3）选择其他已有接口"
+    echo "  4）不指定，沿用通用接口 / 系统路由回退"
     echo "  0）返回"
     read -r -p "请输入要操作的序号（无默认）: " choice || return 2
     case "$choice" in
-        1) iface="$fcc" ;;
-        2) iface="$multicast" ;;
-        3) read -r -p "请输入已有接口名: " iface || return 2 ;;
+        1) [ -n "$fcc" ] || { echo "❌ 未配置 FCC 接口。"; return 1; }; iface="$fcc" ;;
+        2) [ -n "$multicast" ] || { echo "❌ 未配置组播接口。"; return 1; }; iface="$multicast" ;;
+        3) rtp2httpd_select_rtsp_interface || return $?; iface="$RTP2HTTPD_SELECTED_RTSP_IF" ;;
         4) RTP2HTTPD_RTSP_IF=""; return 0 ;;
         *) return 2 ;;
     esac
