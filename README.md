@@ -70,7 +70,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 70 | 迁移 Docker 目录               |
 | 71 | 优化 Docker 日志               |
 | 72 | 优化 journald 日志             |
-| 80 | 安装/设置/删除/升级/重启 IPTV（rtp2httpd；先选实例或新建，RTSP 仅选其他接口时列网卡） |
+| 80 | 安装/设置/删除/升级/重启 IPTV（rtp2httpd；先选实例或新建，设置显示直播/快速换台/回放接口，RTSP 仅选其他接口时列网卡） |
 | 89 | 安装/管理 SOCKS5 代理（含安装镜像） |
 | 90 | 创建macvlan bridge            |
 | 91 | 删除macvlan bridge            |

@@ -145,13 +145,33 @@ rtp2httpd_settings'''
         old_state = self.state.read_bytes()
         r = self.run_shell(body, '1\n2\n6000\ny\n')
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn('RTSP 接口', r.stdout)
-        self.assertIn('FCC 接口', r.stdout)
+        self.assertIn('  3）组播接口（直播）：未设置', r.stdout.splitlines())
+        self.assertIn('  4）FCC 接口（快速换台）：wan.7', r.stdout.splitlines())
+        self.assertIn('  5）RTSP 接口（回放）：media', r.stdout.splitlines())
+        self.assertNotIn('RTSP 专用接口：', r.stdout)
+        self.assertNotIn('优先级：URL', r.stdout)
         self.assertIn('监听地址', r.stdout)
         self.assertEqual(self.conf.read_text(), self.original.replace('127.0.0.1 5140', '127.0.0.1 6000'))
         self.assertEqual(self.state.read_bytes(), old_state)
         self.assertNotIn('peer', self.log.read_text())
         self.assertNotIn('forbidden', self.log.read_text())
+
+    def test_generic_settings_rtsp_fallback_labels(self):
+        for general, expected in [('media', '未设置（沿用通用接口：media）'),
+                                  ('', '未设置（沿用系统路由）')]:
+            with self.subTest(general=general):
+                text = self.original.replace('upstream-interface-rtsp = media # operator\n', '')
+                text = text.replace('upstream-interface = media', 'upstream-interface = ' + general)
+                self.conf.write_text(text)
+                before = self.state.read_bytes()
+                r = self.run_install_menu('2\n1\n0\n')
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertIn('  5）RTSP 接口（回放）：' + expected, r.stdout.splitlines())
+                self.assertNotIn('RTSP 专用接口：', r.stdout)
+                self.assertNotIn('优先级：URL', r.stdout)
+                self.assertEqual(self.conf.read_text(), text)
+                self.assertEqual(self.state.read_bytes(), before)
+                self.assertNotIn('restart', self.log.read_text())
 
     def test_generic_settings_rtsp_reuses_current_fcc(self):
         body = f'''rtp2httpd_list_instances() {{ RTP2HTTPD_LIST_SERVICES=(rtp2httpd_demo.service); }}

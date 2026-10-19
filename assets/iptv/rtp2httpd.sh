@@ -623,6 +623,8 @@ def main():
                 if not match:
                     raise ValueError('不支持的 bind 语法')
                 print(match[2 if field == 'address' else 4])
+            elif field == 'rtsp-display':
+                print(dedicated or ('未设置（沿用通用接口：' + fallback + '）' if fallback else '未设置（沿用系统路由）'))
             else:
                 print(values.get('upstream-interface-' + field, ''))
             return
@@ -805,14 +807,13 @@ rtp2httpd_settings() {
     port="$(rtp2httpd_rtsp_config get "$config" "$state" port)" || return 1
     multicast="$(rtp2httpd_rtsp_config get "$config" "$state" multicast)" || return 1
     fcc="$(rtp2httpd_rtsp_config get "$config" "$state" fcc)" || return 1
-    rtsp="$(rtp2httpd_rtsp_config get "$config" "$state" rtsp)" || return 1
+    rtsp="$(rtp2httpd_rtsp_config get "$config" "$state" rtsp-display)" || return 1
     echo "仅修改服务 conf 字段；不修改 VLAN / NetworkManager。未选字段保留原值。"
     echo "  1）监听地址：${address}"
     echo "  2）监听端口：${port}"
-    echo "  3）组播接口：${multicast:-未设置}"
-    echo "  4）FCC 接口：${fcc:-未设置}"
-    echo "  5）RTSP 接口：${rtsp:-未设置}"
-    rtp2httpd_rtsp_config status "$config" "$state" || return 1
+    echo "  3）组播接口（直播）：${multicast:-未设置}"
+    echo "  4）FCC 接口（快速换台）：${fcc:-未设置}"
+    echo "  5）RTSP 接口（回放）：${rtsp}"
     echo "  0）返回"
     read -r -p "请选择单项修改: " choice || return 0
     case "$choice" in
