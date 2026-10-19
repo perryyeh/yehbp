@@ -63,17 +63,17 @@ class UnifiedConfigEntryTests(unittest.TestCase):
     def test_configure_prompts_hide_identity_and_skip_network(self):
         with tempfile.TemporaryDirectory() as tmp:
             paths = c.config_paths(Path(tmp).resolve() / 'tel')
-            lines = ['fixture', 'box', '00:11:22:33:44:55', 'eth0.85', 'eth0.51',
-                     'eth0.86', c.DEFAULT_ORIGIN, 'http://127.0.0.1:5555',
+            lines = ['fixture', 'box', '00:11:22:33:44:55', 'eth0.85',
+                     'http://127.0.0.1:5555',
                      '/udp/', '/proxy/rtsp/', '${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}',
-                     'http://example.test:8080']
+                     c.DEFAULT_ORIGIN]
             with patch.object(c.getpass, 'getpass', side_effect=lines), patch.object(c.socket, 'socket', side_effect=AssertionError('network forbidden')), patch.object(c, 'login', side_effect=AssertionError('login forbidden')):
                 self.assertEqual(c.main(['configure', 'config=' + str(paths[0])]), 0)
             cfg = c.load(paths[1])
-            keys = ['userid', 'sn', 'mac', 'interface', 'multicast_interface', 'fcc_interface',
+            keys = ['userid', 'sn', 'mac', 'interface',
                     'auth_origin', 'base_url', 'live_path', 'replay_path', 'seek_template']
-            self.assertEqual([cfg[k] for k in keys], lines[:-1])
-            self.assertEqual(cfg['allowed_origins'], [lines[-1]])
+            self.assertEqual([cfg[k] for k in keys], lines[:4] + [c.DEFAULT_ORIGIN] + lines[4:-1])
+            self.assertEqual(cfg['allowed_origins'], [])
             self.assertFalse(paths[2].exists())
 
     def test_help_uses_config_examples_and_legacy_flags_still_work(self):

@@ -38,7 +38,7 @@ class DirectoryModelTests(unittest.TestCase):
     def test_key_value_first_fetch_and_script_relative_default(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp).resolve(); script=root/'iptv.py';script.write_bytes(Path(c.__file__).read_bytes())
-            args=['userinfo=fixture','SN=box','MAC=00:11:22:33:44:55','interface=eth0.85','baseURL=http://127.0.0.1:5140']
+            args=['userinfo=fixture','SN=box','MAC=00:11:22:33:44:55','interface=eth0.85','rtp2http=http://127.0.0.1:5140']
             with patch.object(c,'__file__',str(script)), patch.object(c,'local_ipv4',return_value='192.0.2.1'), patch.object(c,'login',return_value=[row()]) as login, patch.object(c,'portal_directory',return_value=directory([dict(mixNo='1',name='fixture')])):
                 self.assertEqual(c.main(args),0)
                 self.assertEqual(login.call_count,1)
@@ -142,9 +142,9 @@ class DirectoryModelTests(unittest.TestCase):
     def test_interactive_first_and_reentry_hide_identity_keep_unknown(self):
         with tempfile.TemporaryDirectory() as tmp:
             d=Path(tmp).resolve()/'instance'; args=['configure','config='+str(d)]
-            with patch.object(c.getpass,'getpass',side_effect=['fixture','box','00:11:22:33:44:55','eth0.85','eth0.51','eth0.85']+['']*6) as hidden, patch.object(c.socket,'socket',side_effect=AssertionError('network')):
+            with patch.object(c.getpass,'getpass',side_effect=['fixture','box','00:11:22:33:44:55','eth0.85']+['']*5) as hidden, patch.object(c.socket,'socket',side_effect=AssertionError('network')):
                 self.assertEqual(c.main(args),0)
-            self.assertEqual(hidden.call_count,12)
+            self.assertEqual(hidden.call_count,9)
             paths=c.config_paths(d); cfg=c.load(paths[1]);cfg['extra']={'null':None,'duplicates':[1,1]};c.atomic_json(paths[1],cfg)
             with patch.object(c.getpass,'getpass',return_value=''):
                 self.assertEqual(c.main(args),0)

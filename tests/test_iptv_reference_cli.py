@@ -13,11 +13,13 @@ from iptv_reference_loader import iptv as auth
 
 
 def config():
-    return dict(provider='shanghai-telecom', userid='fixture', sn='fixture-box', mac='00:11:22:33:44:55', interface='eth0.85', fcc_interface='eth0.51', auth_origin=auth.DEFAULT_ORIGIN, allowed_origins=[], base_url='http://127.0.0.1:5140/prefix', live_path='/rtp/', replay_path='/rtsp/', seek_template=c.SEEK)
+    return dict(provider='shanghai-telecom', userid='fixture', sn='fixture-box', mac='00:11:22:33:44:55', interface='eth0.85', auth_origin=auth.DEFAULT_ORIGIN, allowed_origins=[], base_url='http://127.0.0.1:5140/prefix', live_path='/rtp/', replay_path='/rtsp/', seek_template=c.SEEK)
 
 
 def row(**kw):
-    return dict(ChannelID='42', ChannelURL='igmp://239.1.2.3:1234', TimeShiftURL='rtsp://example.test/path%2Fsub?AuthInfo=A%2fb+C==&x=1&x=2', Unknown='preserve', **kw)
+    base=dict(ChannelID='42', ChannelURL='igmp://239.1.2.3:1234', TimeShiftURL='rtsp://example.test/path%2Fsub?AuthInfo=A%2fb+C==&x=1&x=2', Unknown='preserve')
+    base.update(kw)
+    return base
 
 
 class CliTests(unittest.TestCase):
@@ -46,15 +48,41 @@ class CliTests(unittest.TestCase):
             self.assertNotIn('fcc=',m)
         for values in ({},{'ChannelFCCIP':'null','ChannelFCCPort':'null'},{'ChannelFCCIP':'10.0.0.1'},{'ChannelFCCIP':'','ChannelFCCPort':''}):
             self.assertNotIn('fcc=',c.live_url(row(**values),config()))
-        self.assertIn('?fcc=10.0.0.1:8027&r2h-ifname-fcc=eth0.51&r2h-ifname=eth0.85',c.live_url(row(ChannelFCCIP='10.0.0.1',ChannelFCCPort='8027'),config()))
+        self.assertIn('?fcc=10.0.0.1:8027',c.live_url(row(ChannelFCCIP='10.0.0.1',ChannelFCCPort='8027'),config()))
+        self.assertNotIn('r2h-ifname',c.live_url(row(ChannelFCCIP='10.0.0.1',ChannelFCCPort='8027'),config()))
 
     def test_rtsp_exact_query_and_templates(self):
         url=c.replay_url(row()['TimeShiftURL'],config())
         self.assertIn('/rtsp/example.test:554/path%2Fsub?AuthInfo=A%2fb+C==&x=1&x=2&playseek='+c.SEEK,url)
-        self.assertTrue(url.endswith('&r2h-ifname=eth0.85'))
-        cfg=config(); cfg['multicast_interface']='eth0.51'
-        self.assertTrue(c.live_url(row(),cfg).endswith('r2h-ifname=eth0.51'))
-        self.assertTrue(c.replay_url(row()['TimeShiftURL'],cfg).endswith('r2h-ifname=eth0.85'))
+        self.assertNotIn('r2h-ifname',url)
+        cfg=config(); cfg['multicast_interface']='eth0.51'; cfg['fcc_interface']='eth0.86'
+        live=c.live_url(row(ChannelFCCIP='10.0.0.1',ChannelFCCPort='8027'),cfg)
+        self.assertIn('?fcc=10.0.0.1:8027&r2h-ifname-fcc=eth0.86&r2h-ifname=eth0.51',live)
+        self.assertNotIn('eth0.85',live)
+        replay=c.replay_url(row()['TimeShiftURL'],cfg)
+        self.assertTrue(replay.endswith('playseek='+c.SEEK))
+        self.assertNotIn('r2h-ifname',replay)
+        only_mcast=config(); only_mcast['multicast_interface']='eth0.51'
+        mcast_url=c.live_url(row(ChannelFCCIP='10.0.0.1',ChannelFCCPort='8027'),only_mcast)
+        self.assertIn('fcc=10.0.0.1:8027',mcast_url)
+        self.assertIn('r2h-ifname=eth0.51',mcast_url)
+        self.assertNotIn('r2h-ifname-fcc',mcast_url)
+        only_fcc=config(); only_fcc['fcc_interface']='eth0.86'
+        fcc_url=c.live_url(row(ChannelFCCIP='10.0.0.1',ChannelFCCPort='8027'),only_fcc)
+        self.assertIn('r2h-ifname-fcc=eth0.86',fcc_url)
+        self.assertNotIn('r2h-ifname=',fcc_url)
+        blank=config(); blank['multicast_interface']=''; blank['fcc_interface']=''
+        self.assertNotIn('r2h-ifname',c.live_url(row(ChannelFCCIP='10.0.0.1',ChannelFCCPort='8027'),blank))
+        no_fcc=c.live_url(row(),cfg)
+        self.assertNotIn('fcc=',no_fcc)
+        self.assertTrue(no_fcc.endswith('?r2h-ifname=eth0.51'))
+        source='igmp://239.1.2.3:1234?r2h-ifname=eth9&fcc=kept&r2h-ifname-fcc=eth8'
+        kept=c.live_url(row(ChannelURL=source,ChannelFCCIP='10.0.0.1',ChannelFCCPort='8027'),cfg)
+        self.assertIn('?r2h-ifname=eth9&fcc=kept&r2h-ifname-fcc=eth8&fcc=10.0.0.1:8027&r2h-ifname-fcc=eth0.86&r2h-ifname=eth0.51',kept)
+        replay_source='rtsp://example.test/path?AuthInfo=A%2fb+C==&r2h-ifname=eth9'
+        replay=c.replay_url(replay_source,cfg)
+        self.assertIn('AuthInfo=A%2fb+C==&r2h-ifname=eth9&playseek=',replay)
+        self.assertEqual(replay.count('r2h-ifname'),1)
         cfg=config(); cfg.update(base_url='http://example.test:333',live_path='/udp/',replay_path='/proxy/rtsp/',seek_template='${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}')
         self.assertIn('/proxy/rtsp/host:8554/a?token=%26%3D+&playseek=${(b)',c.replay_url('rtsp://host:8554/a?token=%26%3D+',cfg))
         self.assertIn('/udp/239.',c.live_url(row(),cfg))
@@ -65,7 +93,7 @@ class CliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             d=Path(tmp).resolve()/'private'
             args=['configure','config='+str(d)]
-            with patch.object(c.getpass,'getpass',side_effect=['fixture','fixture-sn','00:11:22:33:44:55','eth0.85']+['']*8): self.assertEqual(c.main(args),0)
+            with patch.object(c.getpass,'getpass',side_effect=['fixture','fixture-sn','00:11:22:33:44:55','eth0.85']+['']*6): self.assertEqual(c.main(args),0)
             paths=c.config_paths(d)
             cfg=c.load(paths[1]); self.assertEqual(cfg['sn'],'fixture-sn')
             self.assertEqual(d.stat().st_mode&0o777,0o700)

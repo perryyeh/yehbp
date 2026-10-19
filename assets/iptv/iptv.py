@@ -304,6 +304,16 @@ def trusted(url, config):
     return url
 
 
+def apply_auth(c, value):
+    """First address is the only login entry. Later ones only permit hops."""
+    origins = value.split()
+    if not origins:
+        raise SafeError('鉴权地址不能为空')
+    c['auth_origin'] = origins[0]
+    c['allowed_origins'] = origins[1:]
+    return c
+
+
 def bound_socket(interface, timeout):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
@@ -594,7 +604,8 @@ def validate(c):
             raise auth.SafeError('配置字段缺失')
     if not re.fullmatch(r'(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}', c['mac']):
         raise auth.SafeError('盒子 MAC 格式无效')
-    for k in ('interface', 'fcc_interface', 'multicast_interface'):
+    # Empty playback overrides mean "do not add"; they never fall back to the auth interface.
+    for k in ('interface', 'multicast_interface', 'fcc_interface'):
         if c.get(k) and not re.fullmatch(r'[A-Za-z0-9_.:-]{1,15}', c[k]):
             raise auth.SafeError('接口名称无效')
     for value in [c['auth_origin'], *c.get('allowed_origins', [])]:
@@ -634,20 +645,18 @@ def configure(paths):
         for key, label in [('userid','UserID'), ('sn','盒子 SN'), ('mac','盒子 MAC')]:
             c[key] = ask(label, c.get(key, ''))
         fields = [
-            ('interface', '鉴权/回放接口', ''),
-            ('multicast_interface', '组播接口（空值沿用鉴权接口）', ''),
-            ('fcc_interface', 'FCC接口（空值不指定）', ''),
-            ('auth_origin', '鉴权入口origin', DEFAULT_ORIGIN),
-            ('base_url', 'rtp2httpd base URL', 'http://127.0.0.1:5140'),
+            ('interface', '鉴权接口', ''),
+            ('base_url', 'rtp2httpd访问地址', 'http://127.0.0.1:5140'),
             ('live_path', '直播路径', '/rtp/'),
             ('replay_path', '回放路径', '/rtsp/'),
             ('seek_template', '回放时间模板', SEEK),
         ]
         for key, label, default in fields:
-            value = ask(label, c.get(key, default))
-            c[key] = '' if value == '-' and key in ('multicast_interface', 'fcc_interface') else value
-        origins = ask('额外允许origin（空格分隔，-清空）', ' '.join(c.get('allowed_origins', [])))
-        c['allowed_origins'] = [] if origins == '-' else origins.split()
+            c[key] = ask(label, c.get(key, default))
+        current_auth = ' '.join([c.get('auth_origin') or DEFAULT_ORIGIN, *c.get('allowed_origins', [])])
+        entered = ask('鉴权地址（空格分隔，第一个为入口，回车保留）', current_auth) or current_auth
+        if entered != current_auth or not c.get('auth_origin'):
+            apply_auth(c, entered)
         c.pop('directory_metadata', None)  # Retire the legacy key only on explicit save.
         validate(c)
         auth.atomic_json(path, c)
@@ -669,7 +678,8 @@ def replay_url(value, c):
     if '?' in value: url += '?' + value.split('?', 1)[1]
     if any(k.lower() == 'playseek' for k in [x.split('=',1)[0] for x in p.query.split('&')]):
         raise auth.SafeError('原始回放已有playseek，拒绝覆盖认证查询')
-    return append_query(url, ['playseek=' + c['seek_template'], 'r2h-ifname=' + quote(c['interface'], safe='')])
+    # Replay does not inherit the auth interface. Keep any override already in the source query.
+    return append_query(url, ['playseek=' + c['seek_template']])
 
 
 def live_url(row, c):
@@ -685,7 +695,8 @@ def live_url(row, c):
         if not str(port).isdigit() or not 0 < int(port) < 65536: raise auth.SafeError('FCC端口无效')
         params.append('fcc=' + str(ip) + ':' + str(port))
         if c.get('fcc_interface'): params.append('r2h-ifname-fcc=' + quote(c['fcc_interface'], safe=''))
-    params.append('r2h-ifname=' + quote(c.get('multicast_interface') or c['interface'], safe=''))
+    if c.get('multicast_interface'):
+        params.append('r2h-ifname=' + quote(c['multicast_interface'], safe=''))
     return append_query(url, params)
 
 
@@ -825,9 +836,10 @@ def convert(paths, destination=None):
 
 COMMANDS = ('configure', 'fetch', 'convert', 'run')
 FIELDS = {'userid', 'sn', 'mac', 'interface', 'multicast_interface', 'fcc_interface',
-          'auth_origin', 'base_url', 'live_path', 'replay_path', 'seek_template',
-          'allowed_origins'}
-ALIASES = {'userinfo': 'userid', 'SN': 'sn', 'MAC': 'mac', 'baseURL': 'base_url'}
+          'auth_origin', 'base_url', 'live_path', 'replay_path', 'seek_template'}
+RETIRED_CLI = {'allowed_origins', 'baseURL'}
+ALIASES = {'userinfo': 'userid', 'SN': 'sn', 'MAC': 'mac', 'rtp2http': 'base_url',
+           'auth': 'auth_origin', 'live': 'live_path', 'replay': 'replay_path', 'seek': 'seek_template'}
 
 
 def parse_pairs(argv):
@@ -838,6 +850,8 @@ def parse_pairs(argv):
         key = ALIASES.get(key, key)
         if key == 'directory_metadata':
             raise SafeError('directory_metadata参数已移除，无需设置；fetch/run及全参数获取会同时刷新完整频道目录')
+        if key in RETIRED_CLI:
+            raise SafeError('未知或重复参数键')
         if key not in FIELDS | {'config', 'output'} or key in values:
             raise SafeError('未知或重复参数键')
         values[key] = value
@@ -859,9 +873,9 @@ def save_fields(paths, values):
                         live_path='/rtp/', replay_path='/rtsp/', seek_template=SEEK,
                         allowed_origins=[])
         for key, value in defaults.items(): c.setdefault(key, value)
-        if 'allowed_origins' in values:
+        if 'auth_origin' in values:
             values = dict(values)
-            values['allowed_origins'] = values['allowed_origins'].split()
+            apply_auth(values, values.pop('auth_origin'))
         c.pop('directory_metadata', None)
         c.update(values)
         validate(c)
@@ -906,7 +920,7 @@ def reject_retired(argv):
 
 def usage():
     return '''用法：
-  python3 iptv.py config=tel userinfo=YOUR_USER_ID SN=YOUR_BOX_SN MAC=YOUR_BOX_MAC interface=iptv85 baseURL=http://127.0.0.1:5140
+  python3 iptv.py config=tel userinfo=YOUR_USER_ID SN=YOUR_BOX_SN MAC=YOUR_BOX_MAC interface=iptv85 rtp2http=http://127.0.0.1:5140
   python3 iptv.py run config=tel
   python3 iptv.py config=tel
   python3 iptv.py config=tel output=exports
