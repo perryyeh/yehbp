@@ -136,14 +136,6 @@ if [ "$(readlink /usr/bin/yehbp 2>/dev/null)" = "/usr/local/bin/yehbp" ]; then
 fi
 ```
 
-### SOCKS5 下载代理（菜单 89）
-
-菜单 `89` 可保存一个无认证 SOCKS5 代理。输入格式为 `IP或域名:端口`，也可带 `socks5://` 前缀；有效端口为 `1–65535`。配置保存到与 `yehbp` 命令同目录的 `/usr/local/bin/yehbpproxy.conf`，再次添加会直接替换该单一值，删除操作会删除该文件。
-
-有效配置会用于 YehBP 的版本检查、升级及功能下载，并通过 `socks5h` 让代理端解析下载域名。配置文件不存在或内容无效时，YehBP 不使用代理；已配置有效代理但系统未安装 `curl` 时，为避免绕过代理，下载会取消而非退回直连。
-
-在 YehBP 的 Compose 应用安装、Portainer/Agent 安装及菜单 `68` 启动项目时，有效 SOCKS5 配置也会用于镜像下载：脚本使用现有 `curl` 经 SOCKS5 下载公开 Docker Hub 镜像、校验摘要，用 `docker load` 导入后，再以 `--pull never --no-build` 启动。**目标宿主机需要 `curl`、`python3` 和支持 `up --pull never` 的 Compose，不需要 Skopeo**；缺少依赖或下载失败时停止，不改走直连。临时归档放在所选 dockerapps/工作目录并在操作结束后清理。未配置代理时保持原行为；不会改动 Docker daemon 全局代理，也不代理菜单 `66` / Dockcheck 的镜像更新。此下载器仅支持公开 Docker Hub 的镜像标签；其他仓库、私有镜像、摘要引用和自建镜像（`build:`）会报错，不会直连兜底。
-
 ### 3. 设置旁路由步骤
 
 1. 确认 Docker 容器安装目录；如需新硬盘，先完成格式化和挂载。
@@ -315,57 +307,57 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 
 #### 6.1 管理 Docker Mihomo 订阅（菜单 21）
 
-用于 YehBP 安装的 **macvlan 或 host Mihomo**，包括 Docker 容器和宿主机实例；不是管理 OpenWrt 自己安装的原生 Mihomo。选择实例后可添加/修改、立即更新、删除订阅或查看日志；更新间隔默认 `0`（不自动刷新）。可选择按当前模式模板覆盖参数，或原样使用订阅；更新成功后只重载 Mihomo，不重启容器。
+用于 YehBP 安装的 Docker 或宿主机 Mihomo（macvlan 或 host），不是 OpenWrt 自己安装的 Mihomo。先选择实例，再添加/修改订阅、立即更新、删除订阅或查看日志。
 
-每次订阅下载并通过 Mihomo 校验后，若 YAML 配置有变化，先将当前 `config.yaml` 保存为 `config.previous.yaml`（不存在则创建，存在则覆盖，权限 `0600`），再替换配置并请求重载。未变化或下载/校验失败时不覆盖备份；备份保存失败则取消发布。首次配置订阅时保存的 `config.macvlan.backup.yaml` 仅用于恢复原配置，缺失不阻止正常更新；上一版 YAML 备份不包含 TLS 文件历史。
-
-首次配置会在需要时提示启用容器内自动更新。订阅配置保存在权限为 `0600` 的 `subscription.conf`；未配置时 `subscription.conf` 和 `subscription.log` 不存在。删除订阅会移除订阅设置、更新日志和自动刷新状态，并清理旧定时任务；保留当前 `config.yaml`、本地配置备份和 `subscription.sh`，不恢复备份、不重载或重启 Mihomo。若订阅更新正在执行或更新锁未释放，会拒绝删除，避免当前配置被进行中的更新覆盖。
+添加时输入完整订阅地址、更新间隔（小时，`0` 表示不自动更新），并选择按当前模式模板调整订阅，或原样使用。更新成功后只重新加载 Mihomo，不重启容器。删除订阅会取消自动更新，但保留当前配置。
 
 #### 6.2 管理原生 Mihomo 订阅（菜单 22）
 
-用于**不是由 YehBP 安装**、而是直接由 OpenWrt `procd` 管理的 Mihomo（启动命令含 `mihomo -d <配置目录>`）。订阅元数据与 Mihomo 配置放在同一目录：`subscription.conf`（权限 `0600`）只保存完整配置 URL，`subscription.log`（权限 `0600`）只保留含当天在内最近 7 个日历日的更新结果，不记录 URL、Token 或节点内容。
+仅用于 OpenWrt 自己安装的 Mihomo，不是 YehBP 安装的实例。可添加/修改完整配置订阅地址、立即更新、删除订阅或查看状态。
 
-立即更新会下载到配置目录内的临时文件，以该实例的 Mihomo 二进制和配置目录执行校验；校验成功且内容发生变化时，首次更新仅创建一份 `config.yaml.backup` 原始配置备份，再原子替换固定文件名 `config.yaml` 并重启对应 procd 服务。下载、校验、替换或重启失败时，当前配置保持不变；若重启新配置失败，自动恢复更新前的临时回滚副本。配置内容相同时不会替换或重启。删除订阅只删除 `subscription.conf` 和 `subscription.log`，不会修改 `config.yaml` 或重启 Mihomo。
+立即更新会下载并检查配置；内容有变化时替换配置并重启 Mihomo，失败则保留或恢复更新前的配置。内容没变时不替换、不重启。删除订阅只去掉订阅和更新记录，不改当前配置，也不重启 Mihomo。
 
 #### 6.3 查看已安装信息/安装/删除/升级/重启 IPTV（rtp2httpd）（菜单 80）
 
-仅支持 **NetworkManager + systemd** 的 Linux/NAS，不支持 OpenWrt。菜单 80 的 `2）安装/设置 rtp2httpd` 先沿用“查看已安装信息”的 service 扫描列出已有实例；选择 `tel` 等实例后，按其 service 的安全 ExecStart 解析读取真实 conf / 同目录 env，直接进入单项设置，无需选择 dockerapps 目录或重新输入配置名。可选择 `n）新建实例` 才进入目录、配置名和首次安装流程；没有实例时直接进入首次安装。选择返回、空输入或输入结束不执行修改。新建时若遇到已有同名配置，仍进入已有配置的安全单项设置。
+用于安装和配置 rtp2httpd 直播、回放转发。仅支持带 NetworkManager 和 systemd 的 Linux/NAS，不支持 OpenWrt。菜单里可查看已安装信息、安装/设置、删除配置、升级或重启实例。
 
-新配置首次安装需输入组播 VLAN、FCC VLAN、FCC 地址方式及本机 IPv4 监听地址/端口（默认 `5140`）。FCC 默认 DHCP；静态 IPv4 需输入 `地址/前缀` 与同网段网关。RTSP 上游先仅展示复用 FCC（实际接口名）、复用组播（实际接口名）、选择其他已有接口、不指定沿用通用接口 / 系统路由回退和返回。仅选“3）选择其他已有接口”才列出所有接口的简洁名称、IPv4 与状态，可用序号或手工接口名选择；无 IPv4、bridge、tailscale 等接口也保留，列表不表示接口能到达 RTSP 服务。返回、空输入和 EOF 保留原设置。不额外创建 VLAN，不根据运营商或 VLAN ID 猜测。实际选择保存到本实例 env 的 `RTSP_IF`。
+安装/设置会先列出已有实例；选中后直接改这一项，不必重新选目录或配置名。选「新建实例」才选择目录、输入配置名并首次安装；没有实例时直接进入首次安装。回车或返回不修改。新建时若配置名已存在，也会进入已有配置的设置。
 
-同名配置进入单项设置，展示实际 conf 中的监听地址、端口、组播、FCC、RTSP 接口；选择一项修改，其他字段原样保留，回车返回保留当前值。此入口仅修改服务 conf 字段，父接口、VLAN、FCC 地址获取方式和 NetworkManager profile 保持现状；需要调整网络参数时请先自行规划网络变更。应用前确认，仅重启选定实例；先备份并原子替换，重启或运行状态检查失败时恢复旧配置 / env，并尝试恢复该服务原先的运行 / 停止状态；TERM / HUP / INT 同样触发回滚，恢复失败会明确提示检查日志。旧 env 或无 env 不代表默认使用 FCC。
+首次安装需输入组播 VLAN、FCC VLAN、FCC 地址方式和本机 IPv4 监听地址/端口（默认 `5140`）。FCC 默认 DHCP；选静态时输入 `地址/前缀` 和同网段网关。回放接口可选复用 FCC、复用组播、其他已有接口，或不指定而沿用通用接口/系统路由。只有选择其他接口时才列出网卡；列表不代表这些网卡都能到达回放服务。设置已有实例时，每次只改监听地址、端口、直播、快速换台或回放中的一项，其余保持原样；这里不改 VLAN 和网络连接，改网络请另行规划。确认后只重启所选实例，失败时恢复这次修改前的配置和服务状态。
 
-按 [官方 v3.16.0 配置](https://github.com/stackia/rtp2httpd/blob/v3.16.0/docs/en/reference/configuration.md) 与 [URL 参数](https://github.com/stackia/rtp2httpd/blob/v3.16.0/docs/en/guide/url-formats.md)，优先级为请求 URL `r2h-ifname` > `upstream-interface-rtsp` > 通用 `upstream-interface` > 系统路由。选择系统路由会注释 RTSP 专用项；若仍有通用接口，实际回退到该接口并明确显示，不删除通用参数。查看配置显示 RTSP 设置与有效回退。设置按文本读取 conf / env，不执行状态文件；重复 global/key、非普通文件或无法安全解释的语法明确失败。服务路径只接受可确定的直接 ExecStart；存在 systemd drop-in、变量或路径转义时拒绝自动修改。升级二进制不自动改写已有 RTSP 配置。
+播放请求里的接口优先；否则依次使用回放接口、通用接口和系统路由。选择系统路由时，若仍设置了通用接口，实际会用该接口。升级程序不会改已有回放设置。删除只移除 YehBP 创建的这项配置和服务，保留程序和原有网络配置。
 
-二进制从 [stackia/rtp2httpd](https://github.com/stackia/rtp2httpd) 官方 release 下载并校验 SHA-256。删除只移除 YehBP 创建的配置、service 与 VLAN profile，保留共享二进制和既有网络配置。
-
-独立参考实现：[assets/iptv/iptv.py](assets/iptv/iptv.py)，完整用法见 [参考脚本说明](assets/iptv/README.md)。它不是 YehBP 菜单功能；只需复制这一个文件。用全参数 `config=目录` 保存并获取，`run config=目录` 重新获取，`config=目录` 离线生成。不创建定时任务或服务。名称中的 HD、高清、4K 及空格原样保留。
-
-上海电信协议参考 [pcg562240/pcg-iptv 固定提交 38653f0bd722c4dececae434efa3593be97e8aca](https://github.com/pcg562240/pcg-iptv/blob/38653f0bd722c4dececae434efa3593be97e8aca/shctiptv.py)，该提交没有许可文件，未复制其 AES/客户端实现；本脚本独立实现并调用 OpenSSL。其他地区需自行适配，不保证通用。私有身份、原始 JSON 和 M3U 不应加入 Git 或公开订阅。
+频道列表不是这个菜单的功能。独立参考脚本和用法见 [assets/iptv/iptv.py](assets/iptv/iptv.py) 与 [参考脚本说明](assets/iptv/README.md)，只需复制这一个文件。已在上海电信测试通过，其他运营商需自行适配。不要把身份信息、原始频道数据和播放列表公开。
 
 #### 6.4 安装/设置/删除/升级 Dockcheck（菜单 65）
 
-菜单 `65` 管理 Dockcheck（状态、安装/设置、删除、升级）；组件安装在所选 `dockerapps/_auto_update`，Dockcheck 直接从上游下载。Linux/NAS 可选 systemd 定时更新；OpenWrt 可选创建带 YehBP 专用标记的每日 `cron` 任务，删除 Dockcheck 时会移除该任务。
+菜单 `65` 可查看状态、安装/设置、删除或升级 Dockcheck。安装时选择一个 dockerapps 目录，再设置新镜像延迟几天更新、更新后是否删除无用旧镜像，以及是否每天自动更新；启用时还可设置每天的检查时间，默认 `05:00`。Linux/NAS 使用 systemd 定时，OpenWrt 使用系统定时任务；删除 Dockcheck 时会一并取消。
 
-安装/设置 Dockcheck 时才检查并按需补装系统依赖，不会在启动 YehBP、查看状态或检查镜像时安装软件包。OpenWrt 自动识别 `apk`/`opkg`；若当前 `xargs` 不支持 `-P` 和 `-I`，`apk` 系统安装 `findutils-xargs`，`opkg` 系统安装 `findutils`。安装后会再次验证功能；依赖安装失败则停止，不覆盖现有 Dockcheck 配置。
+只有安装/设置时才会按需补装缺少的系统组件。补装失败会停止，不会覆盖已有设置。查看状态或用菜单 `66` 检查镜像时不会安装软件包。
 
 #### 6.5 检查/更新 Docker 镜像（菜单 66）
 
-菜单 `66` 可手动检查或更新 Docker 镜像；compose 容器可更新，非 compose 容器仅检查/拉取镜像而不重建。
+需先用菜单 `65` 安装 Dockcheck。菜单 `66` 可选：检查并更新 Compose 容器、只检查全部容器，或检查/拉取非 Compose 容器的镜像。更新 Compose 容器会拉取新镜像并重建，服务可能短暂中断；非 Compose 容器只拉取镜像，不重建容器。此功能不使用菜单 `89` 的代理。
 
 #### 6.6 恢复/启动 Docker Compose 容器（菜单 68）
 
-菜单 `68` 先列出正在运行且可定位 Compose 工作目录的容器，选择后会校验当前 Compose/.env。若该项目已有运行容器，才会询问是否强制重新创建全部服务；若没有运行容器，则直接按当前 Compose/.env 创建或启动。选择 `m` 可改为选择一个 `dockerapps` 根目录，再只列出其下一级目录内的 `compose.yaml`、`compose.yml`、`docker-compose.yaml` 或 `docker-compose.yml` 项目，不递归深入。不会 build 镜像，也不会删除 orphan 容器。
+菜单 `68` 先列出正在运行、且能找到 Compose 目录的容器。选中后，如果该项目已有容器在运行，会询问是否按当前配置强制重建全部服务；如果没有运行中的容器，则直接创建或启动。
+
+选 `m` 可改从 dockerapps 目录选择，只列出该目录下一层的 Compose 项目。不会构建镜像，也不会删除项目里多余的容器。
 
 #### 6.7 删除 Docker 容器、镜像和 Compose 目录（菜单 69）
 
-菜单 `69` 列出所有容器（含已停止容器），选择后会二次确认并强制删除该容器。未被其他容器引用的镜像会一并删除；若镜像仍被其他容器引用，会明确列出这些容器并保留镜像，随后继续 Compose 目录处理。
-
-对于具有 Docker Compose `com.docker.compose.project.working_dir` 标签的容器，删除完成后可输入 `y` 删除该 Compose 所在目录。此操作仅删除标签指向的 working_dir，**不会删除**该 Compose 通过 bind mount 引用的其他主机目录，也不会删除 Docker volumes；没有该标签、标签不是安全的绝对路径或目录已不存在时，不会删除任何主机目录。
+菜单 `69` 列出所有容器（含已停止的）。选中后选择删除范围：只删容器；删除容器，并在没有其他容器使用时删除镜像；或再连同删除该容器的 Compose 目录。确认前会说明实际会删除什么。镜像仍被其他容器使用时会保留，并列出这些容器。没有 Compose 目录、或目录位置无法安全确认时，不会删除主机目录，也不会删除 Docker 数据卷。
 
 #### 6.8 配置 Portainer AGENT_SECRET（菜单 62）
 
-菜单 `62` 会先显示“配置 Portainer AGENT_SECRET”并列出本机检测到的 Portainer Server 与 Agent 容器，选择单个序号或 `0` 返回。该 Secret 必须在同一 Portainer Server 管理的全部 Server/Agent 使用相同值。为让新增环境变量生效，脚本会备份选中容器的 Compose 与 `.env` 配置，写入权限为 `0600` 的 `.env`，再通过 Compose 强制重建该容器并验证 Secret 已注入；仅支持带完整 Docker Compose 标签的本地部署。
+菜单 `62` 列出本机的 Portainer Server 和 Agent，每次选择一个。可选不设置、生成随机值，或输入已有值。同一套 Portainer 管理的 Server 和 Agent 必须使用相同的值；生成随机值后请保存，并在其他相关容器上配置同一个值。
+
+设置后会重建所选容器使它生效，失败时恢复这次修改前的配置。只支持 YehBP 能识别的本地 Compose 部署。
+
+#### 6.9 SOCKS5 代理（菜单 89）
+
+菜单 `89` 可添加、查看或删除一个无认证 SOCKS5 代理，输入 `IP或域名:端口`。用于 YehBP 检查更新、功能下载和支持的应用镜像下载；镜像下载仅支持公开 Docker Hub，不适用于菜单 `66` / Dockcheck。已配置代理但没有 `curl` 时，这些下载会取消，不会改为直连。
 
 ## 📦 依赖
 
@@ -393,6 +385,7 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 - https://github.com/AdguardTeam/AdGuardHome
 - https://github.com/MetaCubeX/mihomo
 - https://github.com/mag37/dockcheck
+- https://github.com/pcg562240/pcg-iptv
 
 ## 📜 License
 MIT License © 2026
