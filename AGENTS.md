@@ -3,9 +3,9 @@
 - Project identity: repository `https://github.com/perryyeh/yehbp`, installed command `yehbp`, title `Yeh Bypass Gateway`, personal bypass-router helper covering DNS cache/splitting, proxy access, and remote home-network access.
 - README install command should stay as a simple pipe form: `curl -fsSL <install.sh> | sudo bash`; do not change it to process substitution or require extra parameters.
 - Version bump rule:
-  - Any change to YehBP itself or a functional module that affects program behavior must bump both `VERSION` and `APP_VERSION`. This includes `install.sh` menu behavior and installed service/setup modules such as `assets/iptv/rtp2httpd.sh` (service install and settings).
-  - Changes limited to the standalone reference tool `assets/iptv/iptv.py`, its tests, and reference docs such as `assets/iptv/README.md` do not affect YehBP program behavior and do not require a YehBP version bump.
-  - A mixed change that also changes YehBP or functional-module behavior still requires a version bump. Documentation-only edits, including README/HERMES/docs/comments-only and this `AGENTS.md` guidance, do not by themselves require a version bump.
+  - Bump both `VERSION` and `APP_VERSION` only when the change affects the YehBP program or its functionality. Judge by the change's actual effect, not by an exemption list of particular files or tools.
+  - Any change that does not affect YehBP does not bump the version.
+  - A mixed change that also affects YehBP still requires a version bump. Documentation-only edits, including README/HERMES/docs/comments-only and this `AGENTS.md` guidance, do not by themselves require a version bump.
   - When a code/script change adds, removes, renumbers, renames, reorders, or changes the behavior of a user-facing menu item, inspect and update the README menu table in the same change.
   - Version format is `YYYY.MM.DD.NN` using the current local date.
   - If the existing version date is today, increment today's suffix by 1, e.g. `2026.06.23.01` → `2026.06.23.02`.
