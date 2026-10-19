@@ -72,7 +72,6 @@ def private_dir(path):
     safe_parents(path)
     if path.stat().st_uid != os.geteuid():
         raise SafeError('私有目录所有者不匹配')
-    path.chmod(0o700)
 
 
 def read_json(path):
@@ -124,7 +123,7 @@ def atomic_json(path, value):
 
 
 @contextmanager
-def lock(directory, filename='auth.lock'):
+def lock(directory, filename='.iptv.lock'):
     private_dir(directory)
     path = Path(directory) / filename
     regular(path, missing=True)
@@ -569,11 +568,12 @@ def text(value):
     return value
 
 
-def instance_paths(directory, instance):
-    if not re.fullmatch('[A-Za-z0-9][A-Za-z0-9_-]{0,63}', instance):
-        raise auth.SafeError('实例名称无效')
-    d = Path(directory).absolute()
-    return d, d / f'{instance}.auth.json', d / f'catchup_{instance}.json', d / f'raw_{instance}.m3u'
+def config_paths(directory):
+    d = Path(os.path.abspath(directory))
+    if Path(__file__).resolve() in [(d / name).resolve() for name in
+                                    ('config.json', 'catchup.json', 'channels.json', 'playlist.m3u', '.iptv.lock')]:
+        raise SafeError('实例固定文件不能覆盖运行脚本')
+    return d, d / 'config.json', d / 'catchup.json', d / 'playlist.m3u'
 
 
 def endpoint(value, schemes):
@@ -588,7 +588,6 @@ def endpoint(value, schemes):
 
 def validate(c):
     if not isinstance(c.get('directory_metadata', False), bool): raise auth.SafeError('目录开关无效')
-    if c.get('m3u_output') is not None and (not text(c['m3u_output']) or not Path(c['m3u_output']).is_absolute()): raise auth.SafeError('M3U配置路径必须绝对')
     if c.get('provider') != 'shanghai-telecom':
         raise auth.SafeError('目前仅支持上海电信')
     for k in ('userid', 'sn', 'mac', 'interface', 'base_url', 'auth_origin'):
@@ -617,8 +616,7 @@ def load(path):
     info = auth.regular(path)
     if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o600:
         raise auth.SafeError('身份配置必须属当前用户且为0600')
-    if stat.S_IMODE(path.parent.stat().st_mode) != 0o700:
-        raise auth.SafeError('身份目录必须为0700')
+    auth.safe_parents(path.parent)
     c = auth.read_json(path)
     validate(c)
     return c
@@ -626,25 +624,42 @@ def load(path):
 
 def configure(args, paths):
     d, path, _, _ = paths
-    with auth.lock(d, args.instance + '.lock'):
+    with auth.lock(d, '.iptv.lock'):
         c = load(path) if auth.regular(path, missing=True) else {}
         c['provider'] = 'shanghai-telecom'
-        # Explicit pipe mode consumes exactly three lines, never argv/env identity.
-        for key, label in [('userid','UserID'),('sn','盒子 SN'),('mac','盒子 MAC')]:
-            value = sys.stdin.readline().rstrip('\r\n') if args.identity_stdin else getpass.getpass(label + '（隐藏输入，回车保留）: ')
-            if value: c[key] = value.strip()
-        defaults = dict(interface='eth0', multicast_interface='', fcc_interface='', auth_origin=auth.DEFAULT_ORIGIN,
-                        base_url='http://127.0.0.1:5140', live_path='/rtp/', replay_path='/rtsp/', seek_template=SEEK)
-        for key, default in defaults.items():
-            value = getattr(args, key, None)
-            c[key] = value if value is not None else c.get(key, default)
-        if args.allow_origin is not None: c['allowed_origins'] = args.allow_origin
-        c.setdefault('allowed_origins', [])
-        if args.directory_metadata is not None: c['directory_metadata'] = args.directory_metadata
-        if args.m3u_output is not None: c['m3u_output'] = str(Path(args.m3u_output).absolute())
+
+        def ask(label, current='', hidden=False):
+            prompt = label + ('（隐藏输入，回车保留）: ' if hidden else f' [{current}]（回车保留）: ')
+            if args.stdin:
+                print(prompt, end='', file=sys.stderr, flush=True)
+                line = sys.stdin.readline()
+                if line == '': raise SafeError('配置stdin输入不足，请提供全部13行')
+                return line.rstrip('\r\n') or current
+            return (getpass.getpass(prompt) if hidden else input(prompt)) or current
+
+        for key, label in [('userid','UserID'), ('sn','盒子 SN'), ('mac','盒子 MAC')]:
+            c[key] = ask(label, c.get(key, ''), hidden=True)
+        fields = [
+            ('interface', '鉴权/回放接口', ''),
+            ('multicast_interface', '组播接口（空值沿用鉴权接口）', ''),
+            ('fcc_interface', 'FCC接口（空值不指定）', ''),
+            ('auth_origin', '鉴权入口origin', DEFAULT_ORIGIN),
+            ('base_url', 'rtp2httpd base URL', 'http://127.0.0.1:5140'),
+            ('live_path', '直播路径', '/rtp/'),
+            ('replay_path', '回放路径', '/rtsp/'),
+            ('seek_template', '回放时间模板', SEEK),
+        ]
+        for key, label, default in fields:
+            value = ask(label, c.get(key, default))
+            c[key] = '' if value == '-' and key in ('multicast_interface', 'fcc_interface') else value
+        origins = ask('额外允许origin（空格分隔，-清空）', ' '.join(c.get('allowed_origins', [])))
+        c['allowed_origins'] = [] if origins == '-' else origins.split()
+        enabled = ask('获取名称目录 y/n', 'y' if c.get('directory_metadata', False) else 'n').lower()
+        if enabled not in ('y', 'n'): raise SafeError('名称目录开关请输入y或n')
+        c['directory_metadata'] = enabled == 'y'
         validate(c)
         auth.atomic_json(path, c)
-        print('配置已保存：私有目录0700，身份文件0600')
+        print('配置已保存：config.json为0600，现存目录权限保持不变')
 
 
 def append_query(url, params):
@@ -714,13 +729,13 @@ def atomic_text(path, value):
         if name is not None: os.unlink(name)
 
 
-def metadata_path(paths, instance):
-    return paths[0] / f'channels_{instance}.json'
+def metadata_path(paths):
+    return paths[0] / 'channels.json'
 
 
-def fetch(paths, instance):
+def fetch(paths):
     d, config, output, _ = paths
-    with auth.lock(d, instance + '.lock'):
+    with auth.lock(d, '.iptv.lock'):
         c = load(config)
         if c.get('directory_metadata', False):
             context = {}
@@ -728,50 +743,150 @@ def fetch(paths, instance):
             try:
                 directory = portal_directory(c, context)
             except Exception:
-                print('fetch失败：目录获取/校验失败，保留已有原始及目录文件', file=sys.stderr)
-                raise auth.SafeError('目录获取失败') from None
-            auth.atomic_json(metadata_path(paths, instance), directory)
+                raise auth.SafeError('目录获取/校验失败，保留已有原始及目录文件') from None
+            auth.atomic_json(metadata_path(paths), directory)
         else:
             rows = auth.login(c, auth.local_ipv4(c['interface']))
         auth.atomic_json(output, rows)
         print(f'fetch成功：{len(rows)}条完整原始记录；目录' + ('已刷新' if c.get('directory_metadata') else '未启用'))
 
 
-def convert(paths, instance, m3u_output=None):
-    d, config, source, default_output = paths
-    with auth.lock(d, instance + '.lock'):
+def export_path(value, directory):
+    """A bare filename requests no export; slash/existing-dir selects a path."""
+    path = Path(value)
+    if value.endswith('/') or path.is_dir():
+        return Path(os.path.abspath(path)) / (directory.name + '.m3u')
+    if '/' not in value:
+        return None
+    return Path(os.path.abspath(path))
+
+
+def output_basename(value):
+    if (not value or value in ('.', '..') or value.startswith('.') or
+            '/' in value or '\\' in value or any(ord(ch) < 32 or ord(ch) == 127 for ch in value)):
+        raise SafeError('输出名必须是非隐藏安全文件名，不能包含路径')
+    return value
+
+
+def convert(paths, output_dir=None, output_name='playlist.m3u', destination=None):
+    d, config, source, output = paths
+    with auth.lock(d, '.iptv.lock'):
         c = load(config)
+        if auth.regular(source, missing=True) is None:
+            raise SafeError('缺少catchup.json；请先执行fetch主动获取，再离线转换')
         rows = auth.read_json(source)
-        metadata = metadata_path(paths, instance)
+        metadata = metadata_path(paths)
         directory = auth.read_json(metadata) if auth.regular(metadata, missing=True) else None
         result = render(rows, c, directory)
-        output = Path(m3u_output or c.get('m3u_output') or default_output).absolute()
-        protected = [config, source, metadata, d / (instance + '.lock'), Path(__file__)]
-        if output.resolve() in [p.resolve() for p in protected]: raise auth.SafeError('M3U输出不能覆盖配置或原始数据')
+        output_basename(output_name)
+        # The primary artifact is always committed first. Export is a separate
+        # atomic write; failure must report that the primary already exists.
+        if output.resolve() == Path(__file__).resolve():
+            raise SafeError('主输出不能覆盖运行脚本')
         atomic_text(output, result)
+        if output_dir is not None or destination is not None:
+            try:
+                export = (Path(destination) if destination is not None else
+                          Path(os.path.abspath(output_dir)) / output_name)
+                output_basename(export.name)
+                private_dir(export.parent)
+                protected = [config, source, metadata, d / '.iptv.lock', Path(__file__)]
+                if (export.resolve() in [p.resolve() for p in protected] or
+                        export.name in ('config.json', 'catchup.json', 'channels.json') or
+                        (export.parent != d and (export.parent / 'config.json').exists())):
+                    raise SafeError('导出不能覆盖配置、源数据、其他实例或脚本')
+                if export.resolve() != output.resolve():
+                    atomic_text(export, result)
+            except Exception:
+                raise SafeError('主playlist.m3u已生成；额外导出失败，请检查导出产物状态（非跨文件事务）') from None
         _, counts = resolve_names(rows, directory)
-        print(f'convert成功：{len(rows)}条M3U记录；名称 ' + json.dumps(counts, ensure_ascii=False) + '；未匹配/歧义以ChannelID占位；分组待核查')
+        print(f'convert成功：{len(rows)}条M3U记录；主playlist.m3u已生成；名称 ' + json.dumps(counts, ensure_ascii=False))
+
+
+def key_value_main(argv):
+    aliases = {'userinfo': 'userid', 'SN': 'sn', 'MAC': 'mac', 'baseURL': 'base_url'}
+    fields = {'userid', 'sn', 'mac', 'interface', 'multicast_interface', 'fcc_interface',
+              'auth_origin', 'base_url', 'live_path', 'replay_path', 'seek_template',
+              'allowed_origins', 'directory_metadata'}
+    values = {}
+    for arg in argv:
+        if '=' not in arg: raise SafeError('主入口参数必须使用key=value')
+        key, value = arg.split('=', 1)
+        key = aliases.get(key, key)
+        if key not in fields | {'config', 'output'} or key in values:
+            raise SafeError('未知或重复参数键')
+        values[key] = value
+    configuring = bool(fields & values.keys())
+    location = values.pop('config', None)
+    output_value = values.pop('output', None)
+    if location is None:
+        if not values.get('interface'): raise SafeError('首次省略config时必须明确提供interface')
+        location = values['interface']
+        if not re.fullmatch(r'[A-Za-z0-9_.:-]{1,15}', location) or location in ('.', '..'):
+            raise SafeError('接口名称无效')
+    if not location: raise SafeError('config不能为空')
+    directory = Path(location)
+    if not directory.is_absolute(): directory = Path(__file__).resolve().parent / directory
+    paths = config_paths(directory)
+    if configuring:
+        with lock(paths[0]):
+            c = load(paths[1]) if regular(paths[1], missing=True) else {}
+            defaults = dict(provider='shanghai-telecom', multicast_interface='', fcc_interface='',
+                            auth_origin=DEFAULT_ORIGIN, base_url='http://127.0.0.1:5140',
+                            live_path='/rtp/', replay_path='/rtsp/', seek_template=SEEK,
+                            allowed_origins=[], directory_metadata=False)
+            for key, value in defaults.items(): c.setdefault(key, value)
+            if 'allowed_origins' in values:
+                values['allowed_origins'] = values['allowed_origins'].split()
+            if 'directory_metadata' in values:
+                if values['directory_metadata'].lower() not in ('y', 'n', 'true', 'false'):
+                    raise SafeError('directory_metadata必须为y/n或true/false')
+                values['directory_metadata'] = values['directory_metadata'].lower() in ('y', 'true')
+            c.update(values)
+            validate(c)
+            atomic_json(paths[1], c)
+        fetch(paths)
+    destination = export_path(output_value, paths[0]) if output_value is not None else None
+    convert(paths, destination=destination)
+    return 0
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('configure', 'fetch', 'convert', 'run'))
-    parser.add_argument('--directory', default=str(Path(__file__).resolve().parent))
-    parser.add_argument('--instance', required=True)
-    parser.add_argument('--identity-stdin', action='store_true', help='configure only: read UserID, SN, MAC as three private stdin lines')
-    for key in ('interface', 'multicast-interface', 'fcc-interface', 'base-url', 'live-path', 'replay-path', 'auth-origin', 'seek-template'):
-        parser.add_argument('--' + key)
-    parser.add_argument('--allow-origin', action='append')
-    parser.add_argument('--directory-metadata', action=argparse.BooleanOptionalAction, default=None, help='configure: enable portal raw channel directory')
-    parser.add_argument('--m3u-output', help='configure/convert/run: M3U path; CLI overrides saved setting')
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if any('=' in arg and not arg.startswith('--') for arg in argv):
+        try:
+            return key_value_main(argv)
+        except SafeError as exc:
+            print('IPTV操作失败：' + str(exc), file=sys.stderr)
+            return 1
+        except (Exception, KeyboardInterrupt):
+            print('IPTV操作失败：请检查配置、权限、原始数据、接口与网络（详情已脱敏）', file=sys.stderr)
+            return 1
+    parser = argparse.ArgumentParser(
+        description='主入口：config=tel output=/path/file.m3u；相对config以脚本目录为基准，默认离线。',
+        epilog='首次：config=tel userinfo=USER SN=BOX MAC=MAC interface=IFACE baseURL=URL；身份argv可见。省config则用明确interface作脚本同级子目录。辅助configure支持--stdin。')
+    parser.add_argument('command', nargs='?', default='convert', choices=('configure', 'fetch', 'convert', 'run'))
+    parser.add_argument('--config-dir', required=True, help='配置/完整源数据/主playlist所在目录；所有命令一致')
+    parser.add_argument('--output-dir', help='额外副本目录；父目录须存在，缺少的末级目录以0700创建；现存目录不chmod')
+    parser.add_argument('--output-name', default=None, help='额外导出文件名（默认playlist.m3u），仅安全basename；需output-dir')
+    parser.add_argument('--stdin', action='store_true', help='仅configure：按文档顺序读取13行，空行保留，EOF报错')
     args = parser.parse_args(argv)
+    if args.stdin and args.command != 'configure': parser.error('--stdin仅用于configure')
+    if (args.output_dir or args.output_name) and args.command not in ('convert', 'run'):
+        parser.error('导出参数仅用于convert/run')
+    if args.output_name is not None and args.output_dir is None: parser.error('--output-name需要--output-dir')
+    output_name = 'playlist.m3u' if args.output_name is None else args.output_name
     try:
-        paths = instance_paths(args.directory, args.instance)
+        output_basename(output_name)
+        paths = config_paths(args.config_dir)
         if args.command == 'configure': configure(args, paths)
         else:
-            if args.command in ('fetch', 'run'): fetch(paths, args.instance)
-            if args.command in ('convert', 'run'): convert(paths, args.instance, args.m3u_output)
+            if args.command in ('fetch', 'run'): fetch(paths)
+            if args.command in ('convert', 'run'): convert(paths, args.output_dir, output_name)
         return 0
+    except SafeError as exc:
+        print('IPTV操作失败：' + str(exc), file=sys.stderr)
+        return 1
     except (Exception, KeyboardInterrupt):
         print('IPTV操作失败：请检查配置、权限、原始数据、接口与网络（详情已脱敏）', file=sys.stderr)
         return 1

@@ -32,9 +32,9 @@ class DirectoryTests(unittest.TestCase):
 
     def test_directory_bad_response_preserves_both_old_files(self):
         with tempfile.TemporaryDirectory() as tmp:
-            paths=c.instance_paths(Path(tmp).resolve()/'private','x'); c.private_dir(paths[0])
+            paths=c.config_paths(Path(tmp).resolve()/'private'); c.private_dir(paths[0])
             cfg=config(); cfg['directory_metadata']=True
-            c.atomic_json(paths[1],cfg); c.atomic_json(paths[2],[row()]); meta=c.metadata_path(paths,'x')
+            c.atomic_json(paths[1],cfg); c.atomic_json(paths[2],[row()]); meta=c.metadata_path(paths)
             old=directory([dict(mixNo='1',name='Old')]); c.atomic_json(meta,old)
             before=paths[2].read_bytes(),meta.read_bytes()
             broken=copy.deepcopy(old); broken['categories'][-1]['response']={'error':'bad'}
@@ -44,32 +44,8 @@ class DirectoryTests(unittest.TestCase):
             failed=copy.deepcopy(old);failed['categories'][0]['response']['status']='0'
             with self.assertRaises(c.SafeError): c.directory_index(failed)
             with patch.object(c,'local_ipv4',return_value='192.0.2.1'),patch.object(c,'login',return_value=[row(),row()]),patch.object(c,'portal_directory',side_effect=c.SafeError('bad')):
-                self.assertEqual(c.main(['fetch','--directory',str(paths[0]),'--instance','x']),1)
+                self.assertEqual(c.main(['fetch','--config-dir',str(paths[0])]),1)
             self.assertEqual((paths[2].read_bytes(),meta.read_bytes()),before)
-
-    def test_m3u_output_config_and_cli_precedence_and_collision(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp).resolve(); paths=c.instance_paths(root/'private','x');c.private_dir(paths[0])
-            cfg=config();cfg['m3u_output']=str(root/'custom.m3u')
-            c.atomic_json(paths[1],cfg);c.atomic_json(paths[2],[row()])
-            c.convert(paths,'x'); self.assertTrue((root/'custom.m3u').is_file());self.assertFalse(paths[3].exists())
-            override=root/'override.m3u';c.convert(paths,'x',str(override))
-            self.assertEqual(override.read_bytes(),(root/'custom.m3u').read_bytes())
-            before=paths[2].read_bytes()
-            with self.assertRaises(c.SafeError): c.convert(paths,'x',str(paths[2]))
-            self.assertEqual(paths[2].read_bytes(),before)
-
-    def test_single_file_default_paths_independent_of_cwd(self):
-        import subprocess
-        with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp).resolve(); install=root/'install'; install.mkdir(); elsewhere=root/'cwd';elsewhere.mkdir()
-            script=install/'iptv.py';script.write_bytes(Path(c.__file__).read_bytes())
-            result=subprocess.run([sys.executable,str(script),'configure','--instance','x','--identity-stdin','--m3u-output',str(root/'result.m3u')],input='fixture\nfixture-box\n00:11:22:33:44:55\n',text=True,capture_output=True,cwd=elsewhere)
-            self.assertEqual(result.returncode,0,result.stderr)
-            c.atomic_json(install/'catchup_x.json',[row()])
-            result=subprocess.run([sys.executable,str(script),'convert','--instance','x'],capture_output=True,text=True,cwd=elsewhere)
-            self.assertEqual(result.returncode,0,result.stderr)
-            self.assertTrue((root/'result.m3u').exists());self.assertEqual(list(elsewhere.iterdir()),[])
 
     def test_portal_protocol_context_cookies_and_raw_response(self):
         class HTTP:

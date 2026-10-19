@@ -64,18 +64,18 @@ class CliTests(unittest.TestCase):
     def test_native_config_stdin_permissions_retention_isolation(self):
         with tempfile.TemporaryDirectory() as tmp:
             d=Path(tmp).resolve()/'private'
-            args=['configure','--directory',str(d),'--instance','alpha','--identity-stdin','--interface','eth0.85']
-            with patch('sys.stdin',io.StringIO('fixture\nfixture-sn\n00:11:22:33:44:55\n')): self.assertEqual(c.main(args),0)
-            paths=c.instance_paths(d,'alpha')
+            args=['configure','--config-dir',str(d),'--stdin']
+            with patch('sys.stdin',io.StringIO('fixture\nfixture-sn\n00:11:22:33:44:55\neth0.85\n' + '\n'*9)): self.assertEqual(c.main(args),0)
+            paths=c.config_paths(d)
             cfg=c.load(paths[1]); self.assertEqual(cfg['sn'],'fixture-sn')
             self.assertEqual(d.stat().st_mode&0o777,0o700)
             self.assertEqual(paths[1].stat().st_mode&0o777,0o600)
-            with patch('sys.stdin',io.StringIO('\n\n\n')): self.assertEqual(c.main(args),0)
+            with patch('sys.stdin',io.StringIO('\n'*13)): self.assertEqual(c.main(args),0)
             self.assertEqual(c.load(paths[1]),cfg)
-            beta=c.instance_paths(d,'beta'); auth.atomic_json(beta[1],cfg)
+            beta=c.config_paths(d.parent/'beta'); auth.private_dir(beta[0]); auth.atomic_json(beta[1],cfg)
             with patch.object(auth,'local_ipv4',return_value='192.0.2.1'), patch.object(auth,'login',return_value=[row(),row()]):
-                c.fetch(paths,'alpha'); c.fetch(beta,'beta')
-            c.convert(paths,'alpha'); c.convert(beta,'beta')
+                c.fetch(paths); c.fetch(beta)
+            c.convert(paths); c.convert(beta)
             self.assertEqual(json.loads(paths[2].read_text()),[row(),row()])
             self.assertEqual(paths[3].read_text(),beta[3].read_text())
             paths[2].unlink(); self.assertTrue(beta[2].exists())
@@ -85,15 +85,15 @@ class CliTests(unittest.TestCase):
     def test_failures_preserve_previous_outputs_and_redact(self):
         with tempfile.TemporaryDirectory() as tmp:
             d=Path(tmp).resolve()/'private'; auth.private_dir(d)
-            paths=c.instance_paths(d,'alpha'); auth.atomic_json(paths[1],config())
-            auth.atomic_json(paths[2],[row()]); c.convert(paths,'alpha')
+            paths=c.config_paths(d); auth.atomic_json(paths[1],config())
+            auth.atomic_json(paths[2],[row()]); c.convert(paths)
             before=paths[2].read_bytes(),paths[3].read_bytes()
             with patch.object(auth,'local_ipv4',return_value='192.0.2.1'), patch.object(auth,'login',side_effect=auth.SafeError('fixture')):
-                with self.assertRaises(auth.SafeError): c.fetch(paths,'alpha')
+                with self.assertRaises(auth.SafeError): c.fetch(paths)
             self.assertEqual(paths[2].read_bytes(),before[0])
             paths[2].write_text('[{"ChannelID":"42","TimeShiftURL":"rtsp://secret/?AuthInfo=secret"}]')
             out=io.StringIO()
-            with contextlib.redirect_stderr(out): self.assertEqual(c.main(['convert','--directory',str(d),'--instance','alpha']),1)
+            with contextlib.redirect_stderr(out): self.assertEqual(c.main(['convert','--config-dir',str(d)]),1)
             self.assertNotIn('secret',out.getvalue()); self.assertEqual(paths[3].read_bytes(),before[1])
             with patch.object(os,'replace',side_effect=OSError('fixture')):
                 with self.assertRaises(OSError): c.atomic_text(paths[3],'new')
