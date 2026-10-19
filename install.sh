@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.10.18.16"
+APP_VERSION="2026.10.19.02"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -853,7 +853,7 @@ function show_menu() {
         echo "71）优化 Docker 日志"
         echo "72）优化 journald 日志"
     fi
-    echo "80）安装/删除/升级 IPTV（rtp2httpd）"
+    echo "80）管理 IPTV（rtp2httpd / 上海电信鉴权刷新）"
     echo "89）安装/管理 SOCKS5 代理"
     echo "90）创建macvlan bridge"
     echo "91）删除macvlan bridge"

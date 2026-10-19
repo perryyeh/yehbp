@@ -383,6 +383,7 @@ rtp2httpd_remove_network_profiles() (
 
 rtp2httpd_remove_instance() {
     local service="$1" config="$2" state="$3"
+    rtp2httpd_auth_remove_timer "$config" "$service" || return 1
     rtp2httpd_remove_network_profiles "$state" || {
         echo "❌ VLAN profile 未完全删除；已保留 ${service}、配置和状态文件，可修复后重试。"
         return 1
@@ -735,6 +736,63 @@ rtp2httpd_restart() {
     done
 }
 
+rtp2httpd_auth_action() {
+    local action="$1" choice service config app_dir instance interface helper directory i tmp output
+    echo "上海电信鉴权（其它运营商协议尚不支持，请选择上海电信实例）"
+    rtp2httpd_list_instances
+    [ ${#RTP2HTTPD_LIST_SERVICES[@]} -gt 0 ] || { echo "❌ 请先安装 IPTV 实例。"; return 1; }
+    for i in "${!RTP2HTTPD_LIST_SERVICES[@]}"; do
+        printf '  %d）%s\n' "$((i + 1))" "${RTP2HTTPD_LIST_SERVICES[$i]}"
+    done
+    read -r -p "选择 IPTV 实例（0 返回）: " choice
+    [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#RTP2HTTPD_LIST_SERVICES[@]}" ] || return 0
+    service="${RTP2HTTPD_LIST_SERVICES[$((choice - 1))]}"
+    config="$(awk -F' -c ' '/^ExecStart=/ {print $2; exit}' "/etc/systemd/system/${service}")"
+    [ -f "$config" ] && [ ! -L "$config" ] || { echo "❌ 无法读取实例配置。"; return 1; }
+    app_dir="${config%/*}"
+    instance="${service%.service}"
+    # Use the selected instance's multicast/IPTV interface, never FCC or host MAC.
+    interface="$(awk -F= '/^[[:space:]]*upstream-interface-multicast[[:space:]]*=/ {gsub(/[[:space:]]/, "", $2); print $2}' "$config")"
+    if [ "$action" = configure ] || [ "$action" = refresh ] || [ "$action" = enable-daily ]; then
+        [[ "$interface" =~ ^[A-Za-z0-9_.:-]+$ ]] || { echo "❌ 实例 IPTV 接口无效。"; return 1; }
+    fi
+    directory="${app_dir}/.iptv-auth-${instance}"
+    output="${app_dir}/catchup${instance#rtp2httpd}.json"
+    helper="${app_dir}/iptv-auth.py"
+    for i in python3 systemctl; do
+        command -v "$i" >/dev/null 2>&1 || { echo "❌ 需要 $i。"; return 1; }
+    done
+    if [ "$action" = configure ] || [ "$action" = refresh ] || [ "$action" = enable-daily ]; then
+        for i in openssl ip; do
+            command -v "$i" >/dev/null 2>&1 || { echo "❌ 需要 $i。"; return 1; }
+        done
+    fi
+    [ ! -L "$helper" ] && { [ ! -e "$helper" ] || [ -f "$helper" ]; } || return 1
+    if [ "$action" = configure ] || [ ! -f "$helper" ]; then
+        tmp="$(mktemp "${app_dir}/.iptv-helper.XXXXXX")" || return 1
+        if ! download_yehbp_asset "assets/iptv/iptv-auth.py" "$tmp" || ! python3 -c 'import ast,sys; ast.parse(open(sys.argv[1]).read())' "$tmp"; then
+            rm -f "$tmp"
+            return 1
+        fi
+        chmod 0755 "$tmp" && mv -f "$tmp" "$helper" || { rm -f "$tmp"; return 1; }
+    fi
+    python3 "$helper" "$action" --directory "$directory" --interface "$interface" --output "$output" --instance-config "$config" || return 1
+    if [ "$action" = status ]; then
+        python3 "$helper" timer-status --directory "$directory"
+    fi
+}
+
+rtp2httpd_auth_remove_timer() {
+    local config="$1" service="$2" app_dir directory helper
+    app_dir="${config%/*}"
+    directory="${app_dir}/.iptv-auth-${service%.service}"
+    helper="${app_dir}/iptv-auth.py"
+    if [ -d "$directory" ] || [ -L "$directory" ]; then
+        [ -f "$helper" ] && [ ! -L "$helper" ] || { echo "❌ 缺少 IPTV 鉴权 helper，请先从菜单刷新组件。"; return 1; }
+        python3 "$helper" disable-daily --directory "$directory" || return 1
+    fi
+}
+
 manage_rtp2httpd() {
     local choice
     printf '\n=== IPTV（rtp2httpd） ===\n'
@@ -743,6 +801,11 @@ manage_rtp2httpd() {
     echo "3）删除配置"
     echo "4）升级rtp2httpd版本"
     echo "5）重启 rtp2httpd 实例"
+    echo "6）配置上海电信鉴权身份 / 输出"
+    echo "7）立即鉴权刷新 catchup JSON"
+    echo "8）启用每日 05:00 刷新"
+    echo "9）禁用每日刷新"
+    echo "10）鉴权配置状态 / 时区 / 下次刷新"
     echo "0）返回"
     read -r -p "请输入要操作的序号: " choice
     case "$choice" in
@@ -751,6 +814,11 @@ manage_rtp2httpd() {
         3) rtp2httpd_delete ;;
         4) rtp2httpd_upgrade ;;
         5) rtp2httpd_restart ;;
+        6) rtp2httpd_auth_action configure ;;
+        7) rtp2httpd_auth_action refresh ;;
+        8) rtp2httpd_auth_action enable-daily ;;
+        9) rtp2httpd_auth_action disable-daily ;;
+        10) rtp2httpd_auth_action status ;;
         *) return 0 ;;
     esac
 }
