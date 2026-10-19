@@ -6,7 +6,7 @@
 # 首次全参数：保存配置、获取原始数据并生成playlist（身份仅为示意）
 python3 iptv.py config=tel userinfo=USER SN=BOX_SN MAC=00:11:22:33:44:55 \
   interface=iptv85 multicast_interface=iptv51 fcc_interface=iptv85 \
-  baseURL=http://127.0.0.1:5140 directory_metadata=y
+  baseURL=http://127.0.0.1:5140
 # 后续最简：离线转换，主产物仍为tel/playlist.m3u；另导出指定完整路径
 python3 iptv.py config=tel output=/your/export/channels.m3u
 # output是已有目录或以/结尾时，副本名为配置目录basename.m3u
@@ -20,7 +20,7 @@ python3 iptv.py run --config-dir /your/iptv/tel
 
 主入口使用 `key=value`。`config=tel` 是 **iptv.py所在目录下的tel子目录**，不需前置或结尾斜杠；所有相对config路径统一相对脚本目录，与调用cwd无关，也接受绝对路径。首次省略config时，必须明确提供 `interface=所选接口`，使用该接口名作为脚本同级配置子目录名，绝不默认猜eth0。缺少身份或接口会失败，不写不完整配置。
 
-准确键名为 `config`、`output`、`userinfo`（也接受`userid`）、`SN`（`sn`）、`MAC`（`mac`）、`interface`、`multicast_interface`、`fcc_interface`、`baseURL`（`base_url`）、`auth_origin`、`live_path`、`replay_path`、`seek_template`、`allowed_origins`（空格分隔的一个参数）、`directory_metadata`（y/n或true/false）。身份全参数会出现在进程argv及可能的shell历史中；脚本不打印身份或完整认证URL，可选受保护stdin入口见下文。出现任一配置字段即保存配置并fetch、convert；只给config/output时严格离线。成功写入同名文件时逐文件原子替换，失败不保证跨文件事务。
+准确键名为 `config`、`output`、`userinfo`（也接受`userid`）、`SN`（`sn`）、`MAC`（`mac`）、`interface`、`multicast_interface`、`fcc_interface`、`baseURL`（`base_url`）、`auth_origin`、`live_path`、`replay_path`、`seek_template`、`allowed_origins`（空格分隔的一个参数）。身份全参数会出现在进程argv及可能的shell历史中；脚本不打印身份或完整认证URL，可选受保护stdin入口见下文。出现任一配置字段即保存配置并fetch、convert；只给config/output时严格离线。成功写入同名文件时逐文件原子替换，失败不保证跨文件事务。
 
 `output`是完整目的路径。结尾 `/` 或已存在目录认定纯目录，用配置目录basename加`.m3u`；含目录部分的非目录值视完整文件名，例如 `/dir/file.m3u` 或 `./file.m3u`。不存在且无斜杠的 `foo.m3u` 或 `newdir` 不导出，不猜成目录。相对output按调用cwd解析。省略output也不导出；每次转换仍生成配置目录内`playlist.m3u`。
 
@@ -30,7 +30,7 @@ python3 iptv.py run --config-dir /your/iptv/tel
 |---|---|
 | `config.json` | 身份、接口、鉴权入口、rtp2httpd base URL等配置 |
 | `catchup.json` | 完整解析的原始channelArray数组，字段、顺序、重复及null均保留 |
-| `channels.json` | 可选原始名称目录，完整保留12分类响应及额外字段/重复记录 |
+| `channels.json` | 原始名称目录（fetch始终获取），完整保留12分类响应及额外字段/重复记录 |
 | `playlist.m3u` | 最终完整M3U，每次convert始终写在配置目录 |
 | `.iptv.lock` | 内部实例锁 |
 
@@ -40,15 +40,15 @@ python3 iptv.py run --config-dir /your/iptv/tel
 
 默认无命令与显式 `convert` 完全相同：仅读取已有catchup/channels，不鉴权、不发网络请求。缺少catchup时提示先执行fetch；缺少channels时以原始名称或ChannelID占位。`fetch` 和 `run` 才主动刷新；`run` 的fetch失败时不会继续convert。
 
-`configure` 依次询问 UserID、盒子独立SN、盒子MAC（均隐藏且不显示已有身份）、鉴权/回放接口、组播接口、FCC接口、鉴权origin、rtp2httpd base URL、直播路径、回放路径、时间模板、额外允许origin、是否获取名称目录y/n。空输入保留已有值；首次缺少必要身份或鉴权接口会失败，不猜主机接口或盒子信息。不能用STBID或主机网卡MAC替代盒子身份。组播/FCC输入 `-` 可清空，额外origin以空格分隔或 `-` 清空。默认组播沿用鉴权接口，FCC不另指定，目录默认关闭。关闭目录只影响今后fetch，已有channels仍可供离线convert使用；需用户明确移走它才完全不使用。
+`configure` 依次询问 UserID、盒子独立SN、盒子MAC（均隐藏且不显示已有身份）、鉴权/回放接口、组播接口、FCC接口、鉴权origin、rtp2httpd base URL、直播路径、回放路径、时间模板、额外允许origin。空输入保留已有值；首次缺少必要身份或鉴权接口会失败，不猜主机接口或盒子信息。不能用STBID或主机网卡MAC替代盒子身份。组播/FCC输入 `-` 可清空，额外origin以空格分隔或 `-` 清空。默认组播沿用鉴权接口，FCC不另指定。fetch/run和首次全参数获取始终同时刷新完整频道目录。
 
-自动化使用 `configure --config-dir DIR --stdin`，由受保护stdin依上述顺序提供**13行**，前三行是身份，其余与交互顺序相同；空行保留，提前EOF报错且不替换旧配置。stdin模式是明确选择，输入不会回显；不要把身份放在argv或命令历史。配置保留未知JSON字段。
+自动化使用 `configure --config-dir DIR --stdin`，由受保护stdin依上述顺序提供**12行**，前三行是身份，其余与交互顺序相同；空行保留，提前EOF报错且不替换旧配置。stdin模式是明确选择，输入不会回显；不要把身份放在argv或命令历史。配置保留未知JSON字段。旧JSON中的`directory_metadata`键兼容读取但忽略（包括false），fetch/convert不自动回写配置；主动configure或全参数保存时移除该旧键，新配置不写入。旧命令行`directory_metadata`键明确报错并提示无需设置，不写配置也不联网。旧13行stdin输入应删去末尾的目录开关行；新入口只消费12行，前三行身份和后续字段顺序不变。
 
 这是新目录格式：不接受旧 `--instance`、`--directory`、`--identity-stdin` 或 `--m3u-output` 参数，不自动迁移、移动、删除或读取旧 `<instance>.auth.json`、`catchup_<instance>.json` 等文件。请在独立新目录运行configure，并显式fetch生成新格式；旧实例数据保持原状。旧配置里的输出覆盖设置不作为新输出规则使用。
 
 fetch重新读取鉴权接口唯一全局IPv4，禁用环境代理并绑定已有接口。表单、重定向、门户目标受精确origin白名单限制：配置鉴权入口及已实证的 `http://124.75.29.176:7001`、`http://218.83.165.50:8084`、`http://218.83.165.36:8084`。额外地址须先核实再配置允许origin，不自动信任任意EPGDomain、IpPort或整个运营商网段。网络错误仅输出固定脱敏信息。
 
-fetch不合并、不改名。可选目录阶段沿用同一认证cookie会话登录门户、保留DynamicAuthIP，调用12分类getChannelList，不下载逐节目EPG/XMLTV。每分类完整JSON响应（status/data/额外字段、分类及重复记录）包存在channels.json，不写回catchup。目录解析、分类、失败状态或空总目录异常均使fetch退出1并保留原有两文件。候选完成验证后分别原子替换，文件间不是事务；磁盘写入故障可能出现新目录与旧catchup，修复后需重跑。
+fetch不合并、不改名。目录阶段始终沿用同一认证cookie会话登录门户、保留DynamicAuthIP，调用12分类getChannelList，不下载逐节目EPG/XMLTV。每分类完整JSON响应（status/data/额外字段、分类及重复记录）包存在channels.json，不写回catchup。目录解析、分类、失败状态或空总目录异常均使fetch退出1并保留原有两文件。候选完成验证后分别原子替换，文件间不是事务；磁盘写入故障可能出现新目录与旧catchup，修复后需重跑。
 
 名称优先原始ChannelName，其次按精确 `UserChannelID ↔ mixNo` 匹配目录；仅当不同name候选唯一时使用原文。HD、高清、4K、括号、前后及连续空格全部保留。不按mixNo去重原始频道。冲突候选保留在目录，统计ambiguous并以精确ChannelID占位；无目录或未匹配统计unmatched并占位。convert打印source/matched/ambiguous/unmatched数量。分组字段保留在目录，M3U不推断分组；不得按复用回放地址猜名字。M3U无法安全表达的换行、双引号等使转换失败，不静默修改名称，保留上次主输出。
 

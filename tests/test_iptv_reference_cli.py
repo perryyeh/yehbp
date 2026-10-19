@@ -65,15 +65,16 @@ class CliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             d=Path(tmp).resolve()/'private'
             args=['configure','--config-dir',str(d),'--stdin']
-            with patch('sys.stdin',io.StringIO('fixture\nfixture-sn\n00:11:22:33:44:55\neth0.85\n' + '\n'*9)): self.assertEqual(c.main(args),0)
+            with patch('sys.stdin',io.StringIO('fixture\nfixture-sn\n00:11:22:33:44:55\neth0.85\n' + '\n'*8)): self.assertEqual(c.main(args),0)
             paths=c.config_paths(d)
             cfg=c.load(paths[1]); self.assertEqual(cfg['sn'],'fixture-sn')
             self.assertEqual(d.stat().st_mode&0o777,0o700)
             self.assertEqual(paths[1].stat().st_mode&0o777,0o600)
-            with patch('sys.stdin',io.StringIO('\n'*13)): self.assertEqual(c.main(args),0)
+            with patch('sys.stdin',io.StringIO('\n'*12)): self.assertEqual(c.main(args),0)
             self.assertEqual(c.load(paths[1]),cfg)
             beta=c.config_paths(d.parent/'beta'); auth.private_dir(beta[0]); auth.atomic_json(beta[1],cfg)
-            with patch.object(auth,'local_ipv4',return_value='192.0.2.1'), patch.object(auth,'login',return_value=[row(),row()]):
+            from test_iptv_reference_directory import directory
+            with patch.object(auth,'local_ipv4',return_value='192.0.2.1'), patch.object(auth,'login',return_value=[row(),row()]), patch.object(auth,'portal_directory',return_value=directory([dict(mixNo='1',name='fixture')])):
                 c.fetch(paths); c.fetch(beta)
             c.convert(paths); c.convert(beta)
             self.assertEqual(json.loads(paths[2].read_text()),[row(),row()])

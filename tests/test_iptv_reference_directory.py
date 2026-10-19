@@ -33,7 +33,7 @@ class DirectoryTests(unittest.TestCase):
     def test_directory_bad_response_preserves_both_old_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             paths=c.config_paths(Path(tmp).resolve()/'private'); c.private_dir(paths[0])
-            cfg=config(); cfg['directory_metadata']=True
+            cfg=config()
             c.atomic_json(paths[1],cfg); c.atomic_json(paths[2],[row()]); meta=c.metadata_path(paths)
             old=directory([dict(mixNo='1',name='Old')]); c.atomic_json(meta,old)
             before=paths[2].read_bytes(),meta.read_bytes()

@@ -38,7 +38,7 @@ class DirectoryModelTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp).resolve(); script=root/'iptv.py';script.write_bytes(Path(c.__file__).read_bytes())
             args=['userinfo=fixture','SN=box','MAC=00:11:22:33:44:55','interface=eth0.85','baseURL=http://127.0.0.1:5140']
-            with patch.object(c,'__file__',str(script)), patch.object(c,'local_ipv4',return_value='192.0.2.1'), patch.object(c,'login',return_value=[row()]) as login:
+            with patch.object(c,'__file__',str(script)), patch.object(c,'local_ipv4',return_value='192.0.2.1'), patch.object(c,'login',return_value=[row()]) as login, patch.object(c,'portal_directory',return_value=directory([dict(mixNo='1',name='fixture')])):
                 self.assertEqual(c.main(args),0)
                 self.assertEqual(login.call_count,1)
                 paths=c.config_paths(root/'eth0.85');self.assertTrue(paths[3].exists())
@@ -137,8 +137,8 @@ class DirectoryModelTests(unittest.TestCase):
     def test_interactive_first_and_reentry_hide_identity_keep_unknown(self):
         with tempfile.TemporaryDirectory() as tmp:
             d=Path(tmp).resolve()/'instance'; args=['configure','--config-dir',str(d)]
-            # Three secret prompts, ten ordinary prompts; no provider traffic.
-            with patch.object(c.getpass,'getpass',side_effect=['fixture','box','00:11:22:33:44:55']) as hidden, patch('builtins.input',side_effect=['eth0.85','eth0.51','eth0.85','','','','','','','y']), patch.object(c.socket,'socket',side_effect=AssertionError('network')):
+            # Three secret prompts, nine ordinary prompts; no provider traffic.
+            with patch.object(c.getpass,'getpass',side_effect=['fixture','box','00:11:22:33:44:55']) as hidden, patch('builtins.input',side_effect=['eth0.85','eth0.51','eth0.85','','','','','','']), patch.object(c.socket,'socket',side_effect=AssertionError('network')):
                 self.assertEqual(c.main(args),0)
             self.assertEqual(hidden.call_count,3)
             paths=c.config_paths(d); cfg=c.load(paths[1]);cfg['extra']={'null':None,'duplicates':[1,1]};c.atomic_json(paths[1],cfg)

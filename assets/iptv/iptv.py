@@ -587,7 +587,6 @@ def endpoint(value, schemes):
 
 
 def validate(c):
-    if not isinstance(c.get('directory_metadata', False), bool): raise auth.SafeError('目录开关无效')
     if c.get('provider') != 'shanghai-telecom':
         raise auth.SafeError('目前仅支持上海电信')
     for k in ('userid', 'sn', 'mac', 'interface', 'base_url', 'auth_origin'):
@@ -633,7 +632,7 @@ def configure(args, paths):
             if args.stdin:
                 print(prompt, end='', file=sys.stderr, flush=True)
                 line = sys.stdin.readline()
-                if line == '': raise SafeError('配置stdin输入不足，请提供全部13行')
+                if line == '': raise SafeError('配置stdin输入不足，请提供全部12行')
                 return line.rstrip('\r\n') or current
             return (getpass.getpass(prompt) if hidden else input(prompt)) or current
 
@@ -654,9 +653,7 @@ def configure(args, paths):
             c[key] = '' if value == '-' and key in ('multicast_interface', 'fcc_interface') else value
         origins = ask('额外允许origin（空格分隔，-清空）', ' '.join(c.get('allowed_origins', [])))
         c['allowed_origins'] = [] if origins == '-' else origins.split()
-        enabled = ask('获取名称目录 y/n', 'y' if c.get('directory_metadata', False) else 'n').lower()
-        if enabled not in ('y', 'n'): raise SafeError('名称目录开关请输入y或n')
-        c['directory_metadata'] = enabled == 'y'
+        c.pop('directory_metadata', None)  # Retire the legacy key only on explicit save.
         validate(c)
         auth.atomic_json(path, c)
         print('配置已保存：config.json为0600，现存目录权限保持不变')
@@ -737,18 +734,15 @@ def fetch(paths):
     d, config, output, _ = paths
     with auth.lock(d, '.iptv.lock'):
         c = load(config)
-        if c.get('directory_metadata', False):
-            context = {}
-            rows = auth.login(c, auth.local_ipv4(c['interface']), context=context)
-            try:
-                directory = portal_directory(c, context)
-            except Exception:
-                raise auth.SafeError('目录获取/校验失败，保留已有原始及目录文件') from None
-            auth.atomic_json(metadata_path(paths), directory)
-        else:
-            rows = auth.login(c, auth.local_ipv4(c['interface']))
+        context = {}
+        rows = auth.login(c, auth.local_ipv4(c['interface']), context=context)
+        try:
+            directory = portal_directory(c, context)
+        except Exception:
+            raise auth.SafeError('目录获取/校验失败，保留已有原始及目录文件') from None
+        auth.atomic_json(metadata_path(paths), directory)
         auth.atomic_json(output, rows)
-        print(f'fetch成功：{len(rows)}条完整原始记录；目录' + ('已刷新' if c.get('directory_metadata') else '未启用'))
+        print(f'fetch成功：{len(rows)}条完整原始记录；目录已刷新')
 
 
 def export_path(value, directory):
@@ -807,12 +801,14 @@ def key_value_main(argv):
     aliases = {'userinfo': 'userid', 'SN': 'sn', 'MAC': 'mac', 'baseURL': 'base_url'}
     fields = {'userid', 'sn', 'mac', 'interface', 'multicast_interface', 'fcc_interface',
               'auth_origin', 'base_url', 'live_path', 'replay_path', 'seek_template',
-              'allowed_origins', 'directory_metadata'}
+              'allowed_origins'}
     values = {}
     for arg in argv:
         if '=' not in arg: raise SafeError('主入口参数必须使用key=value')
         key, value = arg.split('=', 1)
         key = aliases.get(key, key)
+        if key == 'directory_metadata':
+            raise SafeError('directory_metadata参数已移除，无需设置；fetch/run及全参数获取会同时刷新完整频道目录')
         if key not in fields | {'config', 'output'} or key in values:
             raise SafeError('未知或重复参数键')
         values[key] = value
@@ -834,14 +830,11 @@ def key_value_main(argv):
             defaults = dict(provider='shanghai-telecom', multicast_interface='', fcc_interface='',
                             auth_origin=DEFAULT_ORIGIN, base_url='http://127.0.0.1:5140',
                             live_path='/rtp/', replay_path='/rtsp/', seek_template=SEEK,
-                            allowed_origins=[], directory_metadata=False)
+                            allowed_origins=[])
             for key, value in defaults.items(): c.setdefault(key, value)
             if 'allowed_origins' in values:
                 values['allowed_origins'] = values['allowed_origins'].split()
-            if 'directory_metadata' in values:
-                if values['directory_metadata'].lower() not in ('y', 'n', 'true', 'false'):
-                    raise SafeError('directory_metadata必须为y/n或true/false')
-                values['directory_metadata'] = values['directory_metadata'].lower() in ('y', 'true')
+            c.pop('directory_metadata', None)
             c.update(values)
             validate(c)
             atomic_json(paths[1], c)
@@ -869,7 +862,7 @@ def main(argv=None):
     parser.add_argument('--config-dir', required=True, help='配置/完整源数据/主playlist所在目录；所有命令一致')
     parser.add_argument('--output-dir', help='额外副本目录；父目录须存在，缺少的末级目录以0700创建；现存目录不chmod')
     parser.add_argument('--output-name', default=None, help='额外导出文件名（默认playlist.m3u），仅安全basename；需output-dir')
-    parser.add_argument('--stdin', action='store_true', help='仅configure：按文档顺序读取13行，空行保留，EOF报错')
+    parser.add_argument('--stdin', action='store_true', help='仅configure：按文档顺序读取12行，空行保留，EOF报错')
     args = parser.parse_args(argv)
     if args.stdin and args.command != 'configure': parser.error('--stdin仅用于configure')
     if (args.output_dir or args.output_name) and args.command not in ('convert', 'run'):
