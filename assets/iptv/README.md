@@ -18,6 +18,9 @@ python3 iptv.py config=tel userinfo=YOUR_USER_ID SN=YOUR_BOX_SN MAC=YOUR_BOX_MAC
 # 重新获取并生成
 python3 iptv.py run config=tel
 
+# 重新获取、生成并导出
+python3 iptv.py run config=tel output=/your/export/channels.m3u
+
 # 用已有数据离线生成；output 可选
 python3 iptv.py config=tel
 python3 iptv.py config=tel output=exports
