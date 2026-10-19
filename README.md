@@ -349,7 +349,7 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 
 安装/设置时，选已有实例只改其中一项；新建则按提示配置网卡、VLAN、监听地址和端口。可在同一处设置组播直播、FCC 快速换台和 RTSP 回放。
 
-播放列表见 [IPTV 参考脚本](assets/iptv/README.md)。已在上海电信测试通过，其他运营商需自行适配。
+获取播放列表参见 [IPTV 频道抓取参考](assets/iptv/README.md)。
 
 #### 6.9 SOCKS5 代理（菜单 89）
 
