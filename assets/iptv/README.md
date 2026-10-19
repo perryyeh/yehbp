@@ -27,7 +27,7 @@ python3 iptv.py config=tel output=exports
 python3 iptv.py config=tel output=/path/channels.m3u
 ```
 
-以 `.m3u` 结尾的 `output` 是文件。其他 `output` 是目录，`config=tel` 时写入 `exports/tel.m3u`。不写 `output` 就只生成配置目录里的 `playlist.m3u`。目录不存在会新建；建不了时仍保留主列表。同名播放列表直接覆盖。
+`output=` 可指定 `.m3u` 文件或导出目录；目录内文件名为 `<config>.m3u`。省略时仅生成配置目录中的 `playlist.m3u`。
 
 | 参数 | 作用 |
 |---|---|
