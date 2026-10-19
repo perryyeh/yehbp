@@ -49,6 +49,7 @@ bash -n assets/iptv/rtp2httpd.sh
 | `test_dockcheck_dependencies.py` | OpenWrt 包管理与 xargs/flock 依赖选择 |
 | `test_docker_datadir_migration.py` | 迁移前置校验、复制失败、回滚、JSON 精度与沙箱元数据保留 |
 | `test_iptv_profile_deletion.py` | NetworkManager UUID 所有权校验、删除失败及状态保留 |
+| `test_iptv_reference_*.py` | 独立单文件参考脚本：三步协议、完整数据、目录补名及歧义、HD/高清/4K 保留、M3U 查询串、可配输出路径、权限与失败保护（21 项） |
 | `test_compose_mac_check.py` | Compose 文件/项目/环境恢复、MAC 覆盖检查、wrapper 退出状态 |
 | `test_remaining_fixes.py` | 安装退出状态、VLAN 输入、依赖失败、Compose 私有临时文件与信号清理 |
 | `test_repository_consistency.py` | VERSION 与 APP_VERSION 一致、README 数字菜单同步 |
@@ -64,3 +65,5 @@ bash -n assets/iptv/rtp2httpd.sh
 真实 Linux/OpenWrt 安装、Docker 数据迁移及 ACL/xattr、systemd/procd、NetworkManager 删除、Compose 版本兼容和真实 DNS/路由链路，需要在专用可恢复环境另行手工验证；默认套件通过只代表上述沙箱回归通过。不要为跑本套件安装 YehBP 或接入生产设备。
 
 新增长期场景应放入对应 `test_*.py`，用相对仓库定位与 `tempfile` 管理夹具，保留真实断言及失败退出状态。一次性审查输出和历史 JSON/日志属于验证证据，不是测试入口，也不应作为测试依赖。
+
+独立 IPTV 产物的可选只读校验入口为 `tests/verify_iptv_artifacts.py`，用法见 `assets/iptv/README.md`；不依赖历史日志或私有配置，默认测试不访问运营商网络。

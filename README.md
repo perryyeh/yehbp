@@ -70,7 +70,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 70 | 迁移 Docker 目录               |
 | 71 | 优化 Docker 日志               |
 | 72 | 优化 journald 日志             |
-| 80 | 管理 IPTV（rtp2httpd / 上海电信鉴权、立即或每日刷新 catchup JSON） |
+| 80 | 安装/设置/删除/升级/重启 IPTV（rtp2httpd） |
 | 89 | 安装/管理 SOCKS5 代理（含安装镜像） |
 | 90 | 创建macvlan bridge            |
 | 91 | 删除macvlan bridge            |
@@ -333,15 +333,9 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 
 二进制从 [stackia/rtp2httpd](https://github.com/stackia/rtp2httpd) 官方 release 下载并校验 SHA-256。删除只移除 YehBP 创建的配置、service 与 VLAN profile，保留共享二进制和既有网络配置。
 
-上海电信用户可在子菜单 `6` 配置盒子 UserID、SN、MAC，`7` 立即主动鉴权并保存完整原始 `channelArray`，`8` 启用本机时间每日 `05:00` 刷新，`9` 禁用并移除本功能任务，`10` 查看字段是否设置、本机时区和下次执行时间。仅实现前三步认证和 JSON 保存，不生成 M3U、EPG 或合并频道。需系统 `python3`、`openssl`、`ip`、systemd，且以 root 运行以使用 Linux `SO_BINDTODEVICE`；不会自动安装额外 Python 包。
+独立参考实现：[assets/iptv/iptv.py](assets/iptv/iptv.py)，完整用法见 [参考脚本说明](assets/iptv/README.md)。它不是 YehBP 菜单功能；可只复制这一个运行文件到 rtp2httpd 目录，用户自行适配本地。提供 `configure`（配置）、`fetch`（完整原始列表及可选频道目录）、`convert`（生成 rtp2httpd M3U），`run` 依次获取和转换。M3U 输出目录和文件名均可配置，默认数据及输出位置为脚本目录（可用 `--directory` 改为专用私有目录，目录会设为 0700）；不创建定时任务或服务。保留完整字段、顺序和重复记录，不筛选、不合并，名称中的 HD、高清、4K 及空格原样保留；拿到列表和频道信息后由用户自行整理，无 EPG 节目单抓取。
 
-选择已有实例后复用其 `.conf` 的 `upstream-interface-multicast`，配置时关联实例 `.conf` 路径，每次刷新重新读取接口名称及其 IPv4，不需要重填 VLAN。文件集中存于同一 rtp2httpd 实例目录：网络状态仍为 `rtp2httpd_<实例>.env`，服务配置为 `rtp2httpd_<实例>.conf`，凭据独立保存到 `.iptv-auth-rtp2httpd_<实例>/rtp2httpd_<实例>.auth.json`（目录 `0700`、文件 `0600`），共享程序为 `iptv-auth.py`；默认输出为实例 app 目录的 `catchup_<实例>.json`，配置时可选择既有绝对 JSON 路径。无后缀旧实例使用 `catchup.json`。每个实例的身份、锁和定时任务独立，配置中预留 `provider=shanghai-telecom`，当前仅支持上海电信。已存在的输出在获取及完整解析成功后直接原子覆盖，不存在则新建，无需每次备份或确认；失败保留旧文件。不会自动迁移或清理历史文件。凭据不会被 shell source，不会传入命令行或回显，隐藏输入回车保留旧值。
-
-认证请求禁用环境代理并绑定所选 IPTV 接口，单次最多 15 秒、刷新总计最多 90 秒。默认入口为 `http://222.68.208.73:7001`，仅信任该入口、已验证的动态认证 origin `http://124.75.29.176:7001` 以及用户显式配置的额外 origin；新的跨主机跳转需核实后加入允许列表。动态 action、HTML 实体与 UTF-8/GBK 响应均会解析，AES-128-ECB/PKCS7 由 OpenSSL 实现，key 为 MD5(`123456`) 的 16 字节摘要。
-
-保存会保留原字段、顺序、重复记录和字符串 `null`；空数组、任何单项解析失败或缺少认证成功标记均保留旧文件。配置和刷新共享数据锁，任务启停使用独立控制锁以便停止正在运行的刷新；已有 helper 的状态、刷新和禁用操作无需重新下载（配置操作更新 helper）。写入使用同目录 `0600` 临时文件、fsync、原子替换及读回校验，拒绝符号链接或非普通文件。仅启用每日刷新时创建独立 `yehbp-iptv-auth-<目录摘要>.service/.timer`，不会在配置时自动启用；禁用或删除实例只清理已验证属于本功能的任务，保留身份与 JSON 数据。
-
-协议字段依据 [pcg-iptv 固定源码](https://github.com/pcg562240/pcg-iptv/blob/38653f0bd722c4dececae434efa3593be97e8aca/shctiptv.py) 独立实现；该提交未发现许可文件，因此未复制其 AES 或客户端代码。
+上海电信协议参考 [pcg562240/pcg-iptv 固定提交 38653f0bd722c4dececae434efa3593be97e8aca](https://github.com/pcg562240/pcg-iptv/blob/38653f0bd722c4dececae434efa3593be97e8aca/shctiptv.py)，该提交没有许可文件，未复制其 AES/客户端实现；本脚本独立实现并调用 OpenSSL。其他地区需自行适配，不保证通用。私有身份、原始 JSON 和 M3U 不应加入 Git 或公开订阅。
 
 #### 6.4 安装/设置/删除/升级 Dockcheck（菜单 65）
 
