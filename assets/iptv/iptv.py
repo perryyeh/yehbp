@@ -1086,9 +1086,11 @@ def probe_fact(url, now, runner=None):
     if runner is None:
         runner = subprocess.run
     if tool == 'ffprobe':
+        # Do not pin v:0. A leading HEVC program can advertise codec with 0x0
+        # while a later video stream carries the real SPS dimensions.
         command = [binary, '-hide_banner', '-loglevel', 'error', '-rw_timeout', '8000000',
                    '-probesize', '5000000', '-analyzeduration', '5000000',
-                   '-select_streams', 'v:0', '-show_entries', 'stream=codec_name,width,height,field_order',
+                   '-show_entries', 'stream=codec_type,codec_name,width,height,field_order',
                    '-of', 'json', url]
     else:
         command = [binary, '-hide_banner', '-nostdin', '-loglevel', 'info', '-rw_timeout', '8000000',
@@ -1108,19 +1110,21 @@ def probe_fact(url, now, runner=None):
     if tool == 'ffprobe':
         try:
             parsed = json.loads(result.stdout.decode('utf-8', 'replace') or '{}')
-            stream = (parsed.get('streams') or [None])[0]
-        except (json.JSONDecodeError, IndexError, AttributeError, UnicodeError):
-            stream = None
-        if not isinstance(stream, dict) or result.returncode != 0:
+        except (json.JSONDecodeError, UnicodeError):
+            parsed = None
+        streams = parsed.get('streams') if isinstance(parsed, dict) else None
+        if not isinstance(streams, list) or result.returncode != 0:
             return failed
-        width, height = stream.get('width'), stream.get('height')
-        if isinstance(width, bool) or not isinstance(width, int):
-            width = None
-        if isinstance(height, bool) or not isinstance(height, int):
-            height = None
+        videos = [item for item in streams if isinstance(item, dict) and item.get('codec_type', 'video') == 'video']
+        sized = [item for item in videos if _positive_dimension(item.get('width')) and _positive_dimension(item.get('height'))]
+        # Any later video with a positive size counts. Do not fail on a leading 0x0, and do not prefer the largest.
+        if not sized:
+            return failed
+        stream = sized[0]
         codec, field = stream.get('codec_name'), stream.get('field_order')
-        return dict(empty, status='identified', codec=codec if isinstance(codec, str) else None, width=width,
-                    height=height, field_order=field if isinstance(field, str) else None)
+        return dict(empty, status='identified', codec=codec if isinstance(codec, str) else None,
+                    width=stream['width'], height=stream['height'],
+                    field_order=field if isinstance(field, str) else None)
     matched = re.search(r'Video:\s*(\S+).*?,\s*(\d{2,5})x(\d{2,5})', output)
     if result.returncode != 0 or matched is None:
         if 'Connection refused' in output or 'Connection timed out' in output or 'Server returned' in output:
@@ -1135,6 +1139,17 @@ def unique_source_count(rows, config):
     return len({source_key(text(row.get('ChannelID')), live_url(row, config)) for row in rows})
 
 
+def _positive_dimension(value):
+    return not isinstance(value, bool) and isinstance(value, int) and value > 0
+
+
+def fact_needs_retry(fact):
+    """Only an identified fact with no positive size is unfinished. Failures stay cached."""
+    if not isinstance(fact, dict) or fact.get('status') != 'identified':
+        return False
+    return not _positive_dimension(fact.get('width')) or not _positive_dimension(fact.get('height'))
+
+
 def resolution_targets(rows, config, stored, force=False):
     selected, seen = [], set()
     for index, row in enumerate(rows):
@@ -1143,7 +1158,7 @@ def resolution_targets(rows, config, stored, force=False):
         if key in seen:
             continue
         seen.add(key)
-        if force or key not in stored:
+        if force or key not in stored or fact_needs_retry(stored.get(key)):
             selected.append((index, key, url))
     return selected
 

@@ -22,8 +22,10 @@ class Result:
         self.stdout, self.stderr, self.returncode = stdout, stderr, code
 
 
-def ffprobe(width, height, codec='h264', field='progressive'):
-    body = json.dumps({'streams': [{'codec_name': codec, 'width': width, 'height': height, 'field_order': field}]})
+def ffprobe(width, height, codec='h264', field='progressive', extra=None):
+    streams = list(extra or [])
+    streams.append({'codec_type': 'video', 'codec_name': codec, 'width': width, 'height': height, 'field_order': field})
+    body = json.dumps({'streams': streams})
     return Result(body.encode())
 
 
@@ -214,6 +216,43 @@ class ResolutionTests(unittest.TestCase):
         self.assertEqual(full.count('#EXTINF:'), 7)
         self.assertEqual(off['kept'], 7)
         self.assertEqual(json.dumps(facts, sort_keys=True), before)
+
+    def test_ffprobe_skips_leading_zero_video_and_retries_only_zero_facts(self):
+        placeholder = {'codec_type': 'video', 'codec_name': 'hevc', 'width': 0, 'height': 0, 'field_order': None}
+        secret = 'http://127.0.0.1/rtp/239.1.1.1:1?fcc=1.2.3.4:5'
+        with patch.object(c.shutil, 'which', return_value='/usr/bin/ffprobe'):
+            fact = c.probe_fact(secret, NOW, runner=lambda command, **_k: ffprobe(3840, 2160, codec='hevc', field='progressive', extra=[placeholder, {'codec_type': 'audio', 'codec_name': 'ac3'}]))
+        self.assertEqual(fact['status'], 'identified')
+        self.assertEqual((fact['codec'], fact['width'], fact['height'], fact['field_order']), ('hevc', 3840, 2160, 'progressive'))
+        self.assertNotIn(secret, json.dumps(fact))
+        seen = {}
+
+        def capture(command, **_k):
+            seen['command'] = command
+            return ffprobe(1280, 720, codec='mpeg2video', extra=[
+                {'codec_type': 'video', 'codec_name': 'hevc', 'width': 0, 'height': 0},
+                {'codec_type': 'video', 'codec_name': 'h264', 'width': 1920, 'height': 1080},
+            ])
+
+        with patch.object(c.shutil, 'which', return_value='/usr/bin/ffprobe'):
+            chosen = c.probe_fact(secret, NOW, runner=capture)
+        self.assertEqual((chosen['status'], chosen['codec'], chosen['width'], chosen['height']), ('identified', 'h264', 1920, 1080))
+        self.assertNotIn('select_streams', seen['command'])
+        self.assertNotIn(secret, seen['command'][:-1])
+        with patch.object(c.shutil, 'which', return_value='/usr/bin/ffprobe'):
+            only_zero = c.probe_fact(secret, NOW, runner=lambda command, **_k: ffprobe(0, 0, codec='hevc', extra=[]))
+        self.assertEqual(only_zero['status'], 'failed')
+        self.assertIsNone(only_zero['width'])
+        self.assertIsNone(only_zero['height'])
+        zero = dict(checked_at='t', status='identified', codec='hevc', width=0, height=0, field_order=None, playable=None)
+        sized = dict(zero, width=1920, height=1080)
+        rows = [row(ChannelID='zero', ChannelURL='igmp://239.1.1.9:9'), row(ChannelID='ok', ChannelURL='igmp://239.1.1.8:8')]
+        cfg = config()
+        stored = {self.key('zero', c.live_url(rows[0], cfg)): zero, self.key('ok', c.live_url(rows[1], cfg)): sized}
+        targets = c.resolution_targets(rows, cfg, stored)
+        self.assertEqual([item[1] for item in targets], [self.key('zero', c.live_url(rows[0], cfg))])
+        failed = dict(zero, status='failed', width=None, height=None)
+        self.assertEqual(c.resolution_targets([rows[0]], cfg, {self.key('zero', c.live_url(rows[0], cfg)): failed}), [])
 
     def test_timeout_failure_and_secret_redaction(self):
         secret = 'http://127.0.0.1/rtp/239.1.1.1:1?fcc=1.2.3.4:5&AuthInfo=SECRET'
