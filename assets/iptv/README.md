@@ -44,3 +44,5 @@ python3 iptv.py config=tel output=/path/channels.m3u
 只写 `config`（可再加 `output`）时不联网。`run` 会联网。命令里出现身份或其他配置字段时，保留没写的旧字段，保存后获取并生成；首次缺身份不会留下半份配置。身份写在命令里会被 shell 记住。
 
 协议参考 [pcg562240/pcg-iptv](https://github.com/pcg562240/pcg-iptv)。
+
+DIYP 适配见 [README-diyp.md](README-diyp.md)。
