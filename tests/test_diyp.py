@@ -313,6 +313,63 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(status, 302)
         self.assertEqual(headers["Location"], "http://127.0.0.1:5140/rtp/233.18.204.3:5140")
 
+    def test_empty_group_uses_dash_and_index_not_the_label(self):
+        empty = (
+            '#EXTM3U x-tvg-url="http://127.0.0.1/first.xml"\n'
+            '#EXTINF:-1 tvg-id="n1" tvg-name="无组甲",无组甲\n'
+            + LIVE + "\n"
+            '#EXTINF:-1 tvg-id="n2" tvg-name="无组甲" catchup="default" catchup-source="'
+            + CATCHUP + '",无组甲\n'
+            'http://127.0.0.1:5140/rtp/233.18.204.9:5140?fcc=9&AuthInfo=A%2Fb+C==\n'
+            '#EXTINF:-1 tvg-id="slash" tvg-name="斜/杠",斜/杠\n'
+            'http://127.0.0.1:5140/rtp/233.18.204.8:5140\n'
+        )
+        playlist = Path(self.tmp.name) / "empty.m3u"
+        playlist.write_text(empty, encoding="utf-8")
+        empty_bridge = bridge.Bridge(
+            str(playlist), "http://127.0.0.1:9", self.cache, TZ, 3600, "tel.m3u", "tel.epg")
+        empty_bridge.reload_m3u(force=True)
+        text = empty_bridge.playlist_text()
+        lines = text.splitlines()
+        self.assertEqual(lines[0], ",#genre#")
+        self.assertEqual(lines[1], "无组甲,http://127.0.0.1:9/c/1/-/%E6%97%A0%E7%BB%84%E7%94%B2")
+        self.assertEqual(lines[2], "无组甲,http://127.0.0.1:9/c/2/-/%E6%97%A0%E7%BB%84%E7%94%B2")
+        self.assertEqual(lines[3], "斜/杠,http://127.0.0.1:9/c/3/-/%E6%96%9C%2F%E6%9D%A0")
+        self.assertNotIn("//", lines[1].split(",", 1)[1].split("://", 1)[1])
+
+        previous = self.httpd.bridge
+        self.httpd.bridge = empty_bridge
+        try:
+            status, headers, _payload = self.open("/c/1/-/%E6%97%A0%E7%BB%84%E7%94%B2")
+            self.assertEqual(status, 302)
+            self.assertEqual(headers["Location"], LIVE)
+            status, headers, _payload = self.open("/c/1//%E6%97%A0%E7%BB%84%E7%94%B2")
+            self.assertEqual(status, 302)
+            self.assertEqual(headers["Location"], LIVE)
+            status, headers, _payload = self.open(
+                "/TVOD/2/ignored/%E6%97%A0%E7%BB%84%E7%94%B2?playseek=20261021004500-20261021013000")
+            self.assertEqual(status, 302)
+            self.assertIn("AuthInfo=A%2Fb+C==", headers["Location"])
+            self.assertIn("fcc=124.75.26.151%3A15970", headers["Location"])
+            self.assertIn("playseek=20261021004500-20261021013000", headers["Location"])
+            self.assertNotIn("${(b)", headers["Location"])
+            status, headers, _payload = self.open("/c/2/-/%E6%97%A0%E7%BB%84%E7%94%B2")
+            self.assertEqual(status, 302)
+            self.assertIn("fcc=9", headers["Location"])
+            self.assertIn("AuthInfo=A%2Fb+C==", headers["Location"])
+            status, _headers, _payload = self.open("/c/1/wrong-group/%E6%97%A0%E7%BB%84%E4%B9%99")
+            self.assertEqual(status, 404)
+            status, _headers, _payload = self.open("/c/9/-/%E6%97%A0%E7%BB%84%E7%94%B2")
+            self.assertEqual(status, 404)
+            status, _headers, _payload = self.open(
+                "/c/3/-/%E6%96%9C%2F%E6%9D%A0?url=http://evil.test/a")
+            self.assertEqual(status, 400)
+            status, headers, _payload = self.open("/c/3/-/%E6%96%9C%2F%E6%9D%A0")
+            self.assertEqual(status, 302)
+            self.assertEqual(headers["Location"], "http://127.0.0.1:5140/rtp/233.18.204.8:5140")
+        finally:
+            self.httpd.bridge = previous
+
 
 class ConfigSourceTests(unittest.TestCase):
     def test_config_uses_playlist_and_reloads_when_it_changes(self):

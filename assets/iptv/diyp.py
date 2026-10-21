@@ -8,6 +8,10 @@ The .m3u suffix is only the interface name; the body stays DIYP text.
   /c/<n>/<group>/<name>         302 to the original live URL
   /PLTV/<n>/<group>/<name>      same live redirect
   /TVOD/<n>/<group>/<name>      302 to catchup with the client playseek
+
+An empty group-title is served as the path segment "-". Lookup uses the
+channel index plus the display name; the group segment is only a label and
+may be empty or "-". It is never used to choose a different upstream URL.
   /<config>.epg?ch=<name>&date=YYYY-MM-DD
 
 Live and catchup query strings are copied as stored. A client playseek only
@@ -39,7 +43,6 @@ USER_AGENT = "yehbp-diyp-bridge"
 PLAYSEEK_VALUE = re.compile(r"^\d{14}-\d{14}$")
 DATE_COMPACT = re.compile(r"^\d{8}$")
 ATTR_RE = re.compile(r'([\w-]+)="([^"]*)"')
-CHANNEL_ROUTE = re.compile(r"^/(c|PLTV|TVOD)/(\d+)/([^/]+)/([^/]+)$")
 CONFIG_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 5142
@@ -382,7 +385,7 @@ class Bridge:
         loaded = load_m3u(self.playlist_source)
         routes = {}
         for channel in loaded["channels"]:
-            routes[(channel["index"], channel["group"], channel["name"])] = channel
+            routes[(channel["index"], channel["name"])] = channel
         with self.lock:
             self.channels = loaded["channels"]
             self.routes = routes
@@ -450,17 +453,19 @@ class Bridge:
         for group in groups:
             rows.append("%s,#genre#" % (group if "," not in group else group.replace(",", "，")))
             for channel in buckets[group]:
+                segment = channel["group"] if channel["group"] else "-"
                 path = "/c/%d/%s/%s" % (
                     channel["index"],
-                    urllib.parse.quote(channel["group"], safe=""),
+                    urllib.parse.quote(segment, safe=""),
                     urllib.parse.quote(channel["name"], safe=""),
                 )
                 rows.append("%s,%s%s" % (channel["name"], origin, path))
         return "\n".join(rows) + "\n"
 
     def lookup(self, index, group, name):
+        del group  # path label only; index and display name select the channel
         with self.lock:
-            return self.routes.get((index, group, name))
+            return self.routes.get((index, name))
 
     def epg_document(self, name, raw_date, host_header=None):
         today = datetime.datetime.now(self.tz).date()
@@ -527,7 +532,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         bridge = self.server.bridge  # type: ignore[attr-defined]
         parsed = urllib.parse.urlsplit(self.path)
-        path = urllib.parse.unquote(parsed.path)
+        try:
+            path = urllib.parse.unquote(parsed.path, errors="strict")
+        except UnicodeDecodeError:
+            self.send_text("not found\n", "text/plain; charset=utf-8", 404)
+            return
         query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
         playlist_path = "/" + bridge.playlist_name if bridge.playlist_name else ""
         epg_path = "/" + bridge.epg_name if bridge.epg_name else ""
@@ -564,17 +573,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 }
             self.send_text(json.dumps(summary), "application/json; charset=utf-8")
             return
-        matched = CHANNEL_ROUTE.fullmatch(path.rstrip("/"))
-        if not matched:
+        raw_segments = parsed.path.split("/")
+        if (
+            len(raw_segments) < 5
+            or raw_segments[0]
+            or raw_segments[1] not in ("c", "PLTV", "TVOD")
+            or not raw_segments[2].isdigit()
+            or any(not item for item in raw_segments[4:])
+        ):
             self.send_text("not found\n", "text/plain; charset=utf-8", 404)
             return
-        kind, raw_index, group, name = matched.groups()
+        kind = raw_segments[1]
         try:
-            index = int(raw_index)
-        except ValueError:
+            index = int(raw_segments[2])
+            name = urllib.parse.unquote("/".join(raw_segments[4:]), errors="strict")
+        except (ValueError, UnicodeDecodeError):
             self.send_text("not found\n", "text/plain; charset=utf-8", 404)
             return
-        channel = bridge.lookup(index, group, name)
+        channel = bridge.lookup(index, raw_segments[3], name)
         if channel is None or kind not in ("c", "PLTV", "TVOD"):
             self.send_text("not found\n", "text/plain; charset=utf-8", 404)
             return
