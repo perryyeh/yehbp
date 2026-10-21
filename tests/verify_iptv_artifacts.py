@@ -11,7 +11,7 @@ import re
 
 p=argparse.ArgumentParser();p.add_argument('directory',type=Path);p.add_argument('--m3u',type=Path);a=p.parse_args()
 a.m3u=a.m3u or a.directory/'playlist.m3u'
-source=a.directory/'catchup.json';catalog=a.directory/'channels.json';facts=a.directory/'resolution.json'
+source=a.directory/'catchup.json';catalog=a.directory/'channel.json';facts=a.directory/'resolution.json'
 config=json.loads((a.directory/'config.json').read_text())
 rows=json.loads(source.read_text());metadata=json.loads(catalog.read_text()) if catalog.exists() else {'categories':[]}
 resolutions=json.loads(facts.read_text())['channels'] if facts.exists() else {}
@@ -31,13 +31,13 @@ def append_query(url, params):
 
 def live_for(row):
     raw=row['ChannelURL']; body=raw.split('://',1)[1]
-    url=config['base_url'].rstrip('/')+config['live_path']+body
+    url=config['rtp2http'].rstrip('/')+config['live']+body
     params=[]
     ip, port = row.get('ChannelFCCIP'), row.get('ChannelFCCPort')
     if ip and port and str(ip).lower()!='null' and str(port).lower()!='null':
         params.append('fcc='+str(ip)+':'+str(port))
-        if config.get('fcc_interface'): params.append('r2h-ifname-fcc='+config['fcc_interface'])
-    if config.get('multicast_interface'): params.append('r2h-ifname='+config['multicast_interface'])
+        if config.get('fcc'): params.append('r2h-ifname-fcc='+config['fcc'])
+    if config.get('multicast'): params.append('r2h-ifname='+config['multicast'])
     return append_query(url, params)
 
 def shown_name(row):

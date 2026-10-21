@@ -143,7 +143,7 @@ class EpgTests(unittest.TestCase):
             paths = self.prepare(root)
             c.atomic_text(c.epg_path(paths), '<tv>kept</tv>\n')
             cfg = config()
-            cfg['epg_url'] = 'http://203.0.113.10/tel/epg.xml'
+            cfg['epg'] = 'http://203.0.113.10/tel/epg.xml'
             c.atomic_json(paths[1], cfg)
             with patch.object(c.socket, 'socket', side_effect=AssertionError('offline')):
                 self.assertEqual(c.main(['config=' + str(paths[0]), 'output=' + str(root / 'share')]), 0)
@@ -161,18 +161,18 @@ class EpgTests(unittest.TestCase):
                     patch.object(c, 'portal_directory', return_value=catalog()):
                 self.assertEqual(c.main(['config=' + str(paths[0]), 'epg=https://203.0.113.10/guide.xml']), 0)
             saved = c.load(paths[1])
-            self.assertEqual(saved['epg_url'], 'https://203.0.113.10/guide.xml')
+            self.assertEqual(saved['epg'], 'https://203.0.113.10/guide.xml')
             self.assertIn('x-tvg-url="https://203.0.113.10/guide.xml"', paths[3].read_text())
             with patch.object(c.socket, 'socket', side_effect=AssertionError('offline')):
                 self.assertEqual(c.main(['config=' + str(paths[0])]), 0)
-            self.assertEqual(c.load(paths[1])['epg_url'], 'https://203.0.113.10/guide.xml')
+            self.assertEqual(c.load(paths[1])['epg'], 'https://203.0.113.10/guide.xml')
             err = io.StringIO()
             with contextlib.redirect_stderr(err), patch.object(c, 'fetch', side_effect=AssertionError('fetch')):
                 self.assertEqual(c.main(['config=' + str(paths[0]), 'epg_url=https://203.0.113.10/old.xml']), 1)
                 self.assertEqual(c.main(['config=' + str(paths[0]), 'epg=file:///tmp/epg.xml']), 1)
             self.assertIn('未知或重复参数键', err.getvalue())
             self.assertIn('节目单地址无效', err.getvalue())
-            self.assertEqual(c.load(paths[1])['epg_url'], 'https://203.0.113.10/guide.xml')
+            self.assertEqual(c.load(paths[1])['epg'], 'https://203.0.113.10/guide.xml')
             with patch.object(c, 'refresh_epg', return_value=False) as refresh, \
                     patch.object(c.socket, 'socket', side_effect=AssertionError('offline')):
                 self.assertEqual(c.main(['epg', 'config=' + str(paths[0]), 'output=' + str(root / 'out.m3u')]), 0)

@@ -43,7 +43,7 @@ class ReplaySeekTests(unittest.TestCase):
                     'mac=00:11:22:33:44:55', 'interface=eth0.85']
             with patch.object(c, 'local_ipv4', return_value='192.0.2.1'), patch.object(c, 'login', return_value=[row()]), patch.object(c, 'portal_directory', return_value=directory([dict(mixNo='1', name='fixture')])), patch.object(c.socket, 'socket', side_effect=AssertionError('network forbidden')):
                 self.assertEqual(c.main(args + ['filter=false']), 0)
-            self.assertEqual(c.load(paths[1])['seek_template'], LOCAL_SEEK)
+            self.assertEqual(c.load(paths[1])['seek'], LOCAL_SEEK)
             self.check_playlist(paths, LOCAL_SEEK)
 
     def test_interactive_empty_seek_uses_local_default(self):
@@ -52,7 +52,7 @@ class ReplaySeekTests(unittest.TestCase):
             answers = ['fixture', 'box', '00:11:22:33:44:55', 'eth0.85'] + [''] * 5
             with patch.object(c.getpass, 'getpass', side_effect=answers), patch.object(c.socket, 'socket', side_effect=AssertionError('network forbidden')):
                 self.assertEqual(c.main(['configure', 'config=' + str(paths[0])]), 0)
-            self.assertEqual(c.load(paths[1])['seek_template'], LOCAL_SEEK)
+            self.assertEqual(c.load(paths[1])['seek'], LOCAL_SEEK)
             saved = c.load(paths[1])
             saved['filter'] = False
             c.atomic_json(paths[1], saved)
@@ -62,7 +62,7 @@ class ReplaySeekTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             paths = c.config_paths(Path(tmp).resolve() / 'tel')
             cfg = config()
-            cfg['base_url'] = 'http://127.0.0.1:5140'
+            cfg['rtp2http'] = 'http://127.0.0.1:5140'
             c.private_dir(paths[0])
             c.atomic_json(paths[1], cfg)
             custom = '{utc:custom}-{utcend:custom}'
@@ -70,19 +70,19 @@ class ReplaySeekTests(unittest.TestCase):
                 self.assertEqual(c.main(['config=' + str(paths[0]), 'seek=' + custom]), 0)
                 self.assertEqual(c.main(['config=' + str(paths[0]), 'live=/rtp/']), 0)
             self.assertEqual(login.call_count, 2)
-            self.assertEqual(c.load(paths[1])['seek_template'], custom)
+            self.assertEqual(c.load(paths[1])['seek'], custom)
             self.check_playlist(paths, custom)
 
     def test_saved_previous_default_is_not_silently_migrated(self):
         with tempfile.TemporaryDirectory() as tmp:
             paths = c.config_paths(Path(tmp).resolve() / 'tel')
             cfg = config()
-            cfg.update(base_url='http://127.0.0.1:5140', seek_template=PREVIOUS_DEFAULT,
-                       multicast_interface='', fcc_interface='')
+            cfg.update(rtp2http='http://127.0.0.1:5140', seek=PREVIOUS_DEFAULT,
+                       multicast='', fcc='')
             c.private_dir(paths[0])
             c.atomic_json(paths[1], cfg)
             before = paths[1].read_bytes()
-            c.save_fields(paths, {'live_path': '/rtp/'})
+            c.save_fields(paths, {'live': '/rtp/'})
             self.assertEqual(paths[1].read_bytes(), before)
             self.check_playlist(paths, PREVIOUS_DEFAULT)
 

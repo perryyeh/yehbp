@@ -187,9 +187,9 @@ class ResolutionTests(unittest.TestCase):
 
     def test_filter_treats_unusable_height_as_zero_without_rewriting_facts(self):
         cfg = dict(provider='shanghai-telecom', userid='fixture', sn='fixture-box', mac='00:11:22:33:44:55',
-                   interface='eth0.85', auth_origin=c.DEFAULT_ORIGIN, allowed_origins=[],
-                   base_url='http://127.0.0.1:5140/prefix', live_path='/rtp/', replay_path='/rtsp/',
-                   seek_template=c.SEEK)
+                   interface='eth0.85', authurl=c.DEFAULT_ORIGIN, allowed_origins=[],
+                   rtp2http='http://127.0.0.1:5140/prefix', live='/rtp/', replay='/rtsp/',
+                   seek=c.SEEK)
         rows = [row(ChannelID='hd', ChannelName='高清'), row(ChannelID='sd', ChannelName='标清'),
                 row(ChannelID='shop', ChannelName='聚鲨购物'), row(ChannelID='miss', ChannelName='未知'),
                 row(ChannelID='zero', ChannelName='零高', ChannelURL='igmp://239.1.1.9:9'),

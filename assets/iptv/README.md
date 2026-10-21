@@ -55,7 +55,11 @@ python3 iptv.py resolution config=tel
 | `output` | 可选 | 不导出 | 额外一份列表。可用于离线生成、`run`、`epg`；不能用于 `resolution` |
 | `filter` | 可选 | 见下文 | 只能写 `true` 或 `false`，只改开关 |
 
+`config.json` 的可设字段与这些参数同名。多个 `authurl` 时，第一个写入 `authurl`，其余写入 `allowed_origins`；`provider` 不是命令参数。
+
 只写 `config`（可再加 `output` 或 `filter`）时不联网。`run` 刷新频道和回看。`epg` 只更新节目单，不刷新回看。`resolution` 重测当前全部直播。
+
+分辨率优先用本机已有的 `ffprobe`，没有再用 `ffmpeg`。两个都没有时，这次测到的源记为不可用，不安装工具。`run` 只测新增频道、直播地址变了、或还没有记录的源；已有记录直接用，已经缓存的失败也要等 `resolution` 才重测。只写 `config` 的离线生成只读 `resolution.json`，不测。`resolution` 重测当前全部直播，不生成列表。只有 `ffprobe` 会看同一路流里的多路视频，取第一路宽高都大于 0 的，前面的 `0x0` 忽略；没有 `ffprobe` 时，`ffmpeg` 只解第一路视频。缓存只存实测结果；过滤另看 `config.json` 的 `filter`。没有可用高度时，筛选按 0 和 `filter.min_height` 比，默认低于 720 排除。关过滤仍保留全部频道。
 
 ## 生成文件
 
@@ -66,8 +70,8 @@ python3 iptv.py resolution config=tel
 | `config.json` | 配置 |
 | `session.json` | 会话 |
 | `catchup.json` | 原始直播和回看 |
-| `channels.json` | 原始频道目录 |
-| `resolution.json` | 检测缓存 |
+| `channel.json` | 原始频道目录 |
+| `resolution.json` | 频道分辨率检测结果 |
 | `playlist.m3u` | 播放列表 |
 | `epg.xml` | 节目单，执行 `epg` 时生成 |
 

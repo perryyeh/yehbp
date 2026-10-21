@@ -13,7 +13,7 @@ from iptv_reference_loader import iptv as auth
 
 
 def config():
-    return dict(provider='shanghai-telecom', userid='fixture', sn='fixture-box', mac='00:11:22:33:44:55', interface='eth0.85', auth_origin=auth.DEFAULT_ORIGIN, allowed_origins=[], base_url='http://127.0.0.1:5140/prefix', live_path='/rtp/', replay_path='/rtsp/', seek_template=c.SEEK, filter=False)
+    return dict(provider='shanghai-telecom', userid='fixture', sn='fixture-box', mac='00:11:22:33:44:55', interface='eth0.85', authurl=auth.DEFAULT_ORIGIN, allowed_origins=[], rtp2http='http://127.0.0.1:5140/prefix', live='/rtp/', replay='/rtsp/', seek=c.SEEK, filter=False)
 
 
 def row(**kw):
@@ -56,23 +56,23 @@ class CliTests(unittest.TestCase):
         url=c.replay_url(row()['TimeShiftURL'],config())
         self.assertIn('/rtsp/example.test:554/path%2Fsub?AuthInfo=A%2fb+C==&x=1&x=2&playseek='+c.SEEK,url)
         self.assertNotIn('r2h-ifname',url)
-        cfg=config(); cfg['multicast_interface']='eth0.51'; cfg['fcc_interface']='eth0.86'
+        cfg=config(); cfg['multicast']='eth0.51'; cfg['fcc']='eth0.86'
         live=c.live_url(row(ChannelFCCIP='10.0.0.1',ChannelFCCPort='8027'),cfg)
         self.assertIn('?fcc=10.0.0.1:8027&r2h-ifname-fcc=eth0.86&r2h-ifname=eth0.51',live)
         self.assertNotIn('eth0.85',live)
         replay=c.replay_url(row()['TimeShiftURL'],cfg)
         self.assertTrue(replay.endswith('playseek='+c.SEEK))
         self.assertNotIn('r2h-ifname',replay)
-        only_mcast=config(); only_mcast['multicast_interface']='eth0.51'
+        only_mcast=config(); only_mcast['multicast']='eth0.51'
         mcast_url=c.live_url(row(ChannelFCCIP='10.0.0.1',ChannelFCCPort='8027'),only_mcast)
         self.assertIn('fcc=10.0.0.1:8027',mcast_url)
         self.assertIn('r2h-ifname=eth0.51',mcast_url)
         self.assertNotIn('r2h-ifname-fcc',mcast_url)
-        only_fcc=config(); only_fcc['fcc_interface']='eth0.86'
+        only_fcc=config(); only_fcc['fcc']='eth0.86'
         fcc_url=c.live_url(row(ChannelFCCIP='10.0.0.1',ChannelFCCPort='8027'),only_fcc)
         self.assertIn('r2h-ifname-fcc=eth0.86',fcc_url)
         self.assertNotIn('r2h-ifname=',fcc_url)
-        blank=config(); blank['multicast_interface']=''; blank['fcc_interface']=''
+        blank=config(); blank['multicast']=''; blank['fcc']=''
         self.assertNotIn('r2h-ifname',c.live_url(row(ChannelFCCIP='10.0.0.1',ChannelFCCPort='8027'),blank))
         no_fcc=c.live_url(row(),cfg)
         self.assertNotIn('fcc=',no_fcc)
@@ -84,7 +84,7 @@ class CliTests(unittest.TestCase):
         replay=c.replay_url(replay_source,cfg)
         self.assertIn('AuthInfo=A%2fb+C==&r2h-ifname=eth9&playseek=',replay)
         self.assertEqual(replay.count('r2h-ifname'),1)
-        cfg=config(); cfg.update(base_url='http://example.test:333',live_path='/udp/',replay_path='/proxy/rtsp/',seek_template='${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}')
+        cfg=config(); cfg.update(rtp2http='http://example.test:333',live='/udp/',replay='/proxy/rtsp/',seek='${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}')
         self.assertIn('/proxy/rtsp/host:8554/a?token=%26%3D+&playseek=${(b)',c.replay_url('rtsp://host:8554/a?token=%26%3D+',cfg))
         self.assertIn('/udp/239.',c.live_url(row(),cfg))
         for invalid in ('http://host/a','rtsp://u:p@host/a','rtsp://host/a#frag','rtsp://host/a?playseek=old'):
@@ -150,7 +150,7 @@ class CliTests(unittest.TestCase):
                     self.server.authenticator_present=b'authenticator=' in body
                     self.send(raw)
         server=http.server.HTTPServer(('127.0.0.1',0),Handler); thread=threading.Thread(target=server.serve_forever); thread.start()
-        cfg=config(); cfg['auth_origin']='http://127.0.0.1:'+str(server.server_port)
+        cfg=config(); cfg['authurl']='http://127.0.0.1:'+str(server.server_port)
         def fixture_socket(interface,timeout):
             s=auth.socket.socket(auth.socket.AF_INET,auth.socket.SOCK_STREAM); s.settimeout(timeout); return s
         try:

@@ -71,7 +71,7 @@ class UnifiedConfigEntryTests(unittest.TestCase):
                 self.assertEqual(c.main(['configure', 'config=' + str(paths[0])]), 0)
             cfg = c.load(paths[1])
             keys = ['userid', 'sn', 'mac', 'interface',
-                    'auth_origin', 'base_url', 'live_path', 'replay_path', 'seek_template']
+                    'authurl', 'rtp2http', 'live', 'replay', 'seek']
             self.assertEqual([cfg[k] for k in keys], lines[:4] + [c.DEFAULT_ORIGIN] + lines[4:-1])
             self.assertEqual(cfg['allowed_origins'], [])
             self.assertFalse(paths[2].exists())

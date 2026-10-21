@@ -88,7 +88,7 @@ class DirectoryDefaultsTests(unittest.TestCase):
                 self.assertEqual(c.main(['configure', 'config=' + str(paths[0])]), 0)
             cfg = c.load(paths[1])
             keys = ['userid', 'sn', 'mac', 'interface',
-                    'auth_origin', 'base_url', 'live_path', 'replay_path', 'seek_template']
+                    'authurl', 'rtp2http', 'live', 'replay', 'seek']
             self.assertEqual([cfg[k] for k in keys], lines[:-1][:4] + [c.DEFAULT_ORIGIN] + lines[4:-1])
             self.assertEqual(cfg['allowed_origins'], [])
             self.assertEqual(cfg['filter'], c.default_filter(True))
@@ -151,8 +151,8 @@ class DirectoryDefaultsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             paths = self.prepare(Path(tmp).resolve())
             cfg = config()
-            cfg['multicast_interface'] = 'eth0.51'
-            cfg['fcc_interface'] = 'eth0.86'
+            cfg['multicast'] = 'eth0.51'
+            cfg['fcc'] = 'eth0.86'
             c.atomic_json(paths[1], cfg)
             c.atomic_json(paths[2], [row(UserChannelID='1', ChannelFCCIP='10.0.0.1', ChannelFCCPort='8027')])
             before = paths[1].read_bytes()
@@ -174,7 +174,9 @@ class DirectoryDefaultsTests(unittest.TestCase):
                 self.assertEqual(c.main(['config=' + str(paths[0]), 'rtp2http=http://127.0.0.1:9', 'base_url=http://127.0.0.1:8']), 1)
                 self.assertEqual(c.main(['config=' + str(paths[0]), 'allowed_origins=http://example.test']), 1)
                 for old in ('userinfo=x', 'SN=x', 'MAC=00:11:22:33:44:55', 'UserID=x', 'Sn=x', 'Mac=00:11:22:33:44:55',
-                            'multicast_interface=eth0', 'fcc_interface=eth0', 'auth=http://203.0.113.10:7001', 'epg_url=http://203.0.113.10/epg.xml'):
+                            'multicast_interface=eth0', 'fcc_interface=eth0', 'auth=http://203.0.113.10:7001',
+                            'auth_origin=http://203.0.113.10:7001', 'epg_url=http://203.0.113.10/epg.xml',
+                            'base_url=http://127.0.0.1:5140', 'live_path=/rtp/', 'replay_path=/rtsp/', 'seek_template=x'):
                     self.assertEqual(c.main(['config=' + str(paths[0]), old]), 1)
             message = err.getvalue()
             self.assertIn('配置字段缺失', message)
@@ -183,8 +185,8 @@ class DirectoryDefaultsTests(unittest.TestCase):
             with patch.object(c, 'local_ipv4', return_value='192.0.2.1'), patch.object(c, 'login', return_value=[row(ChannelFCCIP='10.0.0.1', ChannelFCCPort='8027')]), patch.object(c, 'portal_directory', return_value=directory([dict(mixNo='1', name='fixture')])):
                 self.assertEqual(c.main(['config=' + str(paths[0]), 'multicast=']), 0)
             saved = c.load(paths[1])
-            self.assertEqual(saved['multicast_interface'], '')
-            self.assertEqual(saved['fcc_interface'], 'eth0.86')
+            self.assertEqual(saved['multicast'], '')
+            self.assertEqual(saved['fcc'], 'eth0.86')
             cleared = paths[3].read_text()
             self.assertIn('r2h-ifname-fcc=eth0.86', cleared)
             self.assertNotIn('r2h-ifname=eth0.51', cleared)
@@ -192,8 +194,8 @@ class DirectoryDefaultsTests(unittest.TestCase):
             with patch.object(c, 'local_ipv4', return_value='192.0.2.1'), patch.object(c, 'login', return_value=[row(ChannelFCCIP='10.0.0.1', ChannelFCCPort='8027')]), patch.object(c, 'portal_directory', return_value=directory([dict(mixNo='1', name='fixture')])):
                 self.assertEqual(c.main(['config=' + str(paths[0]), 'multicast=', 'fcc=']), 0)
             both = c.load(paths[1])
-            self.assertEqual(both['multicast_interface'], '')
-            self.assertEqual(both['fcc_interface'], '')
+            self.assertEqual(both['multicast'], '')
+            self.assertEqual(both['fcc'], '')
             playlist = paths[3].read_text()
             self.assertIn('fcc=10.0.0.1:8027', playlist)
             self.assertNotIn('r2h-ifname', playlist)
@@ -201,26 +203,26 @@ class DirectoryDefaultsTests(unittest.TestCase):
                 self.assertEqual(c.main(['config=' + str(paths[0]), 'rtp2http=http://192.0.2.10:5140']), 0)
             bound.assert_called_with('eth0.85')
             self.assertEqual(login.call_args.args[1], '192.0.2.1')
-            self.assertEqual(c.load(paths[1])['base_url'], 'http://192.0.2.10:5140')
+            self.assertEqual(c.load(paths[1])['rtp2http'], 'http://192.0.2.10:5140')
             self.assertIn('http://192.0.2.10:5140/rtp/', paths[3].read_text())
             seen = []
             def login(cfg, address, context=None):
-                seen.append(cfg['auth_origin'])
+                seen.append(cfg['authurl'])
                 return [row()]
             with patch.object(c, 'local_ipv4', return_value='192.0.2.1'), patch.object(c, 'login', side_effect=login), patch.object(c, 'portal_directory', return_value=directory([dict(mixNo='1', name='fixture')])):
                 self.assertEqual(c.main(['config=' + str(paths[0]), 'authurl=http://203.0.113.10:7001 http://203.0.113.11:7001', 'live=/udp/', 'replay=/proxy/rtsp/', 'seek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}']), 0)
             saved = c.load(paths[1])
             self.assertEqual(seen, ['http://203.0.113.10:7001'])
-            self.assertEqual(saved['auth_origin'], 'http://203.0.113.10:7001')
+            self.assertEqual(saved['authurl'], 'http://203.0.113.10:7001')
             self.assertEqual(saved['allowed_origins'], ['http://203.0.113.11:7001'])
-            self.assertEqual(saved['live_path'], '/udp/')
-            self.assertEqual(saved['replay_path'], '/proxy/rtsp/')
-            self.assertTrue(saved['seek_template'].startswith('${(b)'))
+            self.assertEqual(saved['live'], '/udp/')
+            self.assertEqual(saved['replay'], '/proxy/rtsp/')
+            self.assertTrue(saved['seek'].startswith('${(b)'))
             self.assertTrue(c.trusted('http://203.0.113.11:7001/next', saved))
             with self.assertRaises(c.SafeError):
                 c.trusted('http://203.0.113.12:7001/next', saved)
             self.assertTrue(c.trusted('http://124.75.29.176:7001/next', saved))
-            entry = saved['auth_origin'].rstrip('/') + '/iptv3a/4kLogAuth.do'
+            entry = saved['authurl'].rstrip('/') + '/iptv3a/4kLogAuth.do'
             self.assertTrue(entry.startswith('http://203.0.113.10:7001/'))
             self.assertNotIn('203.0.113.11', entry)
             rendered = paths[3].read_text()
@@ -232,8 +234,72 @@ class DirectoryDefaultsTests(unittest.TestCase):
                 self.assertEqual(c.main(['config=' + str(paths[0]), 'rtp2http=http://192.0.2.10:5140']), 0)
             kept = c.load(paths[1])
             self.assertEqual(kept['allowed_origins'], ['http://203.0.113.11:7001'])
-            self.assertEqual(kept['auth_origin'], 'http://203.0.113.10:7001')
-            self.assertEqual(kept['live_path'], '/udp/')
+            self.assertEqual(kept['authurl'], 'http://203.0.113.10:7001')
+            self.assertEqual(kept['live'], '/udp/')
+
+    def legacy_config(self):
+        fresh = config()
+        fresh.update(multicast='eth0.51', fcc='eth0.86', epg='http://203.0.113.10/guide.xml',
+                     filter=dict(enabled=True, min_height=720, exclude_names=['购物'], exclude_ids=['YOUR_CHANNEL_ID']),
+                     channel_names={'YOUR_CHANNEL_ID': '显示名'},
+                     allowed_origins=['http://203.0.113.11:7001'])
+        old = dict(fresh)
+        for new, previous in {
+                'multicast': 'multicast_interface', 'fcc': 'fcc_interface', 'authurl': 'auth_origin',
+                'rtp2http': 'base_url', 'live': 'live_path', 'replay': 'replay_path',
+                'seek': 'seek_template', 'epg': 'epg_url'}.items():
+            old[previous] = old.pop(new)
+        return fresh, old
+
+    def test_save_migrates_stored_keys_once_without_login(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = c.config_paths(Path(tmp).resolve() / 'tel')
+            c.private_dir(paths[0])
+            fresh, old = self.legacy_config()
+            c.atomic_json(paths[1], old)
+            with patch.object(c, 'login', side_effect=AssertionError('login')):
+                c.save_filter(paths, True)
+            saved = c.load(paths[1])
+            for key in ('multicast', 'fcc', 'authurl', 'rtp2http', 'live', 'replay', 'seek', 'epg'):
+                self.assertEqual(saved[key], fresh[key])
+            for previous in ('multicast_interface', 'fcc_interface', 'auth_origin', 'base_url', 'live_path', 'replay_path', 'seek_template', 'epg_url'):
+                self.assertNotIn(previous, saved)
+            self.assertEqual(saved['filter'], fresh['filter'])
+            self.assertEqual(saved['channel_names'], fresh['channel_names'])
+            self.assertEqual(saved['allowed_origins'], fresh['allowed_origins'])
+            self.assertEqual(saved['userid'], fresh['userid'])
+            with patch.object(c, 'login', side_effect=AssertionError('login')):
+                c.save_filter(paths, True)
+            self.assertEqual(c.load(paths[1]), saved)
+            conflicted = dict(saved)
+            conflicted['base_url'] = 'http://127.0.0.1:9'
+            c.atomic_json(paths[1], conflicted)
+            before = paths[1].read_bytes()
+            with self.assertRaises(c.SafeError):
+                c.save_filter(paths, True)
+            self.assertEqual(paths[1].read_bytes(), before)
+
+    def test_fetch_writes_channel_json_after_migrating_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = c.config_paths(Path(tmp).resolve() / 'tel')
+            c.private_dir(paths[0])
+            fresh, old = self.legacy_config()
+            c.atomic_json(paths[1], old)
+            catalog = directory([dict(mixNo='1', name='fixture')])
+            with patch.object(c, 'local_ipv4', return_value='192.0.2.1'), \
+                    patch.object(c, 'login', return_value=[row()]), \
+                    patch.object(c, 'portal_directory', return_value=catalog), \
+                    patch.object(c, 'refresh_after_fetch', return_value=[]):
+                c.fetch(paths)
+            self.assertEqual(c.metadata_path(paths).name, 'channel.json')
+            self.assertTrue(c.metadata_path(paths).is_file())
+            self.assertFalse((paths[0] / 'channels.json').exists())
+            self.assertEqual(c.read_json(c.metadata_path(paths)), catalog)
+            saved = c.load(paths[1])
+            self.assertEqual(saved['authurl'], fresh['authurl'])
+            self.assertEqual(saved['rtp2http'], fresh['rtp2http'])
+            self.assertNotIn('auth_origin', saved)
+            self.assertNotIn('base_url', saved)
 
 
 if __name__ == '__main__':

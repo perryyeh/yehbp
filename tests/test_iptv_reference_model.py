@@ -33,7 +33,7 @@ class DirectoryModelTests(unittest.TestCase):
             self.assertIn(' 高清 HD 4K ',paths[3].read_text())
             self.assertEqual(before,{p:p.read_bytes() for p in before})
             self.assertEqual((root/'export').stat().st_mode&0o777,0o700)
-            self.assertEqual({p.name for p in paths[0].iterdir()},{'config.json','catchup.json','channels.json','playlist.m3u','.iptv.lock'})
+            self.assertEqual({p.name for p in paths[0].iterdir()},{'config.json','catchup.json','channel.json','playlist.m3u','.iptv.lock'})
 
     def test_key_value_first_fetch_and_script_relative_default(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -61,7 +61,7 @@ class DirectoryModelTests(unittest.TestCase):
             with c.lock(paths[0]), contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(c.main(['config='+str(paths[0])]),1)
             self.assertEqual(before,{p:p.read_bytes() for p in before})
-            for name in ('config.json','catchup.json','channels.json','resolution.json','playlist.m3u','.iptv.lock'):
+            for name in ('config.json','catchup.json','channel.json','resolution.json','playlist.m3u','.iptv.lock'):
                 with patch.object(c,'__file__',str(paths[0]/name)), self.assertRaises(c.SafeError):
                     c.config_paths(paths[0])
 

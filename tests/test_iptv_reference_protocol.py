@@ -24,7 +24,7 @@ class AuthTests(unittest.TestCase):
 
 
     def test_three_steps_dynamic_forms_entities(self):
-        config = dict(userid='fixture', sn='box', mac='00:11:22:33:44:55', interface='eth0', auth_origin=a.DEFAULT_ORIGIN, allowed_origins=[])
+        config = dict(userid='fixture', sn='box', mac='00:11:22:33:44:55', interface='eth0', authurl=a.DEFAULT_ORIGIN, allowed_origins=[])
         replies = ["<form action='http://124.75.29.176:7001/next?a=1&amp;b=2'><input name='x' value='a&amp;b'></form>", "<script>var encrytoken='fixture-token';</script><form id='initform' action='/finish'><input name='q' value='1'></form>", "var usertoken='ok'; var EPGDomain='http://fixture/'; var channelArray=['ChannelID=\"1\" TimeShiftURL=\"null\"'];"]
         class HTTP:
             def __init__(self): self.calls=[]
@@ -59,7 +59,7 @@ class AuthTests(unittest.TestCase):
 
 
     def test_no_proxy_and_bound_socket(self):
-        config=dict(auth_origin=a.DEFAULT_ORIGIN,allowed_origins=[],interface='eth0')
+        config=dict(authurl=a.DEFAULT_ORIGIN,allowed_origins=[],interface='eth0')
         with patch.dict(os.environ, {'http_proxy':'http://evil.example:1'}):
             h=a.HTTP(config)
         self.assertEqual(h.opener.handlers[0].__class__.__name__, 'UnknownHandler')
@@ -85,7 +85,7 @@ class AuthTests(unittest.TestCase):
         server=http.server.HTTPServer(('127.0.0.1',0),Handler)
         thread=threading.Thread(target=server.serve_forever); thread.start()
         endpoint='http://127.0.0.1:'+str(server.server_port)
-        config=dict(interface='eth0',auth_origin=endpoint,allowed_origins=[])
+        config=dict(interface='eth0',authurl=endpoint,allowed_origins=[])
         def socket_for_fixture(interface,timeout):
             sock=a.socket.socket(a.socket.AF_INET,a.socket.SOCK_STREAM)
             sock.settimeout(timeout); return sock
@@ -142,7 +142,7 @@ class AuthTests(unittest.TestCase):
             sock=a.socket.socket(a.socket.AF_INET,a.socket.SOCK_STREAM); sock.settimeout(timeout); return sock
         try:
             with patch.object(a, 'bound_socket', side_effect=fixture_socket) as bound:
-                h=a.HTTP(dict(interface='eth0',auth_origin=endpoint,allowed_origins=[]))
+                h=a.HTTP(dict(interface='eth0',authurl=endpoint,allowed_origins=[]))
                 with self.assertRaises(a.SafeError): h.request('GET', endpoint)
                 self.assertEqual(bound.call_count, 1)
         finally:

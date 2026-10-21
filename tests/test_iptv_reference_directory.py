@@ -116,7 +116,7 @@ class DirectoryTests(unittest.TestCase):
             cfg = config()
             cfg['filter'] = dict(enabled=True, min_height=720, exclude_names=['购物'])
             cfg['channel_names'] = {'6000141': '江苏卫视4K'}
-            cfg['epg_url'] = 'http://example.test/epg.xml'
+            cfg['epg'] = 'http://example.test/epg.xml'
             c.atomic_json(paths[1], cfg)
             c.atomic_json(paths[2], [row(ChannelID='6000141', UserChannelID='9')])
             c.atomic_json(c.metadata_path(paths), directory([dict(mixNo='9', name='门户江苏')]))
@@ -127,7 +127,7 @@ class DirectoryTests(unittest.TestCase):
             self.assertEqual(saved['channel_names'], {'6000141': '江苏卫视4K'})
             self.assertEqual(saved['filter']['exclude_names'], ['购物'])
             self.assertIs(saved['filter']['enabled'], False)
-            self.assertEqual(saved['epg_url'], 'http://example.test/epg.xml')
+            self.assertEqual(saved['epg'], 'http://example.test/epg.xml')
             playlist = paths[3].read_text()
             self.assertIn('tvg-id="6000141"', playlist)
             self.assertIn('tvg-name="江苏卫视4K"', playlist)

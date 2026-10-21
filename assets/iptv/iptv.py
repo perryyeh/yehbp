@@ -300,7 +300,7 @@ def origin(url):
 
 
 def trusted(url, config):
-    allowed = [config['auth_origin'], *KNOWN_ORIGINS, *config.get('allowed_origins', [])]
+    allowed = [config['authurl'], *KNOWN_ORIGINS, *config.get('allowed_origins', [])]
     if origin(url) not in {origin(x) for x in allowed}:
         raise SafeError('认证跳转目标未获许可；请核实并配置允许的 origin')
     return url
@@ -311,7 +311,7 @@ def apply_auth(c, value):
     origins = value.split()
     if not origins:
         raise SafeError('鉴权地址不能为空')
-    c['auth_origin'] = origins[0]
+    c['authurl'] = origins[0]
     c['allowed_origins'] = origins[1:]
     return c
 
@@ -418,7 +418,7 @@ class HTTP:
 def login(config, ip, http=None, context=None):
     http = http or HTTP(config)
     params = dict(UserID=config['userid'], Action='Login', SN=config['sn'], Type='iptv4k', Mode='MENU.SMG-4K', FCCSupport='1')
-    url = config['auth_origin'].rstrip('/') + '/iptv3a/4kLogAuth.do?' + urlparse.urlencode(params)
+    url = config['authurl'].rstrip('/') + '/iptv3a/4kLogAuth.do?' + urlparse.urlencode(params)
     text, base = http.request('GET', trusted(url, config))
     attrs, fields = form(text)
     dynamic_ip = fields.get('DynamicAuthIP', '')
@@ -734,7 +734,7 @@ def render_xmltv(rows, directory, programmes):
 
 def config_paths(directory):
     d = Path(os.path.abspath(directory))
-    names = ('config.json', 'catchup.json', 'channels.json', 'resolution.json', 'playlist.m3u', 'epg.xml', 'session.json', '.iptv.lock')
+    names = ('config.json', 'catchup.json', 'channel.json', 'resolution.json', 'playlist.m3u', 'epg.xml', 'session.json', '.iptv.lock')
     if Path(__file__).resolve() in [(d / name).resolve() for name in names]:
         raise SafeError('实例固定文件不能覆盖运行脚本')
     return d, d / 'config.json', d / 'catchup.json', d / 'playlist.m3u'
@@ -753,28 +753,28 @@ def endpoint(value, schemes):
 def validate(c):
     if c.get('provider') != 'shanghai-telecom':
         raise auth.SafeError('目前仅支持上海电信')
-    for k in ('userid', 'sn', 'mac', 'interface', 'base_url', 'auth_origin'):
+    for k in ('userid', 'sn', 'mac', 'interface', 'rtp2http', 'authurl'):
         if not text(c.get(k)):
             raise auth.SafeError('配置字段缺失')
     if not re.fullmatch(r'(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}', c['mac']):
         raise auth.SafeError('盒子 MAC 格式无效')
     # Empty playback overrides mean "do not add"; they never fall back to the auth interface.
-    for k in ('interface', 'multicast_interface', 'fcc_interface'):
+    for k in ('interface', 'multicast', 'fcc'):
         if c.get(k) and not re.fullmatch(r'[A-Za-z0-9_.:-]{1,15}', c[k]):
             raise auth.SafeError('接口名称无效')
-    for value in [c['auth_origin'], *c.get('allowed_origins', [])]:
+    for value in [c['authurl'], *c.get('allowed_origins', [])]:
         auth.origin(value)
         p = urlsplit(value)
         if p.path not in ('', '/') or p.query: raise auth.SafeError('鉴权入口必须是 origin')
-    p = endpoint(c['base_url'], ('http', 'https'))
+    p = endpoint(c['rtp2http'], ('http', 'https'))
     if p.query: raise auth.SafeError('服务基址不接受查询参数')
-    for k in ('live_path', 'replay_path'):
+    for k in ('live', 'replay'):
         if not re.fullmatch(r'/[A-Za-z0-9_/-]+/', c[k]):
             raise auth.SafeError('服务接口路径无效')
-    template = text(c['seek_template'])
+    template = text(c['seek'])
     if not template or '&' in template or '#' in template or '?' in template:
         raise auth.SafeError('回放时间模板无效')
-    guide = c.get('epg_url') or ''
+    guide = c.get('epg') or ''
     if guide:
         text(guide)
         parsed = urlsplit(guide)
@@ -786,13 +786,49 @@ def validate(c):
         channel_name_map(c)
 
 
-def load(path):
+def read_stored(path):
     info = auth.regular(path)
     if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o600:
         raise auth.SafeError('身份配置必须属当前用户且为0600')
     auth.safe_parents(path.parent)
-    c = auth.read_json(path)
+    return auth.read_json(path)
+
+
+STORED_KEY_RENAMES = (
+    ('multicast_interface', 'multicast'),
+    ('fcc_interface', 'fcc'),
+    ('auth_origin', 'authurl'),
+    ('base_url', 'rtp2http'),
+    ('live_path', 'live'),
+    ('replay_path', 'replay'),
+    ('seek_template', 'seek'),
+    ('epg_url', 'epg'),
+)
+
+
+def migrate_stored_keys(c):
+    """Rename saved config keys to the CLI names. Drop old keys after one save."""
+    if not isinstance(c, dict):
+        raise auth.SafeError('配置无效')
+    for old, new in STORED_KEY_RENAMES:
+        if old not in c:
+            continue
+        if new in c and c[new] != c[old]:
+            raise auth.SafeError('配置同时存在新旧键且值不同')
+        if new not in c:
+            c[new] = c.pop(old)
+        else:
+            c.pop(old)
+    return c
+
+
+def load(path):
+    """Read saved config. Persist a one-time key rename only when names actually change."""
+    raw = read_stored(path)
+    c = migrate_stored_keys(dict(raw))
     validate(c)
+    if any(old in raw for old, _ in STORED_KEY_RENAMES):
+        auth.atomic_json(path, c)
     return c
 
 
@@ -810,16 +846,16 @@ def configure(paths):
             c[key] = ask(label, c.get(key, ''))
         fields = [
             ('interface', '鉴权接口', ''),
-            ('base_url', 'rtp2httpd访问地址', 'http://127.0.0.1:5140'),
-            ('live_path', '直播路径', '/rtp/'),
-            ('replay_path', '回放路径', '/rtsp/'),
-            ('seek_template', '回放时间模板', SEEK),
+            ('rtp2http', 'rtp2httpd访问地址', 'http://127.0.0.1:5140'),
+            ('live', '直播路径', '/rtp/'),
+            ('replay', '回放路径', '/rtsp/'),
+            ('seek', '回放时间模板', SEEK),
         ]
         for key, label, default in fields:
             c[key] = ask(label, c.get(key, default))
-        current_auth = ' '.join([c.get('auth_origin') or DEFAULT_ORIGIN, *c.get('allowed_origins', [])])
+        current_auth = ' '.join([c.get('authurl') or DEFAULT_ORIGIN, *c.get('allowed_origins', [])])
         entered = ask('鉴权地址（空格分隔，第一个为入口，回车保留）', current_auth) or current_auth
-        if entered != current_auth or not c.get('auth_origin'):
+        if entered != current_auth or not c.get('authurl'):
             apply_auth(c, entered)
         c.pop('directory_metadata', None)  # Retire the legacy key only on explicit save.
         c['filter'] = normalize_filter(c.get('filter'))
@@ -839,19 +875,19 @@ def replay_url(value, c):
     p = endpoint(value, ('rtsp',))
     host = '[' + p.hostname + ']' if ':' in p.hostname else p.hostname
     # Keep raw path and query verbatim, including repeated keys, escapes and '+'.
-    url = c['base_url'].rstrip('/') + c['replay_path'] + host + ':' + str(p.port or 554) + (p.path or '/')
+    url = c['rtp2http'].rstrip('/') + c['replay'] + host + ':' + str(p.port or 554) + (p.path or '/')
     if '?' in value: url += '?' + value.split('?', 1)[1]
     if any(k.lower() == 'playseek' for k in [x.split('=',1)[0] for x in p.query.split('&')]):
         raise auth.SafeError('原始回放已有playseek，拒绝覆盖认证查询')
     # Replay does not inherit the auth interface. Keep any override already in the source query.
-    return append_query(url, ['playseek=' + c['seek_template']])
+    return append_query(url, ['playseek=' + c['seek']])
 
 
 def live_url(row, c):
     p = endpoint(row.get('ChannelURL'), ('igmp', 'rtp', 'udp'))
     if not ipaddress.ip_address(p.hostname).is_multicast or not p.port:
         raise auth.SafeError('直播必须为组播地址及端口')
-    url = c['base_url'].rstrip('/') + c['live_path'] + p.netloc + p.path
+    url = c['rtp2http'].rstrip('/') + c['live'] + p.netloc + p.path
     if '?' in row['ChannelURL']: url += '?' + row['ChannelURL'].split('?', 1)[1]
     params = []
     ip, port = row.get('ChannelFCCIP'), row.get('ChannelFCCPort')
@@ -859,9 +895,9 @@ def live_url(row, c):
         ipaddress.ip_address(ip)
         if not str(port).isdigit() or not 0 < int(port) < 65536: raise auth.SafeError('FCC端口无效')
         params.append('fcc=' + str(ip) + ':' + str(port))
-        if c.get('fcc_interface'): params.append('r2h-ifname-fcc=' + quote(c['fcc_interface'], safe=''))
-    if c.get('multicast_interface'):
-        params.append('r2h-ifname=' + quote(c['multicast_interface'], safe=''))
+        if c.get('fcc'): params.append('r2h-ifname-fcc=' + quote(c['fcc'], safe=''))
+    if c.get('multicast'):
+        params.append('r2h-ifname=' + quote(c['multicast'], safe=''))
     return append_query(url, params)
 
 
@@ -874,7 +910,7 @@ def session_path(paths):
 
 
 def playlist_header(paths, c, explicit=None):
-    target = explicit if explicit is not None else (c.get('epg_url') or '')
+    target = explicit if explicit is not None else (c.get('epg') or '')
     if not target and auth.regular(epg_path(paths), missing=True):
         target = 'epg.xml'
     if not target:
@@ -1235,7 +1271,7 @@ def atomic_text(path, value):
 
 
 def metadata_path(paths):
-    return paths[0] / 'channels.json'
+    return paths[0] / 'channel.json'
 
 
 def ensure_filter_default(config_path):
@@ -1397,7 +1433,7 @@ def protected_export(export, paths):
     session = session_path(paths)
     protected = [config, source, metadata, guide, session, resolution_path(paths), d / '.iptv.lock', Path(__file__), output]
     if (export.resolve() in [p.resolve() for p in protected] or
-            export.name in ('config.json', 'catchup.json', 'channels.json', 'resolution.json', 'session.json', '.iptv.lock') or
+            export.name in ('config.json', 'catchup.json', 'channel.json', 'resolution.json', 'session.json', '.iptv.lock') or
             (export.name == 'epg.xml' and export.parent == d) or
             (export.parent != d and (export.parent / 'config.json').exists())):
         raise SafeError('导出不能覆盖配置、源数据、其他实例或脚本')
@@ -1472,12 +1508,12 @@ def manual_resolution(paths, now=None, runner=None):
 COMMANDS = ('configure', 'fetch', 'convert', 'run', 'epg', 'resolution')
 CLI_FIELDS = {
     'userid': 'userid', 'sn': 'sn', 'mac': 'mac', 'interface': 'interface',
-    'multicast': 'multicast_interface', 'fcc': 'fcc_interface',
-    'authurl': 'auth_origin', 'rtp2http': 'base_url',
-    'live': 'live_path', 'replay': 'replay_path', 'seek': 'seek_template', 'epg': 'epg_url',
+    'multicast': 'multicast', 'fcc': 'fcc',
+    'authurl': 'authurl', 'rtp2http': 'rtp2http',
+    'live': 'live', 'replay': 'replay', 'seek': 'seek', 'epg': 'epg',
 }
 FIELDS = set(CLI_FIELDS.values())
-RETIRED_CLI = {'allowed_origins', 'baseURL', 'userinfo', 'SN', 'MAC', 'multicast_interface', 'fcc_interface', 'auth', 'epg_url'}
+RETIRED_CLI = {'allowed_origins', 'baseURL', 'base_url', 'userinfo', 'SN', 'MAC', 'multicast_interface', 'fcc_interface', 'auth', 'auth_origin', 'live_path', 'replay_path', 'seek_template', 'epg_url'}
 
 
 def parse_pairs(argv):
@@ -1525,14 +1561,14 @@ def save_filter(paths, enabled):
 def save_fields(paths, values):
     with lock(paths[0]):
         c = load(paths[1]) if regular(paths[1], missing=True) else {}
-        defaults = dict(provider='shanghai-telecom', multicast_interface='', fcc_interface='',
-                        auth_origin=DEFAULT_ORIGIN, base_url='http://127.0.0.1:5140',
-                        live_path='/rtp/', replay_path='/rtsp/', seek_template=SEEK,
+        defaults = dict(provider='shanghai-telecom', multicast='', fcc='',
+                        authurl=DEFAULT_ORIGIN, rtp2http='http://127.0.0.1:5140',
+                        live='/rtp/', replay='/rtsp/', seek=SEEK,
                         allowed_origins=[], filter=default_filter(True))
         for key, value in defaults.items(): c.setdefault(key, value)
-        if 'auth_origin' in values:
+        if 'authurl' in values:
             values = dict(values)
-            apply_auth(values, values.pop('auth_origin'))
+            apply_auth(values, values.pop('authurl'))
         c.pop('directory_metadata', None)
         c.update(values)
         validate(c)
@@ -1586,7 +1622,7 @@ def usage():
 
 config 相对路径以脚本目录为基准。带身份或播放字段时，合并已有配置、保存并获取后生成。run 重新获取并生成；频道或直播地址新增、变化，或没有分辨率记录时才探测直播。epg 只更新节目单，先用已保存的门户会话，失效才重新登录；不改回看地址，也不探测。只给 config（可再加 output）时离线生成，不探测。resolution 按当前频道重新测量全部分辨率，不生成列表。
 已有 tel/epg.xml 时，playlist.m3u 头部写 x-tvg-url="epg.xml"。可选 epg=http://访问地址/epg.xml 改为播放器能打开的地址；'''
-'''不填且没有本地 epg.xml 时头部不写引用。已保存的第三方地址会保留，直到显式再传 epg。output 导出到其他目录时，同时复制一份 epg.xml。以 .m3u 结尾的 output 是文件，其他 output 是目录，副本名为配置目录名.m3u。filter 写入 config.json，是对象：enabled、min_height、exclude_names。缺省为 enabled true、min_height 720、exclude_names 含“购物”“理财”“聚鲨”。旧的 true/false 在保存或 run/fetch 补字段时变成该对象，并保留原来的开关；已有自定义高度和关键词不改。比较高度时，没有可用记录、状态不是 identified 或 played、宽或高缺失、不是正整数，都按高度 0；resolution.json 仍只保存实测，不会改成 0。filter=false 只把 enabled 写成 false 并重新生成，不改规则、不登录、不探测。可选 channel_names 是对象，键为完整 ChannelID，值为显示名；只在生成列表时按完整键精确替换，优先于原始名、门户名和数字兜底，并在过滤前生效。不改 ChannelID、tvg-id、catchup.json 或 channels.json。filter 还可选 exclude_ids，每项是完整 ChannelID，只在 enabled 为 true 时于名称和高度判断前排除，不删除原始记录；没有该字段时不排除。离线生成、epg、resolution 不补写该字段。当前仅上海电信。''')
+'''不填且没有本地 epg.xml 时头部不写引用。已保存的第三方地址会保留，直到显式再传 epg。output 导出到其他目录时，同时复制一份 epg.xml。以 .m3u 结尾的 output 是文件，其他 output 是目录，副本名为配置目录名.m3u。filter 写入 config.json，是对象：enabled、min_height、exclude_names。缺省为 enabled true、min_height 720、exclude_names 含“购物”“理财”“聚鲨”。旧的 true/false 在保存或 run/fetch 补字段时变成该对象，并保留原来的开关；已有自定义高度和关键词不改。比较高度时，没有可用记录、状态不是 identified 或 played、宽或高缺失、不是正整数，都按高度 0；resolution.json 仍只保存实测，不会改成 0。filter=false 只把 enabled 写成 false 并重新生成，不改规则、不登录、不探测。可选 channel_names 是对象，键为完整 ChannelID，值为显示名；只在生成列表时按完整键精确替换，优先于原始名、门户名和数字兜底，并在过滤前生效。不改 ChannelID、tvg-id、catchup.json 或 channel.json。filter 还可选 exclude_ids，每项是完整 ChannelID，只在 enabled 为 true 时于名称和高度判断前排除，不删除原始记录；没有该字段时不排除。离线生成、epg、resolution 不补写该字段。当前仅上海电信。''')
 
 
 def main(argv=None):
