@@ -44,9 +44,9 @@ python3 iptv.py config=tel output=/path/channels.m3u
 
 只写 `config`（可再加 `output`）时不联网，也不测量分辨率。`run` 会联网并刷新频道和回看地址；只在频道新增、直播地址变化或没有分辨率记录时探测直播，结果写入同目录 `resolution.json`。`epg` 只更新节目单：先用 `session.json` 里的门户会话，失效才重新登录；它不改 `catchup.json`，不探测分辨率，也不保证旧回看地址仍然有效。节目单写入同一配置目录的 `epg.xml`。已有该文件时，离线生成的 `playlist.m3u` 头部为 `x-tvg-url="epg.xml"`。播放器不能读这个相对路径时，用 `epg_url=http://访问地址/epg.xml` 写入可访问地址；`output` 导出到其他目录时会同时复制一份 `epg.xml`。身份写在命令里会被 shell 记住。节目单需要新内容时手动再执行 `epg`，本脚本不安排定时任务。
 
-生成列表时默认开启过滤，规则写死：视频高度低于 720，或名称含“购物”“理财”“聚鲨”。没有高度、探测超时或失败的频道保留，一次失败不会当成永久不可播。`catchup.json` 和 `channels.json` 仍保存全量原始记录。`resolution.json` 只记录实测宽高、编码、状态和时间，不含是否排除。
+生成列表时读取 `config.json` 里的 `filter` 对象。默认 `enabled` 为 true，`min_height` 为 720，`exclude_names` 为“购物”“理财”“聚鲨”。高度低于 `min_height`，或名称含任一排除词，就不写入列表。没有高度、探测超时或失败的频道保留，一次失败不会当成永久不可播。`catchup.json` 和 `channels.json` 仍保存全量原始记录。`resolution.json` 只记录实测宽高、编码、状态和时间，不含是否排除。
 
-`filter` 写入 `config.json`。首次保存默认 `true`；已有配置缺这个字段时，`run` 或 `fetch` 只补上 `true`，已有的 `true`/`false` 不改。离线生成、`epg`、`resolution` 不改配置。单独开关不重新登录，也不探测：
+首次保存写入完整默认对象。已有配置若仍是 `true`/`false` 或缺少该字段，`run` 或 `fetch` 补成对象，并保留原来的开关。已保存的 `min_height` 和 `exclude_names` 不因开关被覆盖。离线生成、`epg`、`resolution` 不改配置。下面两条只改 `enabled`，不重新登录，也不探测：
 
 ```sh
 python3 iptv.py config=tel filter=false

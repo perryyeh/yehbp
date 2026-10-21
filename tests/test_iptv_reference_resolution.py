@@ -113,6 +113,66 @@ class ResolutionTests(unittest.TestCase):
             refresh.assert_called_once()
             self.assertEqual((paths[1].read_bytes(), paths[2].read_bytes()), before)
 
+    def test_saved_rules_drive_filter_and_cli_keeps_custom_rules(self):
+        cfg = config()
+        cfg['filter'] = dict(enabled=True, min_height=1080, exclude_names=['自定'])
+        urls = [c.live_url(row(ChannelID='edge', ChannelName='边缘'), cfg)]
+        facts = {self.key('edge', urls[0]): dict(height=720, status='identified')}
+        text, counts = c.render([row(ChannelID='edge', ChannelName='边缘'), row(ChannelID='ok', ChannelName='保留')], cfg, resolutions={'config': cfg, 'channels': facts})
+        self.assertEqual(counts['excluded_height'], 1)
+        self.assertNotIn('tvg-id="edge"', text)
+        kept, _ = c.render([row(ChannelID='named', ChannelName='自定频道'), row(ChannelID='ok', ChannelName='保留')], cfg, resolutions=None)
+        self.assertNotIn('tvg-id="named"', kept)
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = self.prepare(Path(tmp).resolve(), [row(ChannelName='普通')], filtering=False)
+            c.atomic_json(paths[1], cfg)
+            before = {k: v for k, v in c.load(paths[1]).items() if k != 'filter'}
+            with patch.object(c, 'login', side_effect=AssertionError('login')), patch.object(c, 'probe_fact', side_effect=AssertionError('probe')):
+                self.assertEqual(c.main(['config=' + str(paths[0]), 'filter=false']), 0)
+            saved = c.load(paths[1])
+            self.assertEqual(saved['filter'], dict(enabled=False, min_height=1080, exclude_names=['自定']))
+            self.assertEqual({k: saved[k] for k in before}, before)
+            bad = dict(cfg)
+            bad['filter'] = dict(enabled='yes', min_height=-1, exclude_names=[])
+            with self.assertRaises(c.SafeError):
+                c.validate(bad)
+            self.assertEqual(c.load(paths[1])['filter']['min_height'], 1080)
+
+    def test_legacy_bool_migrates_without_losing_switch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = self.prepare(Path(tmp).resolve(), [row(ChannelName='普通')])
+            legacy = config()
+            legacy['filter'] = False
+            c.atomic_json(paths[1], legacy)
+            with patch.object(c, 'local_ipv4', return_value='192.0.2.1'), patch.object(c, 'login', return_value=[row(ChannelName='普通')]), patch.object(c, 'portal_directory', return_value=directory([dict(mixNo='1', name='普通')])), patch.object(c, 'probe_fact', return_value=dict(checked_at='t', status='identified', codec='h264', width=1920, height=1080, field_order='progressive', playable=None)):
+                self.assertEqual(c.main(['fetch', 'config=' + str(paths[0])]), 0)
+            self.assertEqual(c.load(paths[1])['filter'], c.default_filter(False))
+            enabled = config()
+            enabled.pop('filter')
+            c.atomic_json(paths[1], enabled)
+            with patch.object(c, 'local_ipv4', return_value='192.0.2.1'), patch.object(c, 'login', return_value=[row(ChannelName='普通')]), patch.object(c, 'portal_directory', return_value=directory([dict(mixNo='1', name='普通')])), patch.object(c, 'probe_fact', side_effect=AssertionError('cached')):
+                self.assertEqual(c.main(['fetch', 'config=' + str(paths[0])]), 0)
+            self.assertEqual(c.load(paths[1])['filter'], c.default_filter(True))
+
+    def test_probe_saves_each_batch_and_redacts_progress(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = self.prepare(Path(tmp).resolve(), [row(ChannelID=str(i), ChannelName='甲', ChannelURL='igmp://239.1.2.%d:1' % i) for i in range(11)])
+            calls = []
+
+            def runner(command, **_kwargs):
+                calls.append(command[-1])
+                if len(calls) == 3:
+                    self.assertEqual(len(json.loads(c.resolution_path(paths).read_text())['channels']), 0)
+                return ffprobe(1920, 1080)
+
+            with patch.object(c.shutil, 'which', return_value='/usr/bin/ffprobe'), contextlib.redirect_stdout(io.StringIO()) as out:
+                c.refresh_resolutions(paths, c.auth.read_json(paths[2]) if False else json.loads(paths[2].read_text()), c.load(paths[1]), now=NOW, runner=runner)
+            self.assertEqual(len(calls), 11)
+            self.assertEqual(len(json.loads(c.resolution_path(paths).read_text())['channels']), 11)
+            self.assertIn('分辨率进度：10/11', out.getvalue())
+            self.assertNotIn('AuthInfo', out.getvalue())
+            self.assertNotIn('239.1.2.', out.getvalue())
+
     def test_filter_uses_height_and_keeps_unknown(self):
         cfg = dict(provider='shanghai-telecom', userid='fixture', sn='fixture-box', mac='00:11:22:33:44:55',
                    interface='eth0.85', auth_origin=c.DEFAULT_ORIGIN, allowed_origins=[],
@@ -130,7 +190,7 @@ class ResolutionTests(unittest.TestCase):
         ids = [line.split('tvg-id="', 1)[1].split('"', 1)[0] for line in text.splitlines() if line.startswith('#EXTINF:')]
         self.assertEqual(ids, ['hd', 'miss'])
         self.assertEqual(counts, dict(excluded_height=1, excluded_name=1, unknown=1, kept=1))
-        cfg['filter'] = bool(False)
+        cfg['filter'] = dict(enabled=False, min_height=1080, exclude_names=['自定'])
         full, off = c.render(rows, cfg, resolutions={'config': cfg, 'channels': facts})
         self.assertEqual(full.count('#EXTINF:'), 4)
         self.assertEqual(off['kept'], 4)
@@ -161,17 +221,17 @@ class ResolutionTests(unittest.TestCase):
                 self.key('42', c.live_url(row(ChannelName='理财频道'), config())): {'height': 1080, 'width': 1920, 'status': 'identified'},
                 self.key('plain', c.live_url(row(ChannelID='plain', ChannelName='普通'), config())): {'height': 1080, 'width': 1920, 'status': 'identified'},
             }})
-            original = c.load(paths[1])
+            original = {k: v for k, v in c.load(paths[1]).items() if k != 'filter'}
             with patch.object(c, 'login', side_effect=AssertionError('login')), patch.object(c, 'probe_fact', side_effect=AssertionError('probe')):
                 self.assertEqual(c.main(['config=' + str(paths[0]), 'filter=false']), 0)
             saved = c.load(paths[1])
-            self.assertIs(saved['filter'], False)
+            self.assertEqual(saved['filter'], c.default_filter(False))
             self.assertEqual({k: saved[k] for k in original}, original)
             self.assertIn('理财', paths[3].read_text())
             self.assertIn('tvg-id="plain"', paths[3].read_text())
             with patch.object(c, 'login', side_effect=AssertionError('login')), patch.object(c, 'probe_fact', side_effect=AssertionError('probe')):
                 self.assertEqual(c.main(['config=' + str(paths[0]), 'filter=true']), 0)
-            self.assertIs(c.load(paths[1])['filter'], True)
+            self.assertEqual(c.load(paths[1])['filter'], c.default_filter(True))
             self.assertNotIn('理财', paths[3].read_text())
             err = io.StringIO()
             before = paths[1].read_bytes()
@@ -197,7 +257,7 @@ class ResolutionTests(unittest.TestCase):
             self.assertEqual(probe.call_count, probed)
             self.assertTrue(calls)
             self.assertTrue(c.resolution_path(paths).is_file())
-            self.assertIs(c.load(paths[1])['filter'], False)
+            self.assertIs(c.load(paths[1])['filter']['enabled'], False)
 
     def test_run_persists_missing_filter_and_keeps_explicit_false(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -208,17 +268,17 @@ class ResolutionTests(unittest.TestCase):
             with patch.object(c, 'local_ipv4', return_value='192.0.2.1'), patch.object(c, 'login', return_value=[row(ChannelName='普通')]), patch.object(c, 'portal_directory', return_value=directory([dict(mixNo='1', name='普通')])), patch.object(c.shutil, 'which', return_value='/usr/bin/ffprobe'), patch.object(c, 'probe_fact', return_value=dict(checked_at='t', status='identified', codec='h264', width=1920, height=1080, field_order='progressive', playable=None)):
                 self.assertEqual(c.main(['run', 'config=' + str(paths[0])]), 0)
             saved = c.load(paths[1])
-            self.assertIs(saved['filter'], True)
+            self.assertEqual(saved['filter'], c.default_filter(True))
             saved.pop('filter')
             self.assertEqual(saved, other)
             explicit = dict(saved)
-            explicit['filter'] = False
+            explicit['filter'] = c.default_filter(False)
             c.atomic_json(paths[1], explicit)
             frozen = paths[1].read_bytes()
             with patch.object(c, 'local_ipv4', return_value='192.0.2.1'), patch.object(c, 'login', return_value=[row(ChannelName='普通')]), patch.object(c, 'portal_directory', return_value=directory([dict(mixNo='1', name='普通')])), patch.object(c, 'probe_fact', side_effect=AssertionError('already measured')):
                 self.assertEqual(c.main(['fetch', 'config=' + str(paths[0])]), 0)
             self.assertEqual(paths[1].read_bytes(), frozen)
-            self.assertIs(c.load(paths[1])['filter'], False)
+            self.assertEqual(c.load(paths[1])['filter'], c.default_filter(False))
             offline = paths[1].read_bytes()
             with patch.object(c, 'login', side_effect=AssertionError('login')):
                 self.assertEqual(c.main(['config=' + str(paths[0])]), 0)

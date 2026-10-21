@@ -6,6 +6,7 @@ Protocol evidence: pcg562240/pcg-iptv shctiptv.py at
 this implementation does not vendor its AES or client implementation.
 """
 import argparse
+import concurrent.futures
 from contextlib import contextmanager
 import fcntl
 import getpass
@@ -775,8 +776,8 @@ def validate(c):
         parsed = urlsplit(guide)
         if parsed.scheme not in ('http', 'https') or not parsed.hostname or any(ch in guide for ch in ' ",\r\n'):
             raise auth.SafeError('节目单地址无效')
-    if 'filter' in c and not isinstance(c.get('filter'), bool):
-        raise auth.SafeError('filter只能是true或false')
+    if 'filter' in c:
+        validate_filter(c['filter'])
 
 
 def load(path):
@@ -815,8 +816,7 @@ def configure(paths):
         if entered != current_auth or not c.get('auth_origin'):
             apply_auth(c, entered)
         c.pop('directory_metadata', None)  # Retire the legacy key only on explicit save.
-        if not isinstance(c.get('filter'), bool):
-            c['filter'] = True
+        c['filter'] = normalize_filter(c.get('filter'))
         validate(c)
         auth.atomic_json(path, c)
         print('配置已保存：config.json为0600，现存目录权限保持不变')
@@ -904,9 +904,11 @@ def render(rows, c, directory=None, header='#EXTM3U', resolutions=None, apply_fi
     return '\n'.join(lines) + '\n', counts
 
 
-NAME_EXCLUSIONS = ('购物', '理财', '聚鲨')
-MIN_VIDEO_HEIGHT = 720
+DEFAULT_EXCLUDE_NAMES = ('购物', '理财', '聚鲨')
+DEFAULT_MIN_HEIGHT = 720
 PROBE_TIMEOUT = 12
+PROBE_CONCURRENCY = 2
+PROBE_SAVE_EVERY = 10
 
 
 def resolution_path(paths):
@@ -930,15 +932,54 @@ def load_resolutions(path):
     return value
 
 
-def name_excluded(name):
-    return any(word in name for word in NAME_EXCLUSIONS)
+def default_filter(enabled=True):
+    return {'enabled': bool(enabled), 'min_height': DEFAULT_MIN_HEIGHT,
+            'exclude_names': list(DEFAULT_EXCLUDE_NAMES)}
+
+
+def validate_filter(value):
+    if isinstance(value, bool):
+        return
+    if not isinstance(value, dict):
+        raise auth.SafeError('filter必须是过滤对象')
+    if not isinstance(value.get('enabled'), bool):
+        raise auth.SafeError('filter.enabled只能是true或false')
+    height = value.get('min_height')
+    if isinstance(height, bool) or not isinstance(height, int) or height < 0 or height > 10000:
+        raise auth.SafeError('filter.min_height必须是0到10000的整数')
+    names = value.get('exclude_names')
+    if not isinstance(names, list) or not names or any(not isinstance(item, str) or not item.strip() for item in names):
+        raise auth.SafeError('filter.exclude_names必须是非空字符串列表')
+    if len(names) > 32 or any(len(item) > 32 for item in names):
+        raise auth.SafeError('filter.exclude_names过长')
+
+
+def normalize_filter(value):
+    """Turn a missing field or a legacy bool into a complete saved object."""
+    if value is None:
+        return default_filter(True)
+    if isinstance(value, bool):
+        return default_filter(value)
+    if isinstance(value, dict):
+        merged = default_filter(True)
+        merged.update(value)
+        validate_filter(merged)
+        return {'enabled': merged['enabled'], 'min_height': merged['min_height'],
+                'exclude_names': list(merged['exclude_names'])}
+    raise auth.SafeError('filter必须是过滤对象')
+
+
+def filter_rules(config):
+    rules = normalize_filter(config.get('filter', default_filter(True)))
+    return rules['enabled'], rules['min_height'], tuple(rules['exclude_names'])
 
 
 def playlist_decision(row, name, config, resolutions):
-    """Fixed playlist rules. resolution.json stores measurements, not this choice."""
-    if config.get('filter') is False:
+    """Saved filter rules. resolution.json stores measurements, not this choice."""
+    enabled, min_height, names = filter_rules(config)
+    if not enabled:
         return 'kept'
-    if name_excluded(name):
+    if any(word in name for word in names):
         return 'excluded_name'
     if resolutions is None:
         return 'kept'
@@ -947,7 +988,7 @@ def playlist_decision(row, name, config, resolutions):
     height = fact.get('height') if isinstance(fact, dict) else None
     if isinstance(height, bool) or not isinstance(height, int):
         return 'unknown'
-    if height < MIN_VIDEO_HEIGHT:
+    if height < min_height:
         return 'excluded_height'
     return 'kept'
 
@@ -966,6 +1007,20 @@ def which_probe():
         if path:
             return name, path
     return None, None
+
+
+def _reap_probe(expired, started_group):
+    process = getattr(expired, 'process', None) if started_group else None
+    if process is None or process.poll() is not None:
+        return
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except (OSError, ProcessLookupError):
+        return
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        return
 
 
 def probe_fact(url, now, runner=None):
@@ -989,8 +1044,9 @@ def probe_fact(url, now, runner=None):
                    '-i', url, '-map', '0:v:0', '-frames:v', '1', '-f', 'null', '-']
     try:
         result = runner(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                        timeout=PROBE_TIMEOUT, check=False)
-    except subprocess.TimeoutExpired:
+                        timeout=PROBE_TIMEOUT, check=False, start_new_session=(runner is subprocess.run))
+    except subprocess.TimeoutExpired as expired:
+        _reap_probe(expired, runner is subprocess.run)
         return dict(empty, status='timeout')
     except OSError:
         return dict(empty, status='error')
@@ -1040,20 +1096,42 @@ def resolution_targets(rows, config, stored, force=False):
     return selected
 
 
+def _save_facts(path, facts):
+    auth.atomic_json(path, {'schema': 1, 'channels': facts})
+
+
+def _measure(key, url, moment, runner):
+    return key, probe_fact(url, moment, runner=runner)
+
+
 def refresh_resolutions(paths, rows, config, now=None, force=False, runner=None, progress=None):
+    """Measure missing or forced sources. Persist finished facts every batch."""
     path = resolution_path(paths)
     stored = {} if force else load_resolutions(path)['channels']
     targets = resolution_targets(rows, config, stored, force=force)
     facts = dict(stored)
     moment = time.time() if now is None else now
-    for index, key, url in targets:
-        fact = probe_fact(url, moment, runner=runner)
-        facts[key] = fact
-        if progress is not None:
-            progress(index, fact)
+    total = len(targets)
+    workers = 1 if runner is not None else PROBE_CONCURRENCY
+    done = 0
+    for start in range(0, total, PROBE_SAVE_EVERY):
+        batch = targets[start:start + PROBE_SAVE_EVERY]
+        if workers == 1:
+            measured = [_measure(key, url, moment, runner) for _index, key, url in batch]
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+                measured = list(pool.map(lambda item: _measure(item[1], item[2], moment, runner), batch))
+        for key, fact in measured:
+            facts[key] = fact
+            done += 1
+            if progress is not None:
+                progress(done, total, fact)
+            else:
+                print('分辨率进度：%d/%d %s' % (done, total, fact.get('status')), flush=True)
+        _save_facts(path, facts)
     value = {'schema': 1, 'channels': facts}
-    if facts != stored or auth.regular(path, missing=True) is None:
-        auth.atomic_json(path, value)
+    if not targets and auth.regular(path, missing=True) is None:
+        _save_facts(path, facts)
     return targets, value
 
 
@@ -1094,11 +1172,13 @@ def metadata_path(paths):
 
 
 def ensure_filter_default(config_path):
-    """Persist filter=true when the field is absent. Never overwrite an explicit bool."""
+    """Persist a complete filter object. Keep an explicit enabled value and custom rules."""
     c = load(config_path)
-    if isinstance(c.get('filter'), bool):
+    current = c.get('filter')
+    if isinstance(current, dict) and set(current) >= {'enabled', 'min_height', 'exclude_names'}:
+        validate_filter(current)
         return c
-    c['filter'] = True
+    c['filter'] = normalize_filter(current)
     validate(c)
     auth.atomic_json(config_path, c)
     return c
@@ -1291,7 +1371,8 @@ def convert(paths, destination=None):
             print('本次生成的播放列表在：' + str(shown))
         _, counts = resolve_names(rows, directory)
         print(f'convert成功：{decisions["kept"] + decisions["unknown"]}条M3U记录；名称 ' + json.dumps(counts, ensure_ascii=False))
-        if c.get('filter') is False:
+        enabled, min_height, names = filter_rules(c)
+        if not enabled:
             print('过滤：已关闭')
         else:
             print('过滤：高度不足 %d，名称排除 %d，未知保留 %d' % (
@@ -1359,12 +1440,14 @@ def config_directory(location):
 
 
 def save_filter(paths, enabled):
-    """Toggle playlist filtering only. Does not log in or probe."""
+    """Toggle filter.enabled only. Keeps saved height and name rules. No login or probe."""
     with lock(paths[0]):
         if not regular(paths[1], missing=True):
             raise SafeError('缺少配置；请先完成首次配置')
         c = load(paths[1])
-        c['filter'] = enabled
+        rules = normalize_filter(c.get('filter'))
+        rules['enabled'] = enabled
+        c['filter'] = rules
         validate(c)
         atomic_json(paths[1], c)
         print('过滤已' + ('开启' if enabled else '关闭'))
@@ -1376,7 +1459,7 @@ def save_fields(paths, values):
         defaults = dict(provider='shanghai-telecom', multicast_interface='', fcc_interface='',
                         auth_origin=DEFAULT_ORIGIN, base_url='http://127.0.0.1:5140',
                         live_path='/rtp/', replay_path='/rtsp/', seek_template=SEEK,
-                        allowed_origins=[], filter=True)
+                        allowed_origins=[], filter=default_filter(True))
         for key, value in defaults.items(): c.setdefault(key, value)
         if 'auth_origin' in values:
             values = dict(values)
@@ -1433,7 +1516,7 @@ def usage():
   python3 iptv.py config=tel output=exports
 
 config 相对路径以脚本目录为基准。带身份或播放字段时，合并已有配置、保存并获取后生成。run 重新获取并生成；频道或直播地址新增、变化，或没有分辨率记录时才探测直播。epg 只更新节目单，先用已保存的门户会话，失效才重新登录；不改回看地址，也不探测。只给 config（可再加 output）时离线生成，不探测。resolution 按当前频道重新测量全部分辨率，不生成列表。
-已有 tel/epg.xml 时，playlist.m3u 头部写 x-tvg-url="epg.xml"。可选 epg_url=http://访问地址/epg.xml 改为播放器能打开的地址；output 导出到其他目录时，同时复制一份 epg.xml。以 .m3u 结尾的 output 是文件，其他 output 是目录，副本名为配置目录名.m3u。filter 写入 config.json，缺省为 true：生成列表时排除视频高度低于 720 的频道，以及名称含“购物”“理财”“聚鲨”的频道；没有高度记录的频道保留。首次保存配置，以及 run/fetch 发现该字段缺失时，写入 true；已有 true 或 false 保持不变。filter=false 只关过滤并重新生成，不重新登录、不探测。离线生成、epg、resolution 不补写该字段。当前仅上海电信。'''
+已有 tel/epg.xml 时，playlist.m3u 头部写 x-tvg-url="epg.xml"。可选 epg_url=http://访问地址/epg.xml 改为播放器能打开的地址；output 导出到其他目录时，同时复制一份 epg.xml。以 .m3u 结尾的 output 是文件，其他 output 是目录，副本名为配置目录名.m3u。filter 写入 config.json，是对象：enabled、min_height、exclude_names。缺省为 enabled true、min_height 720、exclude_names 含“购物”“理财”“聚鲨”。旧的 true/false 在保存或 run/fetch 补字段时变成该对象，并保留原来的开关；已有自定义高度和关键词不改。没有达到 min_height 记录的频道保留。filter=false 只把 enabled 写成 false 并重新生成，不改规则、不登录、不探测。离线生成、epg、resolution 不补写该字段。当前仅上海电信。'''
 
 
 def main(argv=None):
@@ -1473,8 +1556,11 @@ def main(argv=None):
             if configuring and command != 'convert':
                 raise SafeError('filter仅用于离线生成或与配置一起保存')
             enabled = parse_filter(filter_value)
-            if configuring:
-                values['filter'] = enabled
+            if configuring and regular(paths[1], missing=True):
+                values['filter'] = normalize_filter(load(paths[1]).get('filter'))
+                values['filter']['enabled'] = enabled
+            elif configuring:
+                values['filter'] = default_filter(enabled)
             else:
                 save_filter(paths, enabled)
         if configuring:

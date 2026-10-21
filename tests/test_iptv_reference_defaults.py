@@ -46,7 +46,7 @@ class DirectoryDefaultsTests(unittest.TestCase):
                     self.assertEqual(c.read_json(paths[2]), rows)
                     self.assertEqual(c.read_json(c.metadata_path(paths)), meta)
                     saved = c.load(paths[1])
-                    self.assertIs(saved['filter'], True)
+                    self.assertEqual(saved['filter'], c.default_filter(True))
                     saved.pop('filter')
                     self.assertEqual(saved, json.loads(before))
                     if command == 'run':
@@ -71,7 +71,7 @@ class DirectoryDefaultsTests(unittest.TestCase):
             with patch.object(c, 'local_ipv4', return_value='192.0.2.1'), patch.object(c, 'login', return_value=[row()]), patch.object(c, 'portal_directory', return_value=meta):
                 self.assertEqual(c.main(['config=' + str(paths[0]), 'rtp2http=http://127.0.0.1:5140']), 0)
             self.assertNotIn('directory_metadata', c.load(paths[1]))
-            self.assertIs(c.load(paths[1])['filter'], False)
+            self.assertEqual(c.load(paths[1])['filter'], c.default_filter(False))
 
     def test_interactive_prompts_keep_identity_and_field_order(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -87,7 +87,7 @@ class DirectoryDefaultsTests(unittest.TestCase):
                     'auth_origin', 'base_url', 'live_path', 'replay_path', 'seek_template']
             self.assertEqual([cfg[k] for k in keys], lines[:-1][:4] + [c.DEFAULT_ORIGIN] + lines[4:-1])
             self.assertEqual(cfg['allowed_origins'], [])
-            self.assertIs(cfg['filter'], True)
+            self.assertEqual(cfg['filter'], c.default_filter(True))
             self.assertNotIn('directory_metadata', cfg)
             cfg['directory_metadata'] = False; cfg['extra'] = 'keep'; cfg.pop('filter')
             c.atomic_json(paths[1], cfg)
@@ -97,7 +97,7 @@ class DirectoryDefaultsTests(unittest.TestCase):
             saved = c.load(paths[1])
             self.assertNotIn('directory_metadata', saved)
             before.pop('directory_metadata')
-            self.assertIs(saved.pop('filter'), True)
+            self.assertEqual(saved.pop('filter'), c.default_filter(True))
             self.assertEqual(saved, before)
             with patch.object(c.getpass, 'getpass', return_value=''):
                 self.assertEqual(c.main(['configure', 'config=' + str(paths[0])]), 0)
