@@ -29,9 +29,11 @@ def ffprobe(width, height, codec='h264', field='progressive', extra=None):
     return Result(body.encode())
 
 
-def ffmpeg_log(width, height, frames='frame=1'):
-    text = 'Stream #0:0: Video: h264 (High), yuv420p, %dx%d\n%s fps=25\n' % (width, height, frames)
-    return Result(b'', text.encode())
+def ffmpeg_log(width, height, frames='frame=1', streams=None, code=0):
+    lines = list(streams or ['  Stream #0:0[0x100]: Video: h264 (High), yuv420p, %dx%d' % (width, height)])
+    if frames != '':
+        lines.append('%s fps=25' % frames)
+    return Result(b'', ('\n'.join(lines) + '\n').encode(), code)
 
 
 class ResolutionTests(unittest.TestCase):
@@ -254,6 +256,75 @@ class ResolutionTests(unittest.TestCase):
         failed = dict(zero, status='failed', width=None, height=None)
         self.assertEqual(c.resolution_targets([rows[0]], cfg, {self.key('zero', c.live_url(rows[0], cfg)): failed}), [])
 
+    def test_ffmpeg_uses_first_positive_video_not_only_the_first(self):
+        secret = 'http://127.0.0.1/rtp/239.1.1.1:1?fcc=1.2.3.4:5'
+        listed = [
+            'Input #0, mpegts, from \'[redacted]\':',
+            '  Stream #0:0[0x100]: Video: hevc (Main), yuv420p, 0x0',
+            '  Stream #0:1[0x101]: Audio: ac3, 48000 Hz, 5.1',
+            '  Stream #0:2[0x102]: Video: h264 (High), yuv420p, 1920x1080 [SAR 1:1 DAR 16:9]',
+            '  Stream #0:3[0x103]: Video: hevc (Main), yuv420p, 3840x2160',
+            '  Stream #0:0: Video: wrapped_avframe, yuv420p, 640x480',
+        ]
+        calls = []
+
+        def runner(command, **_k):
+            calls.append(list(command))
+            if '-map' not in command:
+                return ffmpeg_log(0, 0, frames='', streams=listed, code=1)
+            index = command[command.index('-map') + 1]
+            if index == '0:v:1':
+                return ffmpeg_log(1920, 1080, streams=listed + ['frame=    1 fps=25'])
+            return ffmpeg_log(0, 0, frames='frame=    0', streams=listed, code=1)
+
+        with patch.object(c.shutil, 'which', return_value=None), patch.object(c, 'which_probe', return_value=('ffmpeg', '/usr/bin/ffmpeg')):
+            fact = c.probe_fact(secret, NOW, runner=runner)
+        self.assertEqual(calls[0][-1], secret)
+        self.assertNotIn('-map', calls[0])
+        self.assertEqual(calls[1][calls[1].index('-map') + 1], '0:v:1')
+        self.assertNotIn('0:v:2', [item for command in calls for item in command])
+        self.assertEqual((fact['status'], fact['codec'], fact['width'], fact['height'], fact['playable']), ('played', 'h264', 1920, 1080, True))
+        self.assertNotIn(secret, json.dumps(fact))
+        with patch.object(c.shutil, 'which', return_value=None), patch.object(c, 'which_probe', return_value=('ffmpeg', '/usr/bin/ffmpeg')):
+            only_zero = c.probe_fact(secret, NOW, runner=lambda command, **_k: ffmpeg_log(0, 0, frames='', streams=[
+                '  Stream #0:0[0x100]: Video: hevc, 0x0',
+                '  Stream #0:1[0x101]: Video: h264, 0x0',
+            ], code=1))
+        self.assertEqual(only_zero['status'], 'failed')
+        self.assertIsNone(only_zero['width'])
+        decode_calls = []
+
+        def decode_then_next(command, **_k):
+            decode_calls.append(command[command.index('-map') + 1] if '-map' in command else None)
+            if '-map' not in command:
+                return ffmpeg_log(0, 0, frames='', streams=[
+                    '  Stream #0:0[0x100]: Video: hevc, 1920x1080',
+                    '  Stream #0:1[0x101]: Video: h264, 1280x720',
+                ], code=1)
+            if command[command.index('-map') + 1] == '0:v:0':
+                return ffmpeg_log(1920, 1080, frames='frame=    0', streams=['  Stream #0:0[0x100]: Video: hevc, 1920x1080'], code=1)
+            return ffmpeg_log(1280, 720, streams=['  Stream #0:1[0x101]: Video: h264, 1280x720', 'frame=    1'])
+
+        with patch.object(c.shutil, 'which', return_value=None), patch.object(c, 'which_probe', return_value=('ffmpeg', '/usr/bin/ffmpeg')):
+            continued = c.probe_fact(secret, NOW, runner=decode_then_next)
+        self.assertEqual(decode_calls, [None, '0:v:0', '0:v:1'])
+        self.assertEqual((continued['status'], continued['codec'], continued['width'], continued['height']), ('played', 'h264', 1280, 720))
+        identified_calls = []
+
+        def list_only_playable(command, **_k):
+            identified_calls.append(command[command.index('-map') + 1] if '-map' in command else None)
+            if '-map' not in command:
+                return ffmpeg_log(0, 0, frames='', streams=[
+                    '  Stream #0:0[0x100]: Video: hevc, 1920x1080',
+                    '  Stream #0:1[0x101]: Video: h264, 1280x720',
+                ], code=1)
+            return ffmpeg_log(1920, 1080, frames='frame=    0', streams=['  Stream #0:0[0x100]: Video: hevc, 1920x1080'], code=1)
+
+        with patch.object(c.shutil, 'which', return_value=None), patch.object(c, 'which_probe', return_value=('ffmpeg', '/usr/bin/ffmpeg')):
+            kept = c.probe_fact(secret, NOW, runner=list_only_playable)
+        self.assertEqual(identified_calls, [None, '0:v:0', '0:v:1'])
+        self.assertEqual((kept['status'], kept['codec'], kept['width'], kept['height'], kept['playable']), ('identified', 'hevc', 1920, 1080, False))
+
     def test_timeout_failure_and_secret_redaction(self):
         secret = 'http://127.0.0.1/rtp/239.1.1.1:1?fcc=1.2.3.4:5&AuthInfo=SECRET'
         with patch.object(c.shutil, 'which', return_value='/usr/bin/ffmpeg'):
@@ -269,8 +340,20 @@ class ResolutionTests(unittest.TestCase):
                 self.assertEqual(failed['status'], 'unreachable')
                 self.assertNotIn('SECRET', json.dumps(failed))
                 self.assertNotIn(secret, json.dumps(failed))
-                played = c.probe_fact(secret, NOW, runner=lambda *_a, **_k: ffmpeg_log(1920, 1080))
+                seen = {}
+
+                def capture(command, **_k):
+                    seen.setdefault('commands', []).append(command)
+                    return ffmpeg_log(1920, 1080)
+
+                played = c.probe_fact(secret, NOW, runner=capture)
                 self.assertEqual((played['status'], played['playable'], played['height']), ('played', True, 1080))
+                self.assertEqual(seen['commands'][0], [
+                    '/usr/bin/ffmpeg', '-hide_banner', '-nostdin', '-loglevel', 'info', '-rw_timeout', '8000000',
+                    '-probesize', '5000000', '-analyzeduration', '5000000', '-i', secret,
+                ])
+                self.assertEqual(seen['commands'][1], seen['commands'][0] + ['-map', '0:v:0', '-frames:v', '1', '-f', 'null', '-'])
+                self.assertEqual(len(seen['commands']), 2)
 
     def test_filter_toggle_is_offline_and_preserves_other_fields(self):
         with tempfile.TemporaryDirectory() as tmp:

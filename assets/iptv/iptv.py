@@ -1172,9 +1172,10 @@ def probe_fact(url, now, runner=None):
                    '-show_entries', 'stream=codec_type,codec_name,width,height,field_order',
                    '-of', 'json', url]
     else:
+        # Listing input streams does not decode. Do not pin -map 0:v:0 here:
+        # a leading 0x0 video would hide a later stream with a real size.
         command = [binary, '-hide_banner', '-nostdin', '-loglevel', 'info', '-rw_timeout', '8000000',
-                   '-probesize', '5000000', '-analyzeduration', '5000000',
-                   '-i', url, '-map', '0:v:0', '-frames:v', '1', '-f', 'null', '-']
+                   '-probesize', '5000000', '-analyzeduration', '5000000', '-i', url]
     try:
         result = runner(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                         timeout=PROBE_TIMEOUT, check=False, start_new_session=(runner is subprocess.run))
@@ -1204,14 +1205,63 @@ def probe_fact(url, now, runner=None):
         return dict(empty, status='identified', codec=codec if isinstance(codec, str) else None,
                     width=stream['width'], height=stream['height'],
                     field_order=field if isinstance(field, str) else None)
-    matched = re.search(r'Video:\s*(\S+).*?,\s*(\d{2,5})x(\d{2,5})', output)
-    if result.returncode != 0 or matched is None:
-        if 'Connection refused' in output or 'Connection timed out' in output or 'Server returned' in output:
+    videos = _ffmpeg_input_videos(output)
+    sized = [(index, codec, width, height) for index, codec, width, height in videos if width > 0 and height > 0]
+    # First positive size in stream order, not the largest and not only v:0.
+    if not sized:
+        if result.returncode != 0 and ('Connection refused' in output or 'Connection timed out' in output or 'Server returned' in output):
             return dict(empty, status='unreachable')
         return failed
+    identified = None
+    # A leading stream can advertise a size and still fail before a frame. Try the next video, but stop at 8.
+    for index, codec, width, height in sized[:8]:
+        played = _ffmpeg_decode_one(binary, url, index, runner, empty)
+        if played is None:
+            continue
+        if played.get('status') == 'timeout':
+            return played
+        if played.get('playable') is True:
+            return dict(played, codec=codec, width=width, height=height)
+        if identified is None:
+            identified = dict(played, codec=codec, width=width, height=height, playable=False, status='identified')
+    if identified is not None:
+        return identified
+    return failed
+
+
+def _ffmpeg_input_videos(output):
+    """Input stream lines only. Output mappings such as 'Stream #0:0 ->' are not sizes."""
+    found = []
+    pattern = re.compile(r'^  Stream #0:(\d+)(?:\[[^\]]+\])?(?:\([^)]+\))?: Video: (\S+)')
+    for line in output.splitlines():
+        matched = pattern.match(line)
+        if matched is None or ' -> ' in line:
+            continue
+        size = re.search(r'(?:\)|,)\s*(?:[0-9a-z]+(?:\([^)]*\))?,\s*)*(\d{1,5})x(\d{1,5})(?!\d)', line)
+        width = int(size.group(1)) if size else 0
+        height = int(size.group(2)) if size else 0
+        found.append((len(found), matched.group(2).rstrip(','), width, height))
+    return found
+
+
+def _ffmpeg_decode_one(binary, url, index, runner, empty):
+    command = [binary, '-hide_banner', '-nostdin', '-loglevel', 'info', '-rw_timeout', '8000000',
+               '-probesize', '5000000', '-analyzeduration', '5000000',
+               '-i', url, '-map', '0:v:%d' % index, '-frames:v', '1', '-f', 'null', '-']
+    try:
+        result = runner(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                        timeout=PROBE_TIMEOUT, check=False, start_new_session=(runner is subprocess.run))
+    except subprocess.TimeoutExpired as expired:
+        _reap_probe(expired, runner is subprocess.run)
+        return dict(empty, status='timeout')
+    except OSError:
+        return None
+    output = ((result.stdout or b'') + b'\n' + (result.stderr or b'')).decode('utf-8', 'replace')
+    output = redact_probe(output, (url,))
     playable = 'frame=' in output and not re.search(r'\bframe=\s*0\b', output)
-    return dict(empty, status='played' if playable else 'identified', playable=playable,
-                codec=matched.group(1).rstrip(','), width=int(matched.group(2)), height=int(matched.group(3)))
+    if not playable:
+        return dict(empty, status='identified', playable=False)
+    return dict(empty, status='played', playable=True)
 
 
 def unique_source_count(rows, config):
