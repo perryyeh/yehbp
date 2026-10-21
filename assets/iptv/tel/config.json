@@ -7,7 +7,6 @@
   "multicast": "",
   "fcc": "",
   "authurl": "http://222.68.208.73:7001",
-  "allowed_origins": [],
   "live": "/rtp/",
   "replay": "/rtsp/",
   "seek": "${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",

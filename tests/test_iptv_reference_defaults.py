@@ -90,7 +90,7 @@ class DirectoryDefaultsTests(unittest.TestCase):
             keys = ['userid', 'sn', 'mac', 'interface',
                     'authurl', 'rtp2http', 'live', 'replay', 'seek']
             self.assertEqual([cfg[k] for k in keys], lines[:-1][:4] + [c.DEFAULT_ORIGIN] + lines[4:-1])
-            self.assertEqual(cfg['allowed_origins'], [])
+            self.assertNotIn('allowed_origins', cfg)
             self.assertEqual(cfg['filter'], c.default_filter(True))
             self.assertNotIn('directory_metadata', cfg)
             cfg['directory_metadata'] = False; cfg['extra'] = 'keep'; cfg.pop('filter')
@@ -212,9 +212,10 @@ class DirectoryDefaultsTests(unittest.TestCase):
             with patch.object(c, 'local_ipv4', return_value='192.0.2.1'), patch.object(c, 'login', side_effect=login), patch.object(c, 'portal_directory', return_value=directory([dict(mixNo='1', name='fixture')])):
                 self.assertEqual(c.main(['config=' + str(paths[0]), 'authurl=http://203.0.113.10:7001 http://203.0.113.11:7001', 'live=/udp/', 'replay=/proxy/rtsp/', 'seek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}']), 0)
             saved = c.load(paths[1])
-            self.assertEqual(seen, ['http://203.0.113.10:7001'])
-            self.assertEqual(saved['authurl'], 'http://203.0.113.10:7001')
-            self.assertEqual(saved['allowed_origins'], ['http://203.0.113.11:7001'])
+            self.assertEqual(seen, ['http://203.0.113.10:7001 http://203.0.113.11:7001'])
+            self.assertEqual(c.auth_origins(seen[0])[0], 'http://203.0.113.10:7001')
+            self.assertEqual(saved['authurl'], 'http://203.0.113.10:7001 http://203.0.113.11:7001')
+            self.assertNotIn('allowed_origins', saved)
             self.assertEqual(saved['live'], '/udp/')
             self.assertEqual(saved['replay'], '/proxy/rtsp/')
             self.assertTrue(saved['seek'].startswith('${(b)'))
@@ -222,7 +223,7 @@ class DirectoryDefaultsTests(unittest.TestCase):
             with self.assertRaises(c.SafeError):
                 c.trusted('http://203.0.113.12:7001/next', saved)
             self.assertTrue(c.trusted('http://124.75.29.176:7001/next', saved))
-            entry = saved['authurl'].rstrip('/') + '/iptv3a/4kLogAuth.do'
+            entry = c.auth_origins(saved['authurl'])[0].rstrip('/') + '/iptv3a/4kLogAuth.do'
             self.assertTrue(entry.startswith('http://203.0.113.10:7001/'))
             self.assertNotIn('203.0.113.11', entry)
             rendered = paths[3].read_text()
@@ -233,17 +234,19 @@ class DirectoryDefaultsTests(unittest.TestCase):
             with patch.object(c, 'local_ipv4', return_value='192.0.2.1'), patch.object(c, 'login', return_value=[row()]), patch.object(c, 'portal_directory', return_value=directory([dict(mixNo='1', name='fixture')])):
                 self.assertEqual(c.main(['config=' + str(paths[0]), 'rtp2http=http://192.0.2.10:5140']), 0)
             kept = c.load(paths[1])
-            self.assertEqual(kept['allowed_origins'], ['http://203.0.113.11:7001'])
-            self.assertEqual(kept['authurl'], 'http://203.0.113.10:7001')
+            self.assertNotIn('allowed_origins', kept)
+            self.assertEqual(kept['authurl'], 'http://203.0.113.10:7001 http://203.0.113.11:7001')
             self.assertEqual(kept['live'], '/udp/')
 
     def legacy_config(self):
         fresh = config()
         fresh.update(multicast='eth0.51', fcc='eth0.86', epg='http://203.0.113.10/guide.xml',
                      filter=dict(enabled=True, min_height=720, exclude_names=['购物'], exclude_channels=['YOUR_CHANNEL_ID']),
-                     channel_names={'YOUR_CHANNEL_ID': '显示名'},
-                     allowed_origins=['http://203.0.113.11:7001'])
+                     channel_names={'YOUR_CHANNEL_ID': '显示名'})
+        fresh['authurl'] = 'http://203.0.113.10:7001 http://203.0.113.11:7001'
         old = dict(fresh)
+        old['authurl'] = 'http://203.0.113.10:7001'
+        old['allowed_origins'] = ['http://203.0.113.11:7001', 'http://203.0.113.10:7001']
         for new, previous in {
                 'multicast': 'multicast_interface', 'fcc': 'fcc_interface', 'authurl': 'auth_origin',
                 'rtp2http': 'base_url', 'live': 'live_path', 'replay': 'replay_path',
@@ -266,7 +269,7 @@ class DirectoryDefaultsTests(unittest.TestCase):
                 self.assertNotIn(previous, saved)
             self.assertEqual(saved['filter'], fresh['filter'])
             self.assertEqual(saved['channel_names'], fresh['channel_names'])
-            self.assertEqual(saved['allowed_origins'], fresh['allowed_origins'])
+            self.assertNotIn('allowed_origins', saved)
             self.assertEqual(saved['userid'], fresh['userid'])
             self.assertNotIn('exclude_ids', saved['filter'])
             with patch.object(c, 'login', side_effect=AssertionError('login')):

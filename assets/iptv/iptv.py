@@ -300,20 +300,27 @@ def origin(url):
     return f'{p.scheme}://{p.hostname.lower()}:{port}'
 
 
+def auth_origins(value):
+    """Space-separated origins. The first is the only login entry."""
+    if not isinstance(value, str):
+        raise SafeError('鉴权地址不能为空')
+    origins = value.split()
+    if not origins:
+        raise SafeError('鉴权地址不能为空')
+    return origins
+
+
 def trusted(url, config):
-    allowed = [config['authurl'], *KNOWN_ORIGINS, *config.get('allowed_origins', [])]
+    allowed = [*auth_origins(config['authurl']), *KNOWN_ORIGINS]
     if origin(url) not in {origin(x) for x in allowed}:
         raise SafeError('认证跳转目标未获许可；请核实并配置允许的 origin')
     return url
 
 
 def apply_auth(c, value):
-    """First address is the only login entry. Later ones only permit hops."""
-    origins = value.split()
-    if not origins:
-        raise SafeError('鉴权地址不能为空')
-    c['authurl'] = origins[0]
-    c['allowed_origins'] = origins[1:]
+    """Keep every address in authurl. Later ones only permit hops."""
+    c['authurl'] = ' '.join(auth_origins(value))
+    c.pop('allowed_origins', None)
     return c
 
 
@@ -419,7 +426,7 @@ class HTTP:
 def login(config, ip, http=None, context=None):
     http = http or HTTP(config)
     params = dict(UserID=config['userid'], Action='Login', SN=config['sn'], Type='iptv4k', Mode='MENU.SMG-4K', FCCSupport='1')
-    url = config['authurl'].rstrip('/') + '/iptv3a/4kLogAuth.do?' + urlparse.urlencode(params)
+    url = auth_origins(config['authurl'])[0].rstrip('/') + '/iptv3a/4kLogAuth.do?' + urlparse.urlencode(params)
     text, base = http.request('GET', trusted(url, config))
     attrs, fields = form(text)
     dynamic_ip = fields.get('DynamicAuthIP', '')
@@ -761,7 +768,7 @@ def validate(c):
     for k in ('interface', 'multicast', 'fcc'):
         if c.get(k) and not re.fullmatch(r'[A-Za-z0-9_.:-]{1,15}', c[k]):
             raise auth.SafeError('接口名称无效')
-    for value in [c['authurl'], *c.get('allowed_origins', [])]:
+    for value in auth.auth_origins(c['authurl']):
         auth.origin(value)
         p = urlsplit(value)
         if p.path not in ('', '/') or p.query: raise auth.SafeError('鉴权入口必须是 origin')
@@ -805,6 +812,25 @@ STORED_KEY_RENAMES = (
 )
 
 
+def migrate_authurl(c):
+    """Fold a saved allowed_origins list into the authurl string, once."""
+    extra = c.get('allowed_origins')
+    if extra is None:
+        return False
+    if not isinstance(extra, list) or any(not isinstance(item, str) for item in extra):
+        raise auth.SafeError('配置无效')
+    seen = []
+    for item in [c.get('authurl') or '', *extra]:
+        for origin in str(item).split():
+            if origin not in seen:
+                seen.append(origin)
+    if not seen:
+        raise auth.SafeError('鉴权地址不能为空')
+    c['authurl'] = ' '.join(seen)
+    c.pop('allowed_origins')
+    return True
+
+
 def migrate_stored_keys(c):
     """Rename saved config keys to the CLI names. Drop old keys after one save."""
     if not isinstance(c, dict):
@@ -840,9 +866,10 @@ def load(path):
     raw = read_stored(path)
     c = migrate_stored_keys(copy.deepcopy(raw))
     filter_changed = migrate_filter_keys(c)
+    auth_changed = migrate_authurl(c)
     validate(c)
     raw_filter = raw.get('filter') if isinstance(raw, dict) else None
-    if any(old in raw for old, _ in STORED_KEY_RENAMES) or (
+    if any(old in raw for old, _ in STORED_KEY_RENAMES) or auth_changed or (
             filter_changed and isinstance(raw_filter, dict) and 'exclude_ids' in raw_filter):
         auth.atomic_json(path, c)
     return c
@@ -869,7 +896,7 @@ def configure(paths):
         ]
         for key, label, default in fields:
             c[key] = ask(label, c.get(key, default))
-        current_auth = ' '.join([c.get('authurl') or DEFAULT_ORIGIN, *c.get('allowed_origins', [])])
+        current_auth = c.get('authurl') or DEFAULT_ORIGIN
         entered = ask('鉴权地址（空格分隔，第一个为入口，回车保留）', current_auth) or current_auth
         if entered != current_auth or not c.get('authurl'):
             apply_auth(c, entered)
@@ -1580,11 +1607,12 @@ def save_fields(paths, values):
         defaults = dict(multicast='', fcc='',
                         authurl=DEFAULT_ORIGIN, rtp2http='http://127.0.0.1:5140',
                         live='/rtp/', replay='/rtsp/', seek=SEEK,
-                        allowed_origins=[], filter=default_filter(True))
+                        filter=default_filter(True))
         for key, value in defaults.items(): c.setdefault(key, value)
         if 'authurl' in values:
             values = dict(values)
             apply_auth(values, values.pop('authurl'))
+        c.pop('allowed_origins', None)
         c.pop('directory_metadata', None)
         c.pop('provider', None)
         c.update(values)

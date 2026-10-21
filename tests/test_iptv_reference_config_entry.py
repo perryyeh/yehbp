@@ -73,7 +73,7 @@ class UnifiedConfigEntryTests(unittest.TestCase):
             keys = ['userid', 'sn', 'mac', 'interface',
                     'authurl', 'rtp2http', 'live', 'replay', 'seek']
             self.assertEqual([cfg[k] for k in keys], lines[:4] + [c.DEFAULT_ORIGIN] + lines[4:-1])
-            self.assertEqual(cfg['allowed_origins'], [])
+            self.assertNotIn('allowed_origins', cfg)
             self.assertFalse(paths[2].exists())
 
     def test_help_uses_config_examples_and_legacy_flags_still_work(self):

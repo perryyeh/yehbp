@@ -55,7 +55,7 @@ python3 iptv.py resolution config=tel
 | `output` | 可选 | 不导出 | 额外一份列表。可用于离线生成、`run`、`epg`；不能用于 `resolution` |
 | `filter` | 可选 | 见下文 | 只能写 `true` 或 `false`，只改开关 |
 
-`config.json` 的可设字段与这些参数同名。多个 `authurl` 时，第一个写入 `authurl`，其余写入 `allowed_origins`。
+`config.json` 的可设字段与这些参数同名。`authurl` 多个地址用空格分隔：第一个是登录入口，其余只允许跳转。
 
 只写 `config`（可再加 `output` 或 `filter`）时不联网。`run` 刷新频道和回看。`epg` 只更新节目单，不刷新回看。`resolution` 重测当前全部直播。
 
