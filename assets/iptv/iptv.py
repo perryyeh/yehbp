@@ -728,7 +728,7 @@ def render_xmltv(rows, directory, programmes):
 
 def config_paths(directory):
     d = Path(os.path.abspath(directory))
-    names = ('config.json', 'catchup.json', 'channels.json', 'playlist.m3u', 'epg.xml', 'portal-session.json', '.iptv.lock')
+    names = ('config.json', 'catchup.json', 'channels.json', 'playlist.m3u', 'epg.xml', 'session.json', '.iptv.lock')
     if Path(__file__).resolve() in [(d / name).resolve() for name in names]:
         raise SafeError('实例固定文件不能覆盖运行脚本')
     return d, d / 'config.json', d / 'catchup.json', d / 'playlist.m3u'
@@ -859,7 +859,7 @@ def epg_path(paths):
 
 
 def session_path(paths):
-    return paths[0] / 'portal-session.json'
+    return paths[0] / 'session.json'
 
 
 def playlist_header(paths, c, explicit=None):
@@ -1052,7 +1052,7 @@ def protected_export(export, paths):
     session = session_path(paths)
     protected = [config, source, metadata, guide, session, d / '.iptv.lock', Path(__file__), output]
     if (export.resolve() in [p.resolve() for p in protected] or
-            export.name in ('config.json', 'catchup.json', 'channels.json', 'portal-session.json', '.iptv.lock') or
+            export.name in ('config.json', 'catchup.json', 'channels.json', 'session.json', '.iptv.lock') or
             (export.name == 'epg.xml' and export.parent == d) or
             (export.parent != d and (export.parent / 'config.json').exists())):
         raise SafeError('导出不能覆盖配置、源数据、其他实例或脚本')

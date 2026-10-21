@@ -42,7 +42,7 @@ python3 iptv.py config=tel output=/path/channels.m3u
 | `seek` | 回放时间格式，默认 `${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}`；已保存配置保留原值，可用 `seek` 显式更新 |
 | `epg_url` | 可选。播放器可访问的 XMLTV 地址，例如 `http://访问地址/epg.xml`。不填且已有 `epg.xml` 时，列表头使用相对地址 `epg.xml` |
 
-只写 `config`（可再加 `output`）时不联网。`run` 会联网并刷新频道和回看地址。`epg` 只更新节目单：先用 `portal-session.json` 里的门户会话，失效才重新登录；它不改 `catchup.json`，也不保证旧回看地址仍然有效。节目单写入同一配置目录的 `epg.xml`。已有该文件时，离线生成的 `playlist.m3u` 头部为 `x-tvg-url="epg.xml"`。播放器不能读这个相对路径时，用 `epg_url=http://访问地址/epg.xml` 写入可访问地址；`output` 导出到其他目录时会同时复制一份 `epg.xml`。身份写在命令里会被 shell 记住。节目单需要新内容时手动再执行 `epg`，本脚本不安排定时任务。
+只写 `config`（可再加 `output`）时不联网。`run` 会联网并刷新频道和回看地址。`epg` 只更新节目单：先用 `session.json` 里的门户会话，失效才重新登录；它不改 `catchup.json`，也不保证旧回看地址仍然有效。节目单写入同一配置目录的 `epg.xml`。已有该文件时，离线生成的 `playlist.m3u` 头部为 `x-tvg-url="epg.xml"`。播放器不能读这个相对路径时，用 `epg_url=http://访问地址/epg.xml` 写入可访问地址；`output` 导出到其他目录时会同时复制一份 `epg.xml`。身份写在命令里会被 shell 记住。节目单需要新内容时手动再执行 `epg`，本脚本不安排定时任务。
 
 ```sh
 python3 iptv.py epg config=tel

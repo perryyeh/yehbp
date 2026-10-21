@@ -96,6 +96,8 @@ class DirectoryModelTests(unittest.TestCase):
             old=paths[1].read_bytes()
             with self.assertRaises(c.SafeError): c.convert(paths, destination=paths[0]/'config.json')
             self.assertEqual(old,paths[1].read_bytes())
+            self.assertEqual(c.session_path(paths).name, 'session.json')
+            with self.assertRaises(c.SafeError): c.convert(paths, destination=paths[0]/'session.json')
             for name in ('../bad','a/b','a\\b','.iptv.lock','..','bad\nname'):
                 with self.assertRaises(c.SafeError): c.output_basename(name)
 
