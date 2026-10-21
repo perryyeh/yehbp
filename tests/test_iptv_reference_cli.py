@@ -13,7 +13,7 @@ from iptv_reference_loader import iptv as auth
 
 
 def config():
-    return dict(provider='shanghai-telecom', userid='fixture', sn='fixture-box', mac='00:11:22:33:44:55', interface='eth0.85', auth_origin=auth.DEFAULT_ORIGIN, allowed_origins=[], base_url='http://127.0.0.1:5140/prefix', live_path='/rtp/', replay_path='/rtsp/', seek_template=c.SEEK)
+    return dict(provider='shanghai-telecom', userid='fixture', sn='fixture-box', mac='00:11:22:33:44:55', interface='eth0.85', auth_origin=auth.DEFAULT_ORIGIN, allowed_origins=[], base_url='http://127.0.0.1:5140/prefix', live_path='/rtp/', replay_path='/rtsp/', seek_template=c.SEEK, filter=False)
 
 
 def row(**kw):
@@ -25,8 +25,9 @@ def row(**kw):
 class CliTests(unittest.TestCase):
     def test_all_records_order_duplicates_and_placeholder(self):
         rows=[row(),row(ChannelName='真实频道'),row()]
-        m=c.render(rows,config())
-        self.assertEqual(m.count('#EXTINF:'),3)
+        m, counts = c.render(rows, config(), apply_filter=False)
+        self.assertEqual(m.count('#EXTINF:'), 3)
+        self.assertEqual(counts['kept'], 3)
         self.assertEqual([x.rsplit(',',1)[1] for x in m.splitlines() if x.startswith('#EXTINF:')],['42','真实频道','42'])
         self.assertIn('ChannelID is a placeholder',m)
         self.assertNotIn('group-title',m)
@@ -35,14 +36,14 @@ class CliTests(unittest.TestCase):
 
     def test_operator_names_preserve_hd_4k_spaces_verbatim(self):
         names=[' CCTV 1 HD ', '上海 高清', '频道4K(高清)', '  HD 4K 高清  ']
-        m=c.render([row(ChannelName=n) for n in names],config())
+        m, _counts = c.render([row(ChannelName=n) for n in names], config(), apply_filter=False)
         self.assertEqual([x.rsplit(',',1)[1] for x in m.splitlines() if x.startswith('#EXTINF:')],names)
         for n in names: self.assertIn('tvg-name="'+n+'"',m)
 
     def test_null_empty_replay_disabled_and_missing_fcc(self):
         for null in (None,'null','NULL','', ' null '):
             r=row(); r['TimeShiftURL']=null
-            m=c.render([r],config())
+            m, _counts = c.render([r], config(), apply_filter=False)
             self.assertIn('catchup="none"',m)
             self.assertNotIn('catchup-source=',m)
             self.assertNotIn('fcc=',m)
@@ -104,6 +105,7 @@ class CliTests(unittest.TestCase):
             from test_iptv_reference_directory import directory
             with patch.object(auth,'local_ipv4',return_value='192.0.2.1'), patch.object(auth,'login',return_value=[row(),row()]), patch.object(auth,'portal_directory',return_value=directory([dict(mixNo='1',name='fixture')])):
                 c.fetch(paths); c.fetch(beta)
+            cfg['filter']=False; auth.atomic_json(paths[1],cfg); auth.atomic_json(beta[1],cfg)
             c.convert(paths); c.convert(beta)
             self.assertEqual(json.loads(paths[2].read_text()),[row(),row()])
             self.assertEqual(paths[3].read_text(),beta[3].read_text())

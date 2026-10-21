@@ -38,7 +38,7 @@ class DirectoryModelTests(unittest.TestCase):
     def test_key_value_first_fetch_and_script_relative_default(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp).resolve(); script=root/'iptv.py';script.write_bytes(Path(c.__file__).read_bytes())
-            args=['userinfo=fixture','SN=box','MAC=00:11:22:33:44:55','interface=eth0.85','rtp2http=http://127.0.0.1:5140']
+            args=['userinfo=fixture','SN=box','MAC=00:11:22:33:44:55','interface=eth0.85','rtp2http=http://127.0.0.1:5140','filter=false']
             with patch.object(c,'__file__',str(script)), patch.object(c,'local_ipv4',return_value='192.0.2.1'), patch.object(c,'login',return_value=[row()]) as login, patch.object(c,'portal_directory',return_value=directory([dict(mixNo='1',name='fixture')])):
                 self.assertEqual(c.main(args),0)
                 self.assertEqual(login.call_count,1)
@@ -61,7 +61,7 @@ class DirectoryModelTests(unittest.TestCase):
             with c.lock(paths[0]), contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(c.main(['config='+str(paths[0])]),1)
             self.assertEqual(before,{p:p.read_bytes() for p in before})
-            for name in ('config.json','catchup.json','channels.json','playlist.m3u','.iptv.lock'):
+            for name in ('config.json','catchup.json','channels.json','resolution.json','playlist.m3u','.iptv.lock'):
                 with patch.object(c,'__file__',str(paths[0]/name)), self.assertRaises(c.SafeError):
                     c.config_paths(paths[0])
 

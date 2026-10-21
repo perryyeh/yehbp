@@ -54,7 +54,7 @@ class DirectoryDefaultsTests(unittest.TestCase):
             paths = c.config_paths(root / 'instance')
             meta = directory([dict(mixNo='1', name='高清 HD 4K')])
             args = ['config=' + str(paths[0]), 'userinfo=fixture', 'SN=box',
-                    'MAC=00:11:22:33:44:55', 'interface=eth0.85']
+                    'MAC=00:11:22:33:44:55', 'interface=eth0.85', 'filter=false']
             with patch.object(c, 'local_ipv4', return_value='192.0.2.1'), patch.object(c, 'login', return_value=[row(UserChannelID='1')]), patch.object(c, 'portal_directory', return_value=meta) as portal:
                 self.assertEqual(c.main(args), 0)
             portal.assert_called_once()

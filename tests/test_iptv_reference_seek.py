@@ -42,7 +42,7 @@ class ReplaySeekTests(unittest.TestCase):
             args = ['config=' + str(paths[0]), 'userinfo=fixture', 'SN=box',
                     'MAC=00:11:22:33:44:55', 'interface=eth0.85']
             with patch.object(c, 'local_ipv4', return_value='192.0.2.1'), patch.object(c, 'login', return_value=[row()]), patch.object(c, 'portal_directory', return_value=directory([dict(mixNo='1', name='fixture')])), patch.object(c.socket, 'socket', side_effect=AssertionError('network forbidden')):
-                self.assertEqual(c.main(args), 0)
+                self.assertEqual(c.main(args + ['filter=false']), 0)
             self.assertEqual(c.load(paths[1])['seek_template'], LOCAL_SEEK)
             self.check_playlist(paths, LOCAL_SEEK)
 
@@ -53,6 +53,9 @@ class ReplaySeekTests(unittest.TestCase):
             with patch.object(c.getpass, 'getpass', side_effect=answers), patch.object(c.socket, 'socket', side_effect=AssertionError('network forbidden')):
                 self.assertEqual(c.main(['configure', 'config=' + str(paths[0])]), 0)
             self.assertEqual(c.load(paths[1])['seek_template'], LOCAL_SEEK)
+            saved = c.load(paths[1])
+            saved['filter'] = False
+            c.atomic_json(paths[1], saved)
             self.check_playlist(paths, LOCAL_SEEK)
 
     def test_explicit_custom_seek_is_saved_and_retained_on_other_updates(self):

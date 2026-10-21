@@ -22,6 +22,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shutil
 import signal
 import socket
 import ssl
@@ -728,7 +729,7 @@ def render_xmltv(rows, directory, programmes):
 
 def config_paths(directory):
     d = Path(os.path.abspath(directory))
-    names = ('config.json', 'catchup.json', 'channels.json', 'playlist.m3u', 'epg.xml', 'session.json', '.iptv.lock')
+    names = ('config.json', 'catchup.json', 'channels.json', 'resolution.json', 'playlist.m3u', 'epg.xml', 'session.json', '.iptv.lock')
     if Path(__file__).resolve() in [(d / name).resolve() for name in names]:
         raise SafeError('实例固定文件不能覆盖运行脚本')
     return d, d / 'config.json', d / 'catchup.json', d / 'playlist.m3u'
@@ -774,6 +775,8 @@ def validate(c):
         parsed = urlsplit(guide)
         if parsed.scheme not in ('http', 'https') or not parsed.hostname or any(ch in guide for ch in ' ",\r\n'):
             raise auth.SafeError('节目单地址无效')
+    if 'filter' in c and not isinstance(c.get('filter'), bool):
+        raise auth.SafeError('filter只能是true或false')
 
 
 def load(path):
@@ -874,21 +877,198 @@ def playlist_header(paths, c, explicit=None):
     return '#EXTM3U x-tvg-url="%s"' % target
 
 
-def render(rows, c, directory=None, header='#EXTM3U'):
+def render(rows, c, directory=None, header='#EXTM3U', resolutions=None, apply_filter=True):
     validate(c)
     if not isinstance(rows, list) or not rows: raise auth.SafeError('原始频道数组为空或无效')
     if not header.startswith('#EXTM3U'): raise auth.SafeError('播放列表头无效')
     lines = [header, '# Raw channelArray order; ChannelID is a placeholder when ChannelName is absent. Apply metadata/templates separately.']
     if any(not isinstance(row, dict) for row in rows): raise auth.SafeError('无效频道记录')
     names, _ = resolve_names(rows, directory)
+    written, counts = 0, dict(excluded_height=0, excluded_name=0, unknown=0, kept=0)
     for row, name in zip(rows, names):
         if not isinstance(row, dict): raise auth.SafeError('无效频道记录')
         channel_id = text(row.get('ChannelID'))
         if not channel_id: raise auth.SafeError('缺少ChannelID')
+        decision = playlist_decision(row, name, c, resolutions) if apply_filter else 'kept'
+        counts[decision] += 1
+        if decision not in ('kept', 'unknown'):
+            continue
+        written += 1
         replay = replay_url(row.get('TimeShiftURL'), c)
         catchup = 'catchup="none"' if replay is None else f'catchup="default" catchup-source="{replay}"'
         lines.extend([f'#EXTINF:-1 tvg-id="{channel_id}" tvg-name="{name}" {catchup},{name}', live_url(row, c)])
-    return '\n'.join(lines) + '\n'
+    if not written:
+        raise auth.SafeError('过滤后没有可输出的频道，保留上次播放列表')
+    return '\n'.join(lines) + '\n', counts
+
+
+NAME_EXCLUSIONS = ('购物', '理财', '聚鲨')
+MIN_VIDEO_HEIGHT = 720
+PROBE_TIMEOUT = 12
+
+
+def resolution_path(paths):
+    return paths[0] / 'resolution.json'
+
+
+def live_fingerprint(url):
+    return hashlib.sha256(url.encode('utf-8')).hexdigest()
+
+
+def source_key(channel_id, url):
+    return channel_id + '\n' + live_fingerprint(url)
+
+
+def load_resolutions(path):
+    if auth.regular(path, missing=True) is None:
+        return {'schema': 1, 'channels': {}}
+    value = auth.read_json(path)
+    if not isinstance(value, dict) or value.get('schema') != 1 or not isinstance(value.get('channels'), dict):
+        raise auth.SafeError('分辨率记录结构无效')
+    return value
+
+
+def name_excluded(name):
+    return any(word in name for word in NAME_EXCLUSIONS)
+
+
+def playlist_decision(row, name, config, resolutions):
+    """Fixed playlist rules. resolution.json stores measurements, not this choice."""
+    if config.get('filter') is False:
+        return 'kept'
+    if name_excluded(name):
+        return 'excluded_name'
+    if resolutions is None:
+        return 'kept'
+    key = source_key(text(row.get('ChannelID')), live_url(row, resolutions['config']))
+    fact = resolutions['channels'].get(key)
+    height = fact.get('height') if isinstance(fact, dict) else None
+    if isinstance(height, bool) or not isinstance(height, int):
+        return 'unknown'
+    if height < MIN_VIDEO_HEIGHT:
+        return 'excluded_height'
+    return 'kept'
+
+
+def redact_probe(text_value, secrets):
+    redacted = text_value
+    for secret in secrets:
+        if secret:
+            redacted = redacted.replace(secret, '[redacted]')
+    return redacted
+
+
+def which_probe():
+    for name in ('ffprobe', 'ffmpeg'):
+        path = shutil.which(name)
+        if path:
+            return name, path
+    return None, None
+
+
+def probe_fact(url, now, runner=None):
+    """Measure one live URL. Facts only; callers decide filtering."""
+    checked = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now))
+    tool, binary = which_probe()
+    empty = dict(checked_at=checked, status='unavailable', codec=None, width=None, height=None,
+                 field_order=None, playable=None)
+    if tool is None:
+        return empty
+    if runner is None:
+        runner = subprocess.run
+    if tool == 'ffprobe':
+        command = [binary, '-hide_banner', '-loglevel', 'error', '-rw_timeout', '8000000',
+                   '-probesize', '5000000', '-analyzeduration', '5000000',
+                   '-select_streams', 'v:0', '-show_entries', 'stream=codec_name,width,height,field_order',
+                   '-of', 'json', url]
+    else:
+        command = [binary, '-hide_banner', '-nostdin', '-loglevel', 'info', '-rw_timeout', '8000000',
+                   '-probesize', '5000000', '-analyzeduration', '5000000',
+                   '-i', url, '-map', '0:v:0', '-frames:v', '1', '-f', 'null', '-']
+    try:
+        result = runner(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                        timeout=PROBE_TIMEOUT, check=False)
+    except subprocess.TimeoutExpired:
+        return dict(empty, status='timeout')
+    except OSError:
+        return dict(empty, status='error')
+    output = ((result.stdout or b'') + b'\n' + (result.stderr or b'')).decode('utf-8', 'replace')
+    output = redact_probe(output, (url,))
+    failed = dict(empty, status='failed')
+    if tool == 'ffprobe':
+        try:
+            parsed = json.loads(result.stdout.decode('utf-8', 'replace') or '{}')
+            stream = (parsed.get('streams') or [None])[0]
+        except (json.JSONDecodeError, IndexError, AttributeError, UnicodeError):
+            stream = None
+        if not isinstance(stream, dict) or result.returncode != 0:
+            return failed
+        width, height = stream.get('width'), stream.get('height')
+        if isinstance(width, bool) or not isinstance(width, int):
+            width = None
+        if isinstance(height, bool) or not isinstance(height, int):
+            height = None
+        codec, field = stream.get('codec_name'), stream.get('field_order')
+        return dict(empty, status='identified', codec=codec if isinstance(codec, str) else None, width=width,
+                    height=height, field_order=field if isinstance(field, str) else None)
+    matched = re.search(r'Video:\s*(\S+).*?,\s*(\d{2,5})x(\d{2,5})', output)
+    if result.returncode != 0 or matched is None:
+        if 'Connection refused' in output or 'Connection timed out' in output or 'Server returned' in output:
+            return dict(empty, status='unreachable')
+        return failed
+    playable = 'frame=' in output and not re.search(r'\bframe=\s*0\b', output)
+    return dict(empty, status='played' if playable else 'identified', playable=playable,
+                codec=matched.group(1).rstrip(','), width=int(matched.group(2)), height=int(matched.group(3)))
+
+
+def unique_source_count(rows, config):
+    return len({source_key(text(row.get('ChannelID')), live_url(row, config)) for row in rows})
+
+
+def resolution_targets(rows, config, stored, force=False):
+    selected, seen = [], set()
+    for index, row in enumerate(rows):
+        url = live_url(row, config)
+        key = source_key(text(row.get('ChannelID')), url)
+        if key in seen:
+            continue
+        seen.add(key)
+        if force or key not in stored:
+            selected.append((index, key, url))
+    return selected
+
+
+def refresh_resolutions(paths, rows, config, now=None, force=False, runner=None, progress=None):
+    path = resolution_path(paths)
+    stored = {} if force else load_resolutions(path)['channels']
+    targets = resolution_targets(rows, config, stored, force=force)
+    facts = dict(stored)
+    moment = time.time() if now is None else now
+    for index, key, url in targets:
+        fact = probe_fact(url, moment, runner=runner)
+        facts[key] = fact
+        if progress is not None:
+            progress(index, fact)
+    value = {'schema': 1, 'channels': facts}
+    if facts != stored or auth.regular(path, missing=True) is None:
+        auth.atomic_json(path, value)
+    return targets, value
+
+
+def print_resolution_summary(targets, value, total):
+    states = {}
+    for _index, key, _url in targets:
+        status = value['channels'][key].get('status')
+        states[status] = states.get(status, 0) + 1
+    measured = ', '.join('%s %d' % item for item in sorted(states.items())) or '无'
+    print('分辨率：检查 %d，未变跳过 %d，本次 %s' % (len(targets), max(0, total - len(targets)), measured))
+
+
+def resolutions_for(paths, config):
+    path = resolution_path(paths)
+    if auth.regular(path, missing=True) is None:
+        return {'config': config, 'channels': {}}
+    return {'config': config, 'channels': load_resolutions(path)['channels']}
 
 
 def atomic_text(path, value):
@@ -928,6 +1108,10 @@ def fetch(paths):
                 auth.atomic_json(session_path(paths), portal_session_payload(c, context))
             except auth.SafeError:
                 pass
+        try:
+            refresh_after_fetch(paths)
+        except Exception:
+            print('分辨率检查未完成，已保留已有记录；列表仍会生成', file=sys.stderr)
         print(f'fetch成功：{len(rows)}条完整原始记录；目录已刷新')
 
 
@@ -1050,9 +1234,9 @@ def protected_export(export, paths):
     metadata = metadata_path(paths)
     guide = epg_path(paths)
     session = session_path(paths)
-    protected = [config, source, metadata, guide, session, d / '.iptv.lock', Path(__file__), output]
+    protected = [config, source, metadata, guide, session, resolution_path(paths), d / '.iptv.lock', Path(__file__), output]
     if (export.resolve() in [p.resolve() for p in protected] or
-            export.name in ('config.json', 'catchup.json', 'channels.json', 'session.json', '.iptv.lock') or
+            export.name in ('config.json', 'catchup.json', 'channels.json', 'resolution.json', 'session.json', '.iptv.lock') or
             (export.name == 'epg.xml' and export.parent == d) or
             (export.parent != d and (export.parent / 'config.json').exists())):
         raise SafeError('导出不能覆盖配置、源数据、其他实例或脚本')
@@ -1067,10 +1251,11 @@ def convert(paths, destination=None):
         rows = auth.read_json(source)
         metadata = metadata_path(paths)
         directory = auth.read_json(metadata) if auth.regular(metadata, missing=True) else None
-        result = render(rows, c, directory, playlist_header(paths, c))
+        result = render(rows, c, directory, playlist_header(paths, c), resolutions=resolutions_for(paths, c))
+        text_value, decisions = result
         if output.resolve() == Path(__file__).resolve():
             raise SafeError('主输出不能覆盖运行脚本')
-        atomic_text(output, result)
+        atomic_text(output, text_value)
         shown = output.resolve()
         export_skipped = False
         if destination is not None and destination.resolve() != output.resolve():
@@ -1081,7 +1266,7 @@ def convert(paths, destination=None):
                 try:
                     output_basename(destination.name)
                     protected_export(destination, paths)
-                    atomic_text(destination, result)
+                    atomic_text(destination, text_value)
                     shown = destination.resolve()
                 except SafeError:
                     raise
@@ -1091,10 +1276,36 @@ def convert(paths, destination=None):
         if not export_skipped:
             print('本次生成的播放列表在：' + str(shown))
         _, counts = resolve_names(rows, directory)
-        print(f'convert成功：{len(rows)}条M3U记录；名称 ' + json.dumps(counts, ensure_ascii=False))
+        print(f'convert成功：{decisions["kept"] + decisions["unknown"]}条M3U记录；名称 ' + json.dumps(counts, ensure_ascii=False))
+        if c.get('filter') is False:
+            print('过滤：已关闭')
+        else:
+            print('过滤：高度不足 %d，名称排除 %d，未知保留 %d' % (
+                decisions['excluded_height'], decisions['excluded_name'], decisions['unknown']))
 
 
-COMMANDS = ('configure', 'fetch', 'convert', 'run', 'epg')
+def refresh_after_fetch(paths, now=None, runner=None):
+    """Probe only new channel ids, changed live URLs, and sources with no saved fact."""
+    c = load(paths[1])
+    rows = auth.read_json(paths[2])
+    targets, value = refresh_resolutions(paths, rows, c, now=now, runner=runner)
+    print_resolution_summary(targets, value, unique_source_count(rows, c))
+    return targets
+
+
+def manual_resolution(paths, now=None, runner=None):
+    c = load(paths[1])
+    if auth.regular(paths[2], missing=True) is None:
+        raise SafeError('缺少catchup.json；请先执行run或带身份参数获取频道')
+    rows = auth.read_json(paths[2])
+    if not isinstance(rows, list) or not rows:
+        raise SafeError('原始频道数组为空或无效')
+    targets, value = refresh_resolutions(paths, rows, c, now=now, force=True, runner=runner)
+    print_resolution_summary(targets, value, unique_source_count(rows, c))
+    return targets
+
+
+COMMANDS = ('configure', 'fetch', 'convert', 'run', 'epg', 'resolution')
 FIELDS = {'userid', 'sn', 'mac', 'interface', 'multicast_interface', 'fcc_interface',
           'auth_origin', 'base_url', 'live_path', 'replay_path', 'seek_template', 'epg_url'}
 RETIRED_CLI = {'allowed_origins', 'baseURL'}
@@ -1112,10 +1323,18 @@ def parse_pairs(argv):
             raise SafeError('directory_metadata参数已移除，无需设置；fetch/run及全参数获取会同时刷新完整频道目录')
         if key in RETIRED_CLI:
             raise SafeError('未知或重复参数键')
-        if key not in FIELDS | {'config', 'output'} or key in values:
+        if key not in FIELDS | {'config', 'output', 'filter'} or key in values:
             raise SafeError('未知或重复参数键')
         values[key] = value
     return values
+
+
+def parse_filter(value):
+    if value == 'true':
+        return True
+    if value == 'false':
+        return False
+    raise SafeError('filter只能是true或false')
 
 
 def config_directory(location):
@@ -1123,6 +1342,18 @@ def config_directory(location):
     directory = Path(location)
     if not directory.is_absolute(): directory = Path(__file__).resolve().parent / directory
     return directory
+
+
+def save_filter(paths, enabled):
+    """Toggle playlist filtering only. Does not log in or probe."""
+    with lock(paths[0]):
+        if not regular(paths[1], missing=True):
+            raise SafeError('缺少配置；请先完成首次配置')
+        c = load(paths[1])
+        c['filter'] = enabled
+        validate(c)
+        atomic_json(paths[1], c)
+        print('过滤已' + ('开启' if enabled else '关闭'))
 
 
 def save_fields(paths, values):
@@ -1137,7 +1368,10 @@ def save_fields(paths, values):
             values = dict(values)
             apply_auth(values, values.pop('auth_origin'))
         c.pop('directory_metadata', None)
+        kept_filter = c.get('filter', None)
         c.update(values)
+        if 'filter' not in values and isinstance(kept_filter, bool):
+            c['filter'] = kept_filter
         validate(c)
         atomic_json(paths[1], c)
 
@@ -1183,11 +1417,12 @@ def usage():
   python3 iptv.py config=tel userinfo=YOUR_USER_ID SN=YOUR_BOX_SN MAC=YOUR_BOX_MAC interface=iptv85 rtp2http=http://127.0.0.1:5140
   python3 iptv.py run config=tel
   python3 iptv.py epg config=tel
+  python3 iptv.py resolution config=tel
   python3 iptv.py config=tel
   python3 iptv.py config=tel output=exports
 
-config 相对路径以脚本目录为基准。带身份或播放字段时，合并已有配置、保存并获取后生成。run 重新获取并生成。epg 只更新节目单，先用已保存的门户会话，失效才重新登录；不改回看地址。只给 config（可再加 output）时离线生成。
-已有 tel/epg.xml 时，playlist.m3u 头部写 x-tvg-url="epg.xml"。可选 epg_url=http://访问地址/epg.xml 改为播放器能打开的地址；output 导出到其他目录时，同时复制一份 epg.xml。以 .m3u 结尾的 output 是文件，其他 output 是目录，副本名为配置目录名.m3u。当前仅上海电信。'''
+config 相对路径以脚本目录为基准。带身份或播放字段时，合并已有配置、保存并获取后生成。run 重新获取并生成；频道或直播地址新增、变化，或没有分辨率记录时才探测直播。epg 只更新节目单，先用已保存的门户会话，失效才重新登录；不改回看地址，也不探测。只给 config（可再加 output）时离线生成，不探测。resolution 按当前频道重新测量全部分辨率，不生成列表。
+已有 tel/epg.xml 时，playlist.m3u 头部写 x-tvg-url="epg.xml"。可选 epg_url=http://访问地址/epg.xml 改为播放器能打开的地址；output 导出到其他目录时，同时复制一份 epg.xml。以 .m3u 结尾的 output 是文件，其他 output 是目录，副本名为配置目录名.m3u。filter 默认开启：生成列表时排除视频高度低于 720 的频道，以及名称含“购物”“理财”“聚鲨”的频道；没有高度记录的频道保留。filter=false 只关过滤并重新生成，不重新登录、不探测。当前仅上海电信。'''
 
 
 def main(argv=None):
@@ -1211,6 +1446,7 @@ def main(argv=None):
             raise SafeError('output仅用于离线生成或run')
         location = values.pop('config', None)
         output_value = values.pop('output', None)
+        filter_value = values.pop('filter', None)
         if command == 'convert' and not argv:
             raise SafeError('请提供 config=tel；首次示例：' + usage().splitlines()[-3].strip())
         if location is None:
@@ -1220,6 +1456,16 @@ def main(argv=None):
             if not re.fullmatch(r'[A-Za-z0-9_.:-]{1,15}', location) or location in ('.', '..'):
                 raise SafeError('接口名称无效')
         paths = config_paths(config_directory(location))
+        if filter_value is not None:
+            if command not in ('convert', 'run'):
+                raise SafeError('filter仅用于离线生成或与配置一起保存')
+            if configuring and command != 'convert':
+                raise SafeError('filter仅用于离线生成或与配置一起保存')
+            enabled = parse_filter(filter_value)
+            if configuring:
+                values['filter'] = enabled
+            else:
+                save_filter(paths, enabled)
         if configuring:
             save_fields(paths, values)
             fetch(paths)
@@ -1229,6 +1475,10 @@ def main(argv=None):
             refresh_epg(paths)
             destination = export_path(output_value, paths[0]) if output_value is not None else None
             publish_playlist(paths, destination)
+        elif command == 'resolution':
+            if output_value is not None:
+                raise SafeError('output不用于分辨率重查')
+            manual_resolution(paths)
         else:
             if command in ('fetch', 'run'): fetch(paths)
             if command in ('convert', 'run'):

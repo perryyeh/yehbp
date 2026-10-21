@@ -1,0 +1,215 @@
+"""Synthetic ffprobe/ffmpeg responses. These tests do not open a live stream."""
+import contextlib
+import hashlib
+import io
+import json
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from iptv_reference_loader import iptv as c
+from test_iptv_reference_cli import config, row
+from test_iptv_reference_directory import directory
+
+
+NOW = 1_761_000_000
+
+
+class Result:
+    def __init__(self, stdout=b'', stderr=b'', code=0):
+        self.stdout, self.stderr, self.returncode = stdout, stderr, code
+
+
+def ffprobe(width, height, codec='h264', field='progressive'):
+    body = json.dumps({'streams': [{'codec_name': codec, 'width': width, 'height': height, 'field_order': field}]})
+    return Result(body.encode())
+
+
+def ffmpeg_log(width, height, frames='frame=1'):
+    text = 'Stream #0:0: Video: h264 (High), yuv420p, %dx%d\n%s fps=25\n' % (width, height, frames)
+    return Result(b'', text.encode())
+
+
+class ResolutionTests(unittest.TestCase):
+    def prepare(self, root, rows, filtering=True):
+        paths = c.config_paths(root / 'tel')
+        c.private_dir(paths[0])
+        cfg = config()
+        if filtering:
+            cfg.pop('filter', None)
+        c.atomic_json(paths[1], cfg)
+        c.atomic_json(paths[2], rows)
+        c.atomic_json(c.metadata_path(paths), directory([dict(mixNo='1', name='fixture')]))
+        return paths
+
+    def key(self, channel, url):
+        return channel + '\n' + hashlib.sha256(url.encode()).hexdigest()
+
+    def test_incremental_probe_skips_unchanged_and_keeps_failures(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = self.prepare(Path(tmp).resolve(), [
+                row(ChannelID='a', ChannelName='甲', ChannelURL='igmp://239.1.2.3:1001'),
+                row(ChannelID='a', ChannelName='甲', ChannelURL='igmp://239.1.2.3:1001'),
+                row(ChannelID='b', ChannelName='乙', ChannelURL='igmp://239.1.2.4:1002'),
+            ])
+            calls = []
+
+            def runner(command, **_kwargs):
+                calls.append(command[-1])
+                return ffprobe(1920, 1080) if '1001' in command[-1] else Result(b'{}', b'no video', 1)
+
+            with patch.object(c.shutil, 'which', side_effect=lambda name: '/usr/bin/ffprobe' if name == 'ffprobe' else None):
+                targets = c.refresh_after_fetch(paths, now=NOW, runner=runner)
+            self.assertEqual(len(targets), 2)
+            self.assertEqual(len(calls), 2)
+            stored = json.loads(c.resolution_path(paths).read_text())['channels']
+            low = self.key('b', calls[1] if '1002' in calls[1] else calls[0])
+            self.assertEqual(stored[low]['status'], 'failed')
+            self.assertIsNone(stored[low]['width'])
+            self.assertNotIn('AuthInfo', c.resolution_path(paths).read_text())
+            before = c.resolution_path(paths).read_bytes()
+            with patch.object(c.shutil, 'which', side_effect=lambda name: '/usr/bin/ffprobe' if name == 'ffprobe' else None):
+                again = c.refresh_after_fetch(paths, now=NOW + 10, runner=runner)
+            self.assertEqual(again, [])
+            self.assertEqual(c.resolution_path(paths).read_bytes(), before)
+            changed = [row(ChannelID='a', ChannelName='甲', ChannelURL='igmp://239.1.2.3:1001'), row(ChannelID='c', ChannelName='丙', ChannelURL='igmp://239.9.9.9:1003')]
+            c.atomic_json(paths[2], changed)
+            with patch.object(c.shutil, 'which', side_effect=lambda name: '/usr/bin/ffprobe' if name == 'ffprobe' else None):
+                added = c.refresh_after_fetch(paths, now=NOW + 20, runner=runner)
+            self.assertEqual(len(added), 1)
+            self.assertIn('1003', calls[-1])
+            self.assertIn(self.key('a', calls[0]), json.loads(c.resolution_path(paths).read_text())['channels'])
+
+    def test_manual_rechecks_every_unique_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = self.prepare(Path(tmp).resolve(), [row(ChannelID='a', ChannelName='甲'), row(ChannelID='a', ChannelName='甲'), row(ChannelID='b', ChannelName='乙', ChannelURL='igmp://239.1.2.4:4')])
+            seen = []
+
+            def runner(command, **_kwargs):
+                seen.append(command[-1])
+                return ffprobe(1280, 720)
+
+            with patch.object(c.shutil, 'which', return_value='/usr/bin/ffprobe'):
+                c.refresh_after_fetch(paths, now=NOW, runner=runner)
+                seen.clear()
+                c.manual_resolution(paths, now=NOW, runner=runner)
+            self.assertEqual(len(seen), 2)
+
+    def test_offline_and_epg_do_not_probe(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            paths = self.prepare(root, [row(ChannelName='购物频道'), row(ChannelID='keep', ChannelName='普通')], filtering=False)
+            with patch.object(c, 'probe_fact', side_effect=AssertionError('probe')), patch.object(c, 'login', side_effect=AssertionError('login')):
+                self.assertEqual(c.main(['config=' + str(paths[0])]), 0)
+            self.assertFalse(c.resolution_path(paths).exists())
+            self.assertIn('购物', paths[3].read_text())
+            self.assertIn('tvg-id="keep"', paths[3].read_text())
+            self.assertIn('tvg-id="42"', paths[3].read_text())
+            before = paths[1].read_bytes(), paths[2].read_bytes()
+            with patch.object(c, 'refresh_epg', return_value=False) as refresh, patch.object(c, 'probe_fact', side_effect=AssertionError('probe')):
+                self.assertEqual(c.main(['epg', 'config=' + str(paths[0])]), 0)
+            refresh.assert_called_once()
+            self.assertEqual((paths[1].read_bytes(), paths[2].read_bytes()), before)
+
+    def test_filter_uses_height_and_keeps_unknown(self):
+        cfg = dict(provider='shanghai-telecom', userid='fixture', sn='fixture-box', mac='00:11:22:33:44:55',
+                   interface='eth0.85', auth_origin=c.DEFAULT_ORIGIN, allowed_origins=[],
+                   base_url='http://127.0.0.1:5140/prefix', live_path='/rtp/', replay_path='/rtsp/',
+                   seek_template=c.SEEK)
+        rows = [row(ChannelID='hd', ChannelName='高清'), row(ChannelID='sd', ChannelName='标清'),
+                row(ChannelID='shop', ChannelName='聚鲨购物'), row(ChannelID='miss', ChannelName='未知')]
+        urls = [c.live_url(item, cfg) for item in rows]
+        facts = {
+            self.key('hd', urls[0]): dict(height=1080, width=1920, status='identified'),
+            self.key('sd', urls[1]): dict(height=576, width=720, status='identified'),
+            self.key('shop', urls[2]): dict(height=1080, width=1920, status='identified'),
+        }
+        text, counts = c.render(rows, cfg, resolutions={'config': cfg, 'channels': facts})
+        ids = [line.split('tvg-id="', 1)[1].split('"', 1)[0] for line in text.splitlines() if line.startswith('#EXTINF:')]
+        self.assertEqual(ids, ['hd', 'miss'])
+        self.assertEqual(counts, dict(excluded_height=1, excluded_name=1, unknown=1, kept=1))
+        cfg['filter'] = bool(False)
+        full, off = c.render(rows, cfg, resolutions={'config': cfg, 'channels': facts})
+        self.assertEqual(full.count('#EXTINF:'), 4)
+        self.assertEqual(off['kept'], 4)
+        self.assertNotIn('excluded', json.dumps(facts))
+
+    def test_timeout_failure_and_secret_redaction(self):
+        secret = 'http://127.0.0.1/rtp/239.1.1.1:1?fcc=1.2.3.4:5&AuthInfo=SECRET'
+        with patch.object(c.shutil, 'which', return_value='/usr/bin/ffmpeg'):
+            with patch.object(c, 'which_probe', return_value=('ffmpeg', '/usr/bin/ffmpeg')):
+                def timed_out(*_args, **_kwargs):
+                    raise subprocess.TimeoutExpired(cmd=['ffmpeg', secret], timeout=12)
+                fact = c.probe_fact(secret, NOW, runner=timed_out)
+                self.assertEqual(fact['status'], 'timeout')
+                self.assertIsNone(fact['width'])
+                self.assertNotIn('SECRET', json.dumps(fact))
+                leaked = Result(b'', ('Input #0, mpegts, from %s\nServer returned 404\n' % secret).encode(), 1)
+                failed = c.probe_fact(secret, NOW, runner=lambda *_a, **_k: leaked)
+                self.assertEqual(failed['status'], 'unreachable')
+                self.assertNotIn('SECRET', json.dumps(failed))
+                self.assertNotIn(secret, json.dumps(failed))
+                played = c.probe_fact(secret, NOW, runner=lambda *_a, **_k: ffmpeg_log(1920, 1080))
+                self.assertEqual((played['status'], played['playable'], played['height']), ('played', True, 1080))
+
+    def test_filter_toggle_is_offline_and_preserves_other_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = self.prepare(Path(tmp).resolve(), [row(ChannelName='理财频道'), row(ChannelID='plain', ChannelName='普通')], filtering=False)
+            c.atomic_json(c.resolution_path(paths), {'schema': 1, 'channels': {
+                self.key('42', c.live_url(row(ChannelName='理财频道'), config())): {'height': 1080, 'width': 1920, 'status': 'identified'},
+                self.key('plain', c.live_url(row(ChannelID='plain', ChannelName='普通'), config())): {'height': 1080, 'width': 1920, 'status': 'identified'},
+            }})
+            original = c.load(paths[1])
+            with patch.object(c, 'login', side_effect=AssertionError('login')), patch.object(c, 'probe_fact', side_effect=AssertionError('probe')):
+                self.assertEqual(c.main(['config=' + str(paths[0]), 'filter=false']), 0)
+            saved = c.load(paths[1])
+            self.assertIs(saved['filter'], False)
+            self.assertEqual({k: saved[k] for k in original}, original)
+            self.assertIn('理财', paths[3].read_text())
+            self.assertIn('tvg-id="plain"', paths[3].read_text())
+            with patch.object(c, 'login', side_effect=AssertionError('login')), patch.object(c, 'probe_fact', side_effect=AssertionError('probe')):
+                self.assertEqual(c.main(['config=' + str(paths[0]), 'filter=true']), 0)
+            self.assertIs(c.load(paths[1])['filter'], True)
+            self.assertNotIn('理财', paths[3].read_text())
+            err = io.StringIO()
+            before = paths[1].read_bytes()
+            with contextlib.redirect_stderr(err):
+                self.assertEqual(c.main(['config=' + str(paths[0]), 'filter=maybe']), 1)
+            self.assertIn('filter只能是true或false', err.getvalue())
+            self.assertEqual(paths[1].read_bytes(), before)
+
+    def test_filter_switch_does_not_control_probing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = self.prepare(Path(tmp).resolve(), [row(ChannelName='普通')], filtering=False)
+            calls = []
+
+            def runner(command, **_kwargs):
+                calls.append(command[-1])
+                return ffprobe(1920, 1080)
+
+            with patch.object(c.shutil, 'which', return_value='/usr/bin/ffprobe'), patch.object(c, 'local_ipv4', return_value='192.0.2.1'), patch.object(c, 'login', return_value=[row(ChannelName='普通')]), patch.object(c, 'portal_directory', return_value=directory([dict(mixNo='1', name='普通')])), patch.object(c, 'probe_fact', wraps=c.probe_fact) as probe:
+                c.refresh_after_fetch(paths, now=NOW, runner=runner)
+                self.assertEqual(c.main(['config=' + str(paths[0]), 'filter=true']), 0)
+                probed = probe.call_count
+                self.assertEqual(c.main(['config=' + str(paths[0]), 'filter=false']), 0)
+            self.assertEqual(probe.call_count, probed)
+            self.assertTrue(calls)
+            self.assertTrue(c.resolution_path(paths).is_file())
+            self.assertIs(c.load(paths[1])['filter'], False)
+
+    def test_missing_tools_do_not_install_and_keep_channels(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = self.prepare(Path(tmp).resolve(), [row(ChannelName='普通')], filtering=False)
+            with patch.object(c.shutil, 'which', return_value=None):
+                c.refresh_after_fetch(paths, now=NOW, runner=lambda *_a, **_k: (_ for _ in ()).throw(AssertionError('ran')))
+            fact = next(iter(json.loads(c.resolution_path(paths).read_text())['channels'].values()))
+            self.assertEqual(fact['status'], 'unavailable')
+            with patch.object(c, 'probe_fact', side_effect=AssertionError('offline')):
+                c.convert(paths)
+            self.assertIn('#EXTINF:', paths[3].read_text())
+
+
+if __name__ == '__main__':
+    unittest.main()
