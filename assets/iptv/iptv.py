@@ -622,14 +622,18 @@ def directory_index(value):
     return index
 
 
-def resolve_names(rows, directory=None):
+def resolve_names(rows, directory=None, config=None):
     index = directory_index(directory) if directory is not None else {}
-    counts = dict(source=0, matched=0, ambiguous=0, unmatched=0)
+    overrides = channel_name_map(config)
+    counts = dict(override=0, source=0, matched=0, ambiguous=0, unmatched=0)
     names = []
     for row in rows:
         own = row.get('ChannelName')
+        channel_id = str(row.get('ChannelID', ''))
         candidates = index.get(str(row.get('UserChannelID', '')), [])
-        if own is not None and own not in ('','null'):
+        if channel_id in overrides:
+            name = overrides[channel_id]; counts['override'] += 1
+        elif own is not None and own not in ('','null'):
             name = own; counts['source'] += 1
         elif len(candidates) == 1:
             name = candidates[0]; counts['matched'] += 1
@@ -778,6 +782,8 @@ def validate(c):
             raise auth.SafeError('节目单地址无效')
     if 'filter' in c:
         validate_filter(c['filter'])
+    if 'channel_names' in c:
+        channel_name_map(c)
 
 
 def load(path):
@@ -886,7 +892,7 @@ def playlist_body(rows, c, directory=None, header='#EXTM3U', resolutions=None, a
     if not header.startswith('#EXTM3U'): raise auth.SafeError('播放列表头无效')
     lines = [header, '# Raw channelArray order; ChannelID is a placeholder when ChannelName is absent. Apply metadata/templates separately.']
     if any(not isinstance(row, dict) for row in rows): raise auth.SafeError('无效频道记录')
-    names, _ = resolve_names(rows, directory)
+    names, _ = resolve_names(rows, directory, c)
     written, counts = 0, dict(excluded_height=0, excluded_name=0, kept=0)
     for row, name in zip(rows, names):
         if not isinstance(row, dict): raise auth.SafeError('无效频道记录')
@@ -936,6 +942,26 @@ def load_resolutions(path):
     if not isinstance(value, dict) or value.get('schema') != 1 or not isinstance(value.get('channels'), dict):
         raise auth.SafeError('分辨率记录结构无效')
     return value
+
+
+def channel_name_map(config):
+    """Exact ChannelID display names from config. Empty when the field is absent."""
+    if config is None or 'channel_names' not in config:
+        return {}
+    value = config.get('channel_names')
+    if not isinstance(value, dict):
+        raise auth.SafeError('channel_names必须是对象')
+    if len(value) > 256:
+        raise auth.SafeError('channel_names过长')
+    mapped = {}
+    for key, name in value.items():
+        if not isinstance(key, str) or not key or key != key.strip() or any(ord(ch) < 32 or ch in ' \t' for ch in key):
+            raise auth.SafeError('channel_names键必须是完整ChannelID')
+        text(name)
+        if not name or name != name.strip():
+            raise auth.SafeError('channel_names名称无效')
+        mapped[key] = name
+    return mapped
 
 
 def default_filter(enabled=True):
@@ -1386,7 +1412,7 @@ def convert(paths, destination=None):
                     raise SafeError('导出写入失败。原播放列表在：' + str(output.resolve())) from None
         if not export_skipped:
             print('本次生成的播放列表在：' + str(shown))
-        _, counts = resolve_names(rows, directory)
+        _, counts = resolve_names(rows, directory, c)
         print(f'convert成功：{decisions["kept"]}条M3U记录；名称 ' + json.dumps(counts, ensure_ascii=False))
         enabled, min_height, names = filter_rules(c)
         if not enabled:
@@ -1533,7 +1559,7 @@ def usage():
   python3 iptv.py config=tel output=exports
 
 config 相对路径以脚本目录为基准。带身份或播放字段时，合并已有配置、保存并获取后生成。run 重新获取并生成；频道或直播地址新增、变化，或没有分辨率记录时才探测直播。epg 只更新节目单，先用已保存的门户会话，失效才重新登录；不改回看地址，也不探测。只给 config（可再加 output）时离线生成，不探测。resolution 按当前频道重新测量全部分辨率，不生成列表。
-已有 tel/epg.xml 时，playlist.m3u 头部写 x-tvg-url="epg.xml"。可选 epg_url=http://访问地址/epg.xml 改为播放器能打开的地址；output 导出到其他目录时，同时复制一份 epg.xml。以 .m3u 结尾的 output 是文件，其他 output 是目录，副本名为配置目录名.m3u。filter 写入 config.json，是对象：enabled、min_height、exclude_names。缺省为 enabled true、min_height 720、exclude_names 含“购物”“理财”“聚鲨”。旧的 true/false 在保存或 run/fetch 补字段时变成该对象，并保留原来的开关；已有自定义高度和关键词不改。比较高度时，没有可用记录、状态不是 identified 或 played、宽或高缺失、不是正整数，都按高度 0；resolution.json 仍只保存实测，不会改成 0。filter=false 只把 enabled 写成 false 并重新生成，不改规则、不登录、不探测。离线生成、epg、resolution 不补写该字段。当前仅上海电信。'''
+已有 tel/epg.xml 时，playlist.m3u 头部写 x-tvg-url="epg.xml"。可选 epg_url=http://访问地址/epg.xml 改为播放器能打开的地址；output 导出到其他目录时，同时复制一份 epg.xml。以 .m3u 结尾的 output 是文件，其他 output 是目录，副本名为配置目录名.m3u。filter 写入 config.json，是对象：enabled、min_height、exclude_names。缺省为 enabled true、min_height 720、exclude_names 含“购物”“理财”“聚鲨”。旧的 true/false 在保存或 run/fetch 补字段时变成该对象，并保留原来的开关；已有自定义高度和关键词不改。比较高度时，没有可用记录、状态不是 identified 或 played、宽或高缺失、不是正整数，都按高度 0；resolution.json 仍只保存实测，不会改成 0。filter=false 只把 enabled 写成 false 并重新生成，不改规则、不登录、不探测。可选 channel_names 是对象，键为完整 ChannelID，值为显示名；只在生成列表时按完整键精确替换，优先于原始名、门户名和数字兜底，并在过滤前生效。不改 ChannelID、tvg-id、catchup.json 或 channels.json。离线生成、epg、resolution 不补写该字段。当前仅上海电信。'''
 
 
 def main(argv=None):

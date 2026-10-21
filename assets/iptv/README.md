@@ -46,6 +46,12 @@ python3 iptv.py config=tel output=/path/channels.m3u
 
 生成列表时读取 `config.json` 里的 `filter` 对象。默认 `enabled` 为 true，`min_height` 为 720，`exclude_names` 为“购物”“理财”“聚鲨”。高度低于 `min_height`，或名称含任一排除词，就不写入列表。没有分辨率记录、指纹对不上、状态不是 identified 或 played、宽或高缺失或不是正整数时，筛选按高度 0 比较；这只用于当次比较，不改 `resolution.json`。一次失败不代表频道永久不可播，重新测量后按新记录再比。`catchup.json` 和 `channels.json` 仍保存全量原始记录。`resolution.json` 只记录实测宽高、编码、状态和时间，不含是否排除。
 
+可选 `channel_names` 写在同一份 `config.json`。键是完整 `ChannelID`，值是显示名，只按完整键精确匹配。生成列表时它优先于原始频道名、门户目录名和数字兜底，并在过滤前生效，因此映射后的名称也会参与 `exclude_names`。它不改 `ChannelID`、`tvg-id`、`catchup.json` 或 `channels.json`。没有该字段时行为与原来相同。示例只说明格式，不是频道清单：
+
+```json
+"channel_names": {"YOUR_CHANNEL_ID": "显示名"}
+```
+
 首次保存写入完整默认对象。已有配置若仍是 `true`/`false` 或缺少该字段，`run` 或 `fetch` 补成对象，并保留原来的开关。已保存的 `min_height` 和 `exclude_names` 不因开关被覆盖。离线生成、`epg`、`resolution` 不改配置。下面两条只改 `enabled`，不重新登录，也不探测：
 
 ```sh

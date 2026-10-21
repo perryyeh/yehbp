@@ -2,6 +2,7 @@
 import copy
 import io
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -23,7 +24,7 @@ class DirectoryTests(unittest.TestCase):
         before = copy.deepcopy(rows), copy.deepcopy(meta)
         resolved, counts = c.resolve_names(rows, meta)
         self.assertEqual(resolved, names + [names[0], '42', '42'])
-        self.assertEqual(counts, dict(source=0,matched=5,ambiguous=1,unmatched=1))
+        self.assertEqual(counts, dict(override=0, source=0,matched=5,ambiguous=1,unmatched=1))
         rendered, counts = c.render(rows, config(), meta, apply_filter=False)
         self.assertEqual(rendered.count('#EXTINF:'), 7)
         self.assertEqual(counts['kept'], 7)
@@ -68,3 +69,66 @@ class DirectoryTests(unittest.TestCase):
         self.assertTrue(cookie.called)
         self.assertEqual(result['categories'][0]['response'],dict(data=[dict(mixNo='42',name=' 高清 HD 4K ',extra=['keep'])],extra='complete'))
         self.assertEqual(c.directory_index(result)['42'],[' 高清 HD 4K '])
+
+    def test_channel_names_exact_id_beats_portal_and_filters_mapped_name(self):
+        rows = [
+            row(ChannelID='5000027', UserChannelID='1', ChannelName='原始名'),
+            row(ChannelID='5000028', UserChannelID='2'),
+            row(ChannelID='6000138', UserChannelID='3'),
+            row(ChannelID='unmapped', UserChannelID='4'),
+            row(ChannelID='suffix-5000027', UserChannelID='5'),
+        ]
+        meta = directory([
+            dict(mixNo='1', name='门户聚鲨'),
+            dict(mixNo='2', name='门户名'),
+            dict(mixNo='3', name='门户名'),
+            dict(mixNo='4', name='门户保留'),
+            dict(mixNo='5', name='后缀不该命中'),
+        ])
+        cfg = config()
+        cfg['filter'] = dict(enabled=True, min_height=0, exclude_names=['聚鲨'])
+        cfg['channel_names'] = {'5000027': '聚鲨', '5000028': '多彩文体4K', 'missing-id': '未使用'}
+        before_rows, before_meta = copy.deepcopy(rows), copy.deepcopy(meta)
+        resolved, counts = c.resolve_names(rows, meta, cfg)
+        self.assertEqual(resolved, ['聚鲨', '多彩文体4K', '门户名', '门户保留', '后缀不该命中'])
+        self.assertEqual(counts['override'], 2)
+        self.assertEqual(counts['source'], 0)
+        rendered, decisions = c.render(rows, cfg, meta, resolutions=None)
+        self.assertNotIn('tvg-id="5000027"', rendered)
+        self.assertIn('tvg-name="多彩文体4K"', rendered)
+        self.assertIn('tvg-id="6000138"', rendered)
+        self.assertIn(',门户保留', rendered)
+        self.assertEqual(decisions['excluded_name'], 1)
+        self.assertEqual(decisions['kept'], 4)
+        self.assertEqual(rows[0]['ChannelID'], '5000027')
+        self.assertEqual(rows[0]['ChannelName'], '原始名')
+        self.assertEqual((rows, meta), (before_rows, before_meta))
+        self.assertNotIn('5000027', json.dumps(meta, ensure_ascii=False))
+
+    def test_unknown_channel_name_key_rejected_and_save_keeps_mapping(self):
+        with self.assertRaises(c.SafeError):
+            c.validate(dict(config(), channel_names={'5000027': ''}))
+        with self.assertRaises(c.SafeError):
+            c.validate(dict(config(), channel_names=['5000027']))
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = c.config_paths(Path(tmp).resolve() / 'private')
+            c.private_dir(paths[0])
+            cfg = config()
+            cfg['filter'] = dict(enabled=True, min_height=720, exclude_names=['购物'])
+            cfg['channel_names'] = {'6000141': '江苏卫视4K'}
+            cfg['epg_url'] = 'http://example.test/epg.xml'
+            c.atomic_json(paths[1], cfg)
+            c.atomic_json(paths[2], [row(ChannelID='6000141', UserChannelID='9')])
+            c.atomic_json(c.metadata_path(paths), directory([dict(mixNo='9', name='门户江苏')]))
+            os.chmod(paths[1], 0o600)
+            with patch.object(c, 'login', side_effect=AssertionError('login')), patch.object(c, 'probe_fact', side_effect=AssertionError('probe')):
+                self.assertEqual(c.main(['config=' + str(paths[0]), 'filter=false']), 0)
+            saved = c.load(paths[1])
+            self.assertEqual(saved['channel_names'], {'6000141': '江苏卫视4K'})
+            self.assertEqual(saved['filter']['exclude_names'], ['购物'])
+            self.assertIs(saved['filter']['enabled'], False)
+            self.assertEqual(saved['epg_url'], 'http://example.test/epg.xml')
+            playlist = paths[3].read_text()
+            self.assertIn('tvg-id="6000141"', playlist)
+            self.assertIn('tvg-name="江苏卫视4K"', playlist)
+            self.assertNotIn('门户江苏', playlist)
