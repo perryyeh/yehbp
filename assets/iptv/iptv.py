@@ -1470,11 +1470,14 @@ def manual_resolution(paths, now=None, runner=None):
 
 
 COMMANDS = ('configure', 'fetch', 'convert', 'run', 'epg', 'resolution')
-FIELDS = {'userid', 'sn', 'mac', 'interface', 'multicast_interface', 'fcc_interface',
-          'auth_origin', 'base_url', 'live_path', 'replay_path', 'seek_template', 'epg_url'}
-RETIRED_CLI = {'allowed_origins', 'baseURL'}
-ALIASES = {'userinfo': 'userid', 'SN': 'sn', 'MAC': 'mac', 'rtp2http': 'base_url',
-           'auth': 'auth_origin', 'live': 'live_path', 'replay': 'replay_path', 'seek': 'seek_template'}
+CLI_FIELDS = {
+    'userid': 'userid', 'sn': 'sn', 'mac': 'mac', 'interface': 'interface',
+    'multicast': 'multicast_interface', 'fcc': 'fcc_interface',
+    'authurl': 'auth_origin', 'rtp2http': 'base_url',
+    'live': 'live_path', 'replay': 'replay_path', 'seek': 'seek_template', 'epg': 'epg_url',
+}
+FIELDS = set(CLI_FIELDS.values())
+RETIRED_CLI = {'allowed_origins', 'baseURL', 'userinfo', 'SN', 'MAC', 'multicast_interface', 'fcc_interface', 'auth', 'epg_url'}
 
 
 def parse_pairs(argv):
@@ -1482,14 +1485,11 @@ def parse_pairs(argv):
     for arg in argv:
         if '=' not in arg: raise SafeError('参数必须使用key=value，例如 config=tel')
         key, value = arg.split('=', 1)
-        key = ALIASES.get(key, key)
         if key == 'directory_metadata':
             raise SafeError('directory_metadata参数已移除，无需设置；fetch/run及全参数获取会同时刷新完整频道目录')
-        if key in RETIRED_CLI:
+        if key in RETIRED_CLI or key not in set(CLI_FIELDS) | {'config', 'output', 'filter'} or key in values:
             raise SafeError('未知或重复参数键')
-        if key not in FIELDS | {'config', 'output', 'filter'} or key in values:
-            raise SafeError('未知或重复参数键')
-        values[key] = value
+        values[CLI_FIELDS.get(key, key)] = value
     return values
 
 
@@ -1576,8 +1576,8 @@ def reject_retired(argv):
 
 
 def usage():
-    return '''用法：
-  python3 iptv.py config=tel userinfo=YOUR_USER_ID SN=YOUR_BOX_SN MAC=YOUR_BOX_MAC interface=iptv85 rtp2http=http://127.0.0.1:5140
+    return ('''用法：
+  python3 iptv.py config=tel userid=YOUR_USER_ID sn=YOUR_BOX_SN mac=YOUR_BOX_MAC interface=iptv85 rtp2http=http://127.0.0.1:5140
   python3 iptv.py run config=tel
   python3 iptv.py epg config=tel
   python3 iptv.py resolution config=tel
@@ -1585,7 +1585,8 @@ def usage():
   python3 iptv.py config=tel output=exports
 
 config 相对路径以脚本目录为基准。带身份或播放字段时，合并已有配置、保存并获取后生成。run 重新获取并生成；频道或直播地址新增、变化，或没有分辨率记录时才探测直播。epg 只更新节目单，先用已保存的门户会话，失效才重新登录；不改回看地址，也不探测。只给 config（可再加 output）时离线生成，不探测。resolution 按当前频道重新测量全部分辨率，不生成列表。
-已有 tel/epg.xml 时，playlist.m3u 头部写 x-tvg-url="epg.xml"。可选 epg_url=http://访问地址/epg.xml 改为播放器能打开的地址；output 导出到其他目录时，同时复制一份 epg.xml。以 .m3u 结尾的 output 是文件，其他 output 是目录，副本名为配置目录名.m3u。filter 写入 config.json，是对象：enabled、min_height、exclude_names。缺省为 enabled true、min_height 720、exclude_names 含“购物”“理财”“聚鲨”。旧的 true/false 在保存或 run/fetch 补字段时变成该对象，并保留原来的开关；已有自定义高度和关键词不改。比较高度时，没有可用记录、状态不是 identified 或 played、宽或高缺失、不是正整数，都按高度 0；resolution.json 仍只保存实测，不会改成 0。filter=false 只把 enabled 写成 false 并重新生成，不改规则、不登录、不探测。可选 channel_names 是对象，键为完整 ChannelID，值为显示名；只在生成列表时按完整键精确替换，优先于原始名、门户名和数字兜底，并在过滤前生效。不改 ChannelID、tvg-id、catchup.json 或 channels.json。filter 还可选 exclude_ids，每项是完整 ChannelID，只在 enabled 为 true 时于名称和高度判断前排除，不删除原始记录；没有该字段时不排除。离线生成、epg、resolution 不补写该字段。当前仅上海电信。'''
+已有 tel/epg.xml 时，playlist.m3u 头部写 x-tvg-url="epg.xml"。可选 epg=http://访问地址/epg.xml 改为播放器能打开的地址；'''
+'''不填且没有本地 epg.xml 时头部不写引用。已保存的第三方地址会保留，直到显式再传 epg。output 导出到其他目录时，同时复制一份 epg.xml。以 .m3u 结尾的 output 是文件，其他 output 是目录，副本名为配置目录名.m3u。filter 写入 config.json，是对象：enabled、min_height、exclude_names。缺省为 enabled true、min_height 720、exclude_names 含“购物”“理财”“聚鲨”。旧的 true/false 在保存或 run/fetch 补字段时变成该对象，并保留原来的开关；已有自定义高度和关键词不改。比较高度时，没有可用记录、状态不是 identified 或 played、宽或高缺失、不是正整数，都按高度 0；resolution.json 仍只保存实测，不会改成 0。filter=false 只把 enabled 写成 false 并重新生成，不改规则、不登录、不探测。可选 channel_names 是对象，键为完整 ChannelID，值为显示名；只在生成列表时按完整键精确替换，优先于原始名、门户名和数字兜底，并在过滤前生效。不改 ChannelID、tvg-id、catchup.json 或 channels.json。filter 还可选 exclude_ids，每项是完整 ChannelID，只在 enabled 为 true 时于名称和高度判断前排除，不删除原始记录；没有该字段时不排除。离线生成、epg、resolution 不补写该字段。当前仅上海电信。''')
 
 
 def main(argv=None):
@@ -1604,9 +1605,9 @@ def main(argv=None):
         values = parse_pairs(pairs)
         configuring = bool(FIELDS & values.keys())
         if command != 'convert' and configuring:
-            raise SafeError('配置字段与子命令不能同时使用；首次直接写 config=tel userinfo=...，之后用 run config=tel')
+            raise SafeError('配置字段与子命令不能同时使用；首次直接写 config=tel userid=...，之后用 run config=tel')
         if 'output' in values and command not in ('convert', 'run', 'epg'):
-            raise SafeError('output仅用于离线生成或run')
+            raise SafeError('output仅用于离线生成、run或epg')
         location = values.pop('config', None)
         output_value = values.pop('output', None)
         filter_value = values.pop('filter', None)

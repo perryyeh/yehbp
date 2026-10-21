@@ -62,8 +62,8 @@ class DirectoryDefaultsTests(unittest.TestCase):
             root = Path(tmp).resolve()
             paths = c.config_paths(root / 'instance')
             meta = directory([dict(mixNo='1', name='高清 HD 4K')])
-            args = ['config=' + str(paths[0]), 'userinfo=fixture', 'SN=box',
-                    'MAC=00:11:22:33:44:55', 'interface=eth0.85', 'filter=false']
+            args = ['config=' + str(paths[0]), 'userid=fixture', 'sn=box',
+                    'mac=00:11:22:33:44:55', 'interface=eth0.85', 'filter=false']
             with patch.object(c, 'local_ipv4', return_value='192.0.2.1'), patch.object(c, 'login', return_value=[row(UserChannelID='1')]), patch.object(c, 'portal_directory', return_value=meta) as portal:
                 self.assertEqual(c.main(args), 0)
             portal.assert_called_once()
@@ -168,17 +168,20 @@ class DirectoryDefaultsTests(unittest.TestCase):
             self.assertNotIn('r2h-ifname', catchup)
             err = io.StringIO()
             with contextlib.redirect_stderr(err), patch.object(c, 'fetch', side_effect=AssertionError('fetch forbidden')):
-                self.assertEqual(c.main(['config=' + str(paths[0]), 'userinfo=']), 1)
+                self.assertEqual(c.main(['config=' + str(paths[0]), 'userid=']), 1)
                 self.assertEqual(c.main(['config=' + str(paths[0]), 'interface=']), 1)
                 self.assertEqual(c.main(['config=' + str(paths[0]), 'baseURL=http://127.0.0.1:5140']), 1)
                 self.assertEqual(c.main(['config=' + str(paths[0]), 'rtp2http=http://127.0.0.1:9', 'base_url=http://127.0.0.1:8']), 1)
                 self.assertEqual(c.main(['config=' + str(paths[0]), 'allowed_origins=http://example.test']), 1)
+                for old in ('userinfo=x', 'SN=x', 'MAC=00:11:22:33:44:55', 'UserID=x', 'Sn=x', 'Mac=00:11:22:33:44:55',
+                            'multicast_interface=eth0', 'fcc_interface=eth0', 'auth=http://203.0.113.10:7001', 'epg_url=http://203.0.113.10/epg.xml'):
+                    self.assertEqual(c.main(['config=' + str(paths[0]), old]), 1)
             message = err.getvalue()
             self.assertIn('配置字段缺失', message)
             self.assertIn('未知或重复参数键', message)
             self.assertEqual(paths[1].read_bytes(), before)
             with patch.object(c, 'local_ipv4', return_value='192.0.2.1'), patch.object(c, 'login', return_value=[row(ChannelFCCIP='10.0.0.1', ChannelFCCPort='8027')]), patch.object(c, 'portal_directory', return_value=directory([dict(mixNo='1', name='fixture')])):
-                self.assertEqual(c.main(['config=' + str(paths[0]), 'multicast_interface=']), 0)
+                self.assertEqual(c.main(['config=' + str(paths[0]), 'multicast=']), 0)
             saved = c.load(paths[1])
             self.assertEqual(saved['multicast_interface'], '')
             self.assertEqual(saved['fcc_interface'], 'eth0.86')
@@ -187,7 +190,7 @@ class DirectoryDefaultsTests(unittest.TestCase):
             self.assertNotIn('r2h-ifname=eth0.51', cleared)
             self.assertNotIn('r2h-ifname=', cleared.split('r2h-ifname-fcc')[-1])
             with patch.object(c, 'local_ipv4', return_value='192.0.2.1'), patch.object(c, 'login', return_value=[row(ChannelFCCIP='10.0.0.1', ChannelFCCPort='8027')]), patch.object(c, 'portal_directory', return_value=directory([dict(mixNo='1', name='fixture')])):
-                self.assertEqual(c.main(['config=' + str(paths[0]), 'multicast_interface=', 'fcc_interface=']), 0)
+                self.assertEqual(c.main(['config=' + str(paths[0]), 'multicast=', 'fcc=']), 0)
             both = c.load(paths[1])
             self.assertEqual(both['multicast_interface'], '')
             self.assertEqual(both['fcc_interface'], '')
@@ -205,7 +208,7 @@ class DirectoryDefaultsTests(unittest.TestCase):
                 seen.append(cfg['auth_origin'])
                 return [row()]
             with patch.object(c, 'local_ipv4', return_value='192.0.2.1'), patch.object(c, 'login', side_effect=login), patch.object(c, 'portal_directory', return_value=directory([dict(mixNo='1', name='fixture')])):
-                self.assertEqual(c.main(['config=' + str(paths[0]), 'auth=http://203.0.113.10:7001 http://203.0.113.11:7001', 'live=/udp/', 'replay=/proxy/rtsp/', 'seek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}']), 0)
+                self.assertEqual(c.main(['config=' + str(paths[0]), 'authurl=http://203.0.113.10:7001 http://203.0.113.11:7001', 'live=/udp/', 'replay=/proxy/rtsp/', 'seek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}']), 0)
             saved = c.load(paths[1])
             self.assertEqual(seen, ['http://203.0.113.10:7001'])
             self.assertEqual(saved['auth_origin'], 'http://203.0.113.10:7001')

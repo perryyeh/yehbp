@@ -39,8 +39,8 @@ class ReplaySeekTests(unittest.TestCase):
     def test_first_parameters_without_seek_save_and_emit_local_placeholders(self):
         with tempfile.TemporaryDirectory() as tmp:
             paths = c.config_paths(Path(tmp).resolve() / 'tel')
-            args = ['config=' + str(paths[0]), 'userinfo=fixture', 'SN=box',
-                    'MAC=00:11:22:33:44:55', 'interface=eth0.85']
+            args = ['config=' + str(paths[0]), 'userid=fixture', 'sn=box',
+                    'mac=00:11:22:33:44:55', 'interface=eth0.85']
             with patch.object(c, 'local_ipv4', return_value='192.0.2.1'), patch.object(c, 'login', return_value=[row()]), patch.object(c, 'portal_directory', return_value=directory([dict(mixNo='1', name='fixture')])), patch.object(c.socket, 'socket', side_effect=AssertionError('network forbidden')):
                 self.assertEqual(c.main(args + ['filter=false']), 0)
             self.assertEqual(c.load(paths[1])['seek_template'], LOCAL_SEEK)
