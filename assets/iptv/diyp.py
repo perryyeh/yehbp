@@ -454,7 +454,9 @@ class Bridge:
             rows.append("%s,#genre#" % (group if "," not in group else group.replace(",", "，")))
             for channel in buckets[group]:
                 segment = channel["group"] if channel["group"] else "-"
-                path = "/c/%d/%s/%s" % (
+                kind = "PLTV" if channel["catchup"] else "c"
+                path = "/%s/%d/%s/%s" % (
+                    kind,
                     channel["index"],
                     urllib.parse.quote(segment, safe=""),
                     urllib.parse.quote(channel["name"], safe=""),

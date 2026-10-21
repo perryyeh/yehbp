@@ -216,18 +216,25 @@ class ServerTests(unittest.TestCase):
         text = body.decode()
         self.assertEqual(text.splitlines()[0], "央视,#genre#")
         self.assertEqual(text.splitlines()[0].count(","), 1)
-        self.assertIn("CCTV1综合,http://127.0.0.1:9/c/1/", text)
-        self.assertEqual(text.count("CCTV4K,http://127.0.0.1:9/c/"), 2)
-        self.assertIn("/c/2/", text)
-        self.assertIn("/c/3/", text)
+        self.assertIn("CCTV1综合,http://127.0.0.1:9/PLTV/1/", text)
+        self.assertEqual(text.count("CCTV4K,http://127.0.0.1:9/PLTV/"), 2)
+        self.assertIn("/PLTV/2/", text)
+        self.assertIn("/PLTV/3/", text)
+        self.assertIn("只有直播,http://127.0.0.1:9/c/4/", text)
+        self.assertNotIn("/PLTV/4/", text)
 
-        status, headers, payload = self.open("/c/1/%E5%A4%AE%E8%A7%86/CCTV1%E7%BB%BC%E5%90%88")
+        status, headers, payload = self.open("/PLTV/1/%E5%A4%AE%E8%A7%86/CCTV1%E7%BB%BC%E5%90%88")
         self.assertEqual(status, 302)
         self.assertEqual(headers["Location"], LIVE)
         self.assertNotIn("AuthInfo", payload.decode())
+        status, headers, payload = self.open("/c/1/%E5%A4%AE%E8%A7%86/CCTV1%E7%BB%BC%E5%90%88")
+        self.assertEqual(status, 302)
+        self.assertEqual(headers["Location"], LIVE)
 
-        status, headers, _payload = self.open(
-            "/TVOD/1/%E5%A4%AE%E8%A7%86/CCTV1%E7%BB%BC%E5%90%88?playseek=20261021004500-20261021013000")
+        issued = next(line for line in text.splitlines() if line.startswith("CCTV1综合,"))
+        play = issued.split(",", 1)[1].replace("/PLTV/", "/TVOD/", 1)
+        play += "?playseek=20261021004500-20261021013000"
+        status, headers, _payload = self.open(play.split(":9", 1)[1])
         self.assertEqual(status, 302)
         location = headers["Location"]
         self.assertIn("AuthInfo=A%2Fb+C==", location)
@@ -254,7 +261,7 @@ class ServerTests(unittest.TestCase):
             port = server.server_address[1]
             status, _headers, payload = self.open_at(port, "/tel.m3u", "player.example:5142")
             self.assertEqual(status, 200)
-            self.assertIn("CCTV1综合,http://player.example:5142/c/1/", payload.decode())
+            self.assertIn("CCTV1综合,http://player.example:5142/PLTV/1/", payload.decode())
             status, _headers, payload = self.open_at(
                 port, "/tel.epg?ch=CCTV1%E7%BB%BC%E5%90%88&date=2026-10-21", "player.example:5142")
             document = json.loads(payload)
@@ -277,7 +284,7 @@ class ServerTests(unittest.TestCase):
         with patch.object(bridge, "fetch_xml", side_effect=self.fake_fetch):
             prefixed.reload_epg(force=True)
         text = prefixed.playlist_text("ignored.example:1")
-        self.assertIn("CCTV1综合,http://player.example:80/lucky/iptv/c/1/", text)
+        self.assertIn("CCTV1综合,http://player.example:80/lucky/iptv/PLTV/1/", text)
         document = prefixed.epg_document("CCTV1综合", "20261021", "ignored.example:1")
         self.assertEqual(document["url"], "http://player.example:80/lucky/iptv/tel.epg")
         self.assertEqual([row["title"] for row in document["epg_data"]], ["早间", "补充", "跨天"])
@@ -312,6 +319,9 @@ class ServerTests(unittest.TestCase):
         status, headers, _payload = self.open("/c/4/%E4%B8%8A%E6%B5%B7%E5%8F%B0/%E5%8F%AA%E6%9C%89%E7%9B%B4%E6%92%AD")
         self.assertEqual(status, 302)
         self.assertEqual(headers["Location"], "http://127.0.0.1:5140/rtp/233.18.204.3:5140")
+        status, headers, _payload = self.open("/PLTV/4/%E4%B8%8A%E6%B5%B7%E5%8F%B0/%E5%8F%AA%E6%9C%89%E7%9B%B4%E6%92%AD")
+        self.assertEqual(status, 302)
+        self.assertEqual(headers["Location"], "http://127.0.0.1:5140/rtp/233.18.204.3:5140")
 
     def test_empty_group_uses_dash_and_index_not_the_label(self):
         empty = (
@@ -333,7 +343,7 @@ class ServerTests(unittest.TestCase):
         lines = text.splitlines()
         self.assertEqual(lines[0], ",#genre#")
         self.assertEqual(lines[1], "无组甲,http://127.0.0.1:9/c/1/-/%E6%97%A0%E7%BB%84%E7%94%B2")
-        self.assertEqual(lines[2], "无组甲,http://127.0.0.1:9/c/2/-/%E6%97%A0%E7%BB%84%E7%94%B2")
+        self.assertEqual(lines[2], "无组甲,http://127.0.0.1:9/PLTV/2/-/%E6%97%A0%E7%BB%84%E7%94%B2")
         self.assertEqual(lines[3], "斜/杠,http://127.0.0.1:9/c/3/-/%E6%96%9C%2F%E6%9D%A0")
         self.assertNotIn("//", lines[1].split(",", 1)[1].split("://", 1)[1])
 
@@ -346,8 +356,10 @@ class ServerTests(unittest.TestCase):
             status, headers, _payload = self.open("/c/1//%E6%97%A0%E7%BB%84%E7%94%B2")
             self.assertEqual(status, 302)
             self.assertEqual(headers["Location"], LIVE)
-            status, headers, _payload = self.open(
-                "/TVOD/2/ignored/%E6%97%A0%E7%BB%84%E7%94%B2?playseek=20261021004500-20261021013000")
+            issued = next(line for line in lines if line.startswith("无组甲,http://127.0.0.1:9/PLTV/"))
+            play = issued.split(",", 1)[1].replace("/PLTV/", "/TVOD/", 1)
+            play += "?playseek=20261021004500-20261021013000"
+            status, headers, _payload = self.open(play.split(":9", 1)[1])
             self.assertEqual(status, 302)
             self.assertIn("AuthInfo=A%2Fb+C==", headers["Location"])
             self.assertIn("fcc=124.75.26.151%3A15970", headers["Location"])
@@ -390,7 +402,7 @@ class ConfigSourceTests(unittest.TestCase):
             service = bridge.Bridge(str(resolved), "", cache, TZ, 300, "tel.m3u", "tel.epg")
             service.reload_m3u(force=True)
             self.assertEqual(service.playlist_text("player.example:5142").splitlines()[1],
-                             "CCTV1综合,http://player.example:5142/c/1/%E5%A4%AE%E8%A7%86/CCTV1%E7%BB%BC%E5%90%88")
+                             "CCTV1综合,http://player.example:5142/PLTV/1/%E5%A4%AE%E8%A7%86/CCTV1%E7%BB%BC%E5%90%88")
             changed = M3U.replace("CCTV1综合", "更新频道", 1)
             playlist.write_text(changed, encoding="utf-8")
             playlist.touch()
