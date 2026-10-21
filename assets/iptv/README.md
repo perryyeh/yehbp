@@ -1,6 +1,6 @@
 # IPTV 频道抓取参考
 
-本参考代码已在上海电信测试通过，其他运营商需自行适配。请在已接通 IPTV 的 Linux 设备上以 root 运行，需 Python 3.9+ 和 OpenSSL。
+本代码已在上海电信测试通过，其他运营商需自行适配。请在已接通 IPTV 的 Linux 设备上以 root 运行，需 Python 3.9+ 和 OpenSSL。
 
 下载 iptv.py 后运行，使用方法及参数说明见下文。身份请换成自己机顶盒的 UserID、SN 和 MAC。
 
@@ -126,8 +126,8 @@ cat tel/resolution.json
 }
 ```
 
-完整名单见 [tel/config.json](tel/config.json)。
+完整配置参考 [tel/config.json](tel/config.json)。
 
-协议参考 [pcg562240/pcg-iptv](https://github.com/pcg562240/pcg-iptv)。
+接口参考 [pcg562240/pcg-iptv](https://github.com/pcg562240/pcg-iptv)。
 
 DIYP 适配见 [README-diyp.md](README-diyp.md)。
