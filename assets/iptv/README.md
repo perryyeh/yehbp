@@ -46,7 +46,7 @@ python3 iptv.py config=tel output=/path/channels.m3u
 
 生成列表时默认开启过滤，规则写死：视频高度低于 720，或名称含“购物”“理财”“聚鲨”。没有高度、探测超时或失败的频道保留，一次失败不会当成永久不可播。`catchup.json` 和 `channels.json` 仍保存全量原始记录。`resolution.json` 只记录实测宽高、编码、状态和时间，不含是否排除。
 
-单独开关不重新登录，也不探测。省略 `filter` 时，没有该字段按开启处理：
+`filter` 写入 `config.json`。首次保存默认 `true`；已有配置缺这个字段时，`run` 或 `fetch` 只补上 `true`，已有的 `true`/`false` 不改。离线生成、`epg`、`resolution` 不改配置。单独开关不重新登录，也不探测：
 
 ```sh
 python3 iptv.py config=tel filter=false

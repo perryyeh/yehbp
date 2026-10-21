@@ -199,6 +199,33 @@ class ResolutionTests(unittest.TestCase):
             self.assertTrue(c.resolution_path(paths).is_file())
             self.assertIs(c.load(paths[1])['filter'], False)
 
+    def test_run_persists_missing_filter_and_keeps_explicit_false(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = self.prepare(Path(tmp).resolve(), [row(ChannelName='普通')])
+            other = {k: v for k, v in c.load(paths[1]).items()}
+            self.assertNotIn('filter', other)
+            before_rows = paths[2].read_bytes()
+            with patch.object(c, 'local_ipv4', return_value='192.0.2.1'), patch.object(c, 'login', return_value=[row(ChannelName='普通')]), patch.object(c, 'portal_directory', return_value=directory([dict(mixNo='1', name='普通')])), patch.object(c.shutil, 'which', return_value='/usr/bin/ffprobe'), patch.object(c, 'probe_fact', return_value=dict(checked_at='t', status='identified', codec='h264', width=1920, height=1080, field_order='progressive', playable=None)):
+                self.assertEqual(c.main(['run', 'config=' + str(paths[0])]), 0)
+            saved = c.load(paths[1])
+            self.assertIs(saved['filter'], True)
+            saved.pop('filter')
+            self.assertEqual(saved, other)
+            explicit = dict(saved)
+            explicit['filter'] = False
+            c.atomic_json(paths[1], explicit)
+            frozen = paths[1].read_bytes()
+            with patch.object(c, 'local_ipv4', return_value='192.0.2.1'), patch.object(c, 'login', return_value=[row(ChannelName='普通')]), patch.object(c, 'portal_directory', return_value=directory([dict(mixNo='1', name='普通')])), patch.object(c, 'probe_fact', side_effect=AssertionError('already measured')):
+                self.assertEqual(c.main(['fetch', 'config=' + str(paths[0])]), 0)
+            self.assertEqual(paths[1].read_bytes(), frozen)
+            self.assertIs(c.load(paths[1])['filter'], False)
+            offline = paths[1].read_bytes()
+            with patch.object(c, 'login', side_effect=AssertionError('login')):
+                self.assertEqual(c.main(['config=' + str(paths[0])]), 0)
+                self.assertEqual(c.main(['resolution', 'config=' + str(paths[0])]), 0)
+            self.assertEqual(paths[1].read_bytes(), offline)
+            self.assertNotEqual(before_rows, b'')
+
     def test_missing_tools_do_not_install_and_keep_channels(self):
         with tempfile.TemporaryDirectory() as tmp:
             paths = self.prepare(Path(tmp).resolve(), [row(ChannelName='普通')], filtering=False)

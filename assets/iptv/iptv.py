@@ -815,6 +815,8 @@ def configure(paths):
         if entered != current_auth or not c.get('auth_origin'):
             apply_auth(c, entered)
         c.pop('directory_metadata', None)  # Retire the legacy key only on explicit save.
+        if not isinstance(c.get('filter'), bool):
+            c['filter'] = True
         validate(c)
         auth.atomic_json(path, c)
         print('配置已保存：config.json为0600，现存目录权限保持不变')
@@ -1091,6 +1093,17 @@ def metadata_path(paths):
     return paths[0] / 'channels.json'
 
 
+def ensure_filter_default(config_path):
+    """Persist filter=true when the field is absent. Never overwrite an explicit bool."""
+    c = load(config_path)
+    if isinstance(c.get('filter'), bool):
+        return c
+    c['filter'] = True
+    validate(c)
+    auth.atomic_json(config_path, c)
+    return c
+
+
 def fetch(paths):
     d, config, output, _ = paths
     with auth.lock(d, '.iptv.lock'):
@@ -1101,6 +1114,7 @@ def fetch(paths):
             directory = portal_directory(c, context)
         except Exception:
             raise auth.SafeError('目录获取/校验失败，保留已有原始及目录文件') from None
+        c = ensure_filter_default(config)
         auth.atomic_json(metadata_path(paths), directory)
         auth.atomic_json(output, rows)
         if context.get('http') and context.get('framecode'):
@@ -1362,16 +1376,13 @@ def save_fields(paths, values):
         defaults = dict(provider='shanghai-telecom', multicast_interface='', fcc_interface='',
                         auth_origin=DEFAULT_ORIGIN, base_url='http://127.0.0.1:5140',
                         live_path='/rtp/', replay_path='/rtsp/', seek_template=SEEK,
-                        allowed_origins=[])
+                        allowed_origins=[], filter=True)
         for key, value in defaults.items(): c.setdefault(key, value)
         if 'auth_origin' in values:
             values = dict(values)
             apply_auth(values, values.pop('auth_origin'))
         c.pop('directory_metadata', None)
-        kept_filter = c.get('filter', None)
         c.update(values)
-        if 'filter' not in values and isinstance(kept_filter, bool):
-            c['filter'] = kept_filter
         validate(c)
         atomic_json(paths[1], c)
 
@@ -1422,7 +1433,7 @@ def usage():
   python3 iptv.py config=tel output=exports
 
 config 相对路径以脚本目录为基准。带身份或播放字段时，合并已有配置、保存并获取后生成。run 重新获取并生成；频道或直播地址新增、变化，或没有分辨率记录时才探测直播。epg 只更新节目单，先用已保存的门户会话，失效才重新登录；不改回看地址，也不探测。只给 config（可再加 output）时离线生成，不探测。resolution 按当前频道重新测量全部分辨率，不生成列表。
-已有 tel/epg.xml 时，playlist.m3u 头部写 x-tvg-url="epg.xml"。可选 epg_url=http://访问地址/epg.xml 改为播放器能打开的地址；output 导出到其他目录时，同时复制一份 epg.xml。以 .m3u 结尾的 output 是文件，其他 output 是目录，副本名为配置目录名.m3u。filter 默认开启：生成列表时排除视频高度低于 720 的频道，以及名称含“购物”“理财”“聚鲨”的频道；没有高度记录的频道保留。filter=false 只关过滤并重新生成，不重新登录、不探测。当前仅上海电信。'''
+已有 tel/epg.xml 时，playlist.m3u 头部写 x-tvg-url="epg.xml"。可选 epg_url=http://访问地址/epg.xml 改为播放器能打开的地址；output 导出到其他目录时，同时复制一份 epg.xml。以 .m3u 结尾的 output 是文件，其他 output 是目录，副本名为配置目录名.m3u。filter 写入 config.json，缺省为 true：生成列表时排除视频高度低于 720 的频道，以及名称含“购物”“理财”“聚鲨”的频道；没有高度记录的频道保留。首次保存配置，以及 run/fetch 发现该字段缺失时，写入 true；已有 true 或 false 保持不变。filter=false 只关过滤并重新生成，不重新登录、不探测。离线生成、epg、resolution 不补写该字段。当前仅上海电信。'''
 
 
 def main(argv=None):
