@@ -752,8 +752,6 @@ def endpoint(value, schemes):
 
 
 def validate(c):
-    if c.get('provider') != 'shanghai-telecom':
-        raise auth.SafeError('目前仅支持上海电信')
     for k in ('userid', 'sn', 'mac', 'interface', 'rtp2http', 'authurl'):
         if not text(c.get(k)):
             raise auth.SafeError('配置字段缺失')
@@ -854,7 +852,7 @@ def configure(paths):
     d, path, _, _ = paths
     with auth.lock(d, '.iptv.lock'):
         c = load(path) if auth.regular(path, missing=True) else {}
-        c['provider'] = 'shanghai-telecom'
+        c.pop('provider', None)
 
         def ask(label, current=''):
             prompt = label + '（隐藏输入，回车保留）: '
@@ -1579,7 +1577,7 @@ def save_filter(paths, enabled):
 def save_fields(paths, values):
     with lock(paths[0]):
         c = load(paths[1]) if regular(paths[1], missing=True) else {}
-        defaults = dict(provider='shanghai-telecom', multicast='', fcc='',
+        defaults = dict(multicast='', fcc='',
                         authurl=DEFAULT_ORIGIN, rtp2http='http://127.0.0.1:5140',
                         live='/rtp/', replay='/rtsp/', seek=SEEK,
                         allowed_origins=[], filter=default_filter(True))
@@ -1588,6 +1586,7 @@ def save_fields(paths, values):
             values = dict(values)
             apply_auth(values, values.pop('authurl'))
         c.pop('directory_metadata', None)
+        c.pop('provider', None)
         c.update(values)
         validate(c)
         atomic_json(paths[1], c)

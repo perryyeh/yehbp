@@ -13,7 +13,7 @@ from iptv_reference_loader import iptv as auth
 
 
 def config():
-    return dict(provider='shanghai-telecom', userid='fixture', sn='fixture-box', mac='00:11:22:33:44:55', interface='eth0.85', authurl=auth.DEFAULT_ORIGIN, allowed_origins=[], rtp2http='http://127.0.0.1:5140/prefix', live='/rtp/', replay='/rtsp/', seek=c.SEEK, filter=False)
+    return dict(userid='fixture', sn='fixture-box', mac='00:11:22:33:44:55', interface='eth0.85', authurl=auth.DEFAULT_ORIGIN, allowed_origins=[], rtp2http='http://127.0.0.1:5140/prefix', live='/rtp/', replay='/rtsp/', seek=c.SEEK, filter=False)
 
 
 def row(**kw):

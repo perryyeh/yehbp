@@ -1,6 +1,7 @@
 """Replay defaults and explicit overrides; synthetic fixtures, no provider access."""
 import contextlib
 import io
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -72,6 +73,24 @@ class ReplaySeekTests(unittest.TestCase):
             self.assertEqual(login.call_count, 2)
             self.assertEqual(c.load(paths[1])['seek'], custom)
             self.check_playlist(paths, custom)
+
+    def test_missing_provider_loads_and_save_drops_obsolete_key(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = c.config_paths(Path(tmp).resolve() / 'tel')
+            cfg = config()
+            self.assertNotIn('provider', cfg)
+            c.validate(cfg)
+            cfg['provider'] = 'shanghai-telecom'
+            cfg['rtp2http'] = 'http://127.0.0.1:5140'
+            c.private_dir(paths[0])
+            c.atomic_json(paths[1], cfg)
+            loaded = c.load(paths[1])
+            self.assertEqual(loaded['provider'], 'shanghai-telecom')
+            c.save_fields(paths, {'live': '/rtp/'})
+            saved = json.loads(paths[1].read_text())
+            self.assertNotIn('provider', saved)
+            self.assertEqual(saved['userid'], 'fixture')
+            self.assertEqual(saved['live'], '/rtp/')
 
     def test_saved_previous_default_is_not_silently_migrated(self):
         with tempfile.TemporaryDirectory() as tmp:

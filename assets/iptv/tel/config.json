@@ -1,7 +1,16 @@
 {
-  "provider": "shanghai-telecom",
-  "allowed_origins": [],
+  "userid": "",
+  "sn": "",
+  "mac": "",
   "interface": "enp3s0.85",
+  "rtp2http": "",
+  "multicast": "",
+  "fcc": "",
+  "authurl": "http://222.68.208.73:7001",
+  "allowed_origins": [],
+  "live": "/rtp/",
+  "replay": "/rtsp/",
+  "seek": "${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}",
   "filter": {
     "enabled": true,
     "min_height": 720,
@@ -43,15 +52,5 @@
     "00000001000000050000000004307720": "百事通4K电影",
     "00000001000000050000000005000001": "百事通4K纪实",
     "00000001000000050000000005000002": "百事通4K儿童"
-  },
-  "multicast": "",
-  "fcc": "",
-  "userid": "",
-  "sn": "",
-  "mac": "",
-  "authurl": "",
-  "rtp2http": "",
-  "live": "/rtp/",
-  "replay": "/rtsp/",
-  "seek": "${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}"
+  }
 }

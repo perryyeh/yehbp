@@ -186,7 +186,7 @@ class ResolutionTests(unittest.TestCase):
             self.assertNotIn('239.1.2.', out.getvalue())
 
     def test_filter_treats_unusable_height_as_zero_without_rewriting_facts(self):
-        cfg = dict(provider='shanghai-telecom', userid='fixture', sn='fixture-box', mac='00:11:22:33:44:55',
+        cfg = dict(userid='fixture', sn='fixture-box', mac='00:11:22:33:44:55',
                    interface='eth0.85', authurl=c.DEFAULT_ORIGIN, allowed_origins=[],
                    rtp2http='http://127.0.0.1:5140/prefix', live='/rtp/', replay='/rtsp/',
                    seek=c.SEEK)
