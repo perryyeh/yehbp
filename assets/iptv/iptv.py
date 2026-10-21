@@ -790,6 +790,8 @@ def validate(c):
         validate_filter(c['filter'])
     if 'channel_names' in c:
         channel_name_map(c)
+    if 'name_cleanup' in c:
+        name_cleanup_rules(c)
 
 
 def read_stored(path):
@@ -972,7 +974,10 @@ def playlist_body(rows, c, directory=None, header='#EXTM3U', resolutions=None, a
     lines = [header, '# Raw channelArray order; ChannelID is a placeholder when ChannelName is absent. Apply metadata/templates separately.']
     if any(not isinstance(row, dict) for row in rows): raise auth.SafeError('无效频道记录')
     names, _ = resolve_names(rows, directory, c)
+    rules = name_cleanup_rules(c)
+    names = [clean_display_name(name, rules) for name in names]
     written, counts = 0, dict(excluded_id=0, excluded_height=0, excluded_name=0, kept=0)
+    kept = []
     for row, name in zip(rows, names):
         if not isinstance(row, dict): raise auth.SafeError('无效频道记录')
         channel_id = text(row.get('ChannelID'))
@@ -982,9 +987,13 @@ def playlist_body(rows, c, directory=None, header='#EXTM3U', resolutions=None, a
         if decision != 'kept':
             continue
         written += 1
+        kept.append((row, name, channel_id))
+    for row, name, channel_id in ordered_entries(kept, rules):
         replay = replay_url(row.get('TimeShiftURL'), c)
         catchup = 'catchup="none"' if replay is None else f'catchup="default" catchup-source="{replay}"'
-        lines.extend([f'#EXTINF:-1 tvg-id="{channel_id}" tvg-name="{name}" {catchup},{name}', live_url(row, c)])
+        group = group_title(name, rules)
+        label = f' group-title="{group}"' if group else ''
+        lines.extend([f'#EXTINF:-1 tvg-id="{channel_id}" tvg-name="{name}"{label} {catchup},{name}', live_url(row, c)])
     return '\n'.join(lines) + '\n', counts
 
 
@@ -1041,6 +1050,101 @@ def channel_name_map(config):
             raise auth.SafeError('channel_names名称无效')
         mapped[key] = name
     return mapped
+
+
+def name_cleanup_rules(config):
+    """Optional display cleanup. Absent means leave names and omit groups."""
+    if config is None or 'name_cleanup' not in config:
+        return None
+    value = config.get('name_cleanup')
+    if not isinstance(value, dict):
+        raise auth.SafeError('name_cleanup必须是对象')
+    remove = value.get('remove', [])
+    if not isinstance(remove, list) or any(not isinstance(item, str) or not item.strip() for item in remove):
+        raise auth.SafeError('name_cleanup.remove必须是非空字符串列表')
+    if len(remove) > 16 or any(len(item) > 16 for item in remove):
+        raise auth.SafeError('name_cleanup.remove过长')
+    groups = value.get('groups', [])
+    if not isinstance(groups, list) or len(groups) > 16:
+        raise auth.SafeError('name_cleanup.groups无效')
+    parsed = []
+    seen = set()
+    for item in groups:
+        if not isinstance(item, dict) or set(item) - {'name', 'names', 'contains'}:
+            raise auth.SafeError('name_cleanup.groups项无效')
+        label = item.get('name')
+        text(label)
+        if not label or label != label.strip() or label in seen:
+            raise auth.SafeError('name_cleanup分组名无效')
+        seen.add(label)
+        rule = {'name': label}
+        if 'contains' in item and 'names' in item:
+            raise auth.SafeError('name_cleanup.groups项不能同时匹配')
+        if 'contains' in item:
+            needle = item.get('contains')
+            text(needle)
+            if not needle or needle != needle.strip():
+                raise auth.SafeError('name_cleanup.contains无效')
+            rule['contains'] = needle
+        elif 'names' in item:
+            names = item.get('names')
+            if not isinstance(names, list) or not names or any(not isinstance(name, str) or not name or name != name.strip() for name in names):
+                raise auth.SafeError('name_cleanup.names必须是非空名称列表')
+            if len(names) > 128 or len(names) != len(set(names)):
+                raise auth.SafeError('name_cleanup.names无效')
+            rule['names'] = list(names)
+        elif parsed:
+            pass
+        else:
+            raise auth.SafeError('name_cleanup.groups缺少匹配规则')
+        parsed.append(rule)
+    return {'remove': list(remove), 'groups': parsed}
+
+
+def clean_display_name(name, rules):
+    if not rules or not rules['remove']:
+        return name
+    cleaned = name
+    for token in rules['remove']:
+        if token.isascii() and token.isalpha():
+            cleaned = re.sub(r'(?i)(?:(?<=[\s0-9+\-])|^|(?<=[^\x00-\x7f]))' + re.escape(token) + r'(?=(?:[\s\-()]|$))', ' ', cleaned)
+        else:
+            cleaned = re.sub(re.escape(token), ' ', cleaned)
+    cleaned = re.sub(r'[ \t]+', ' ', cleaned).strip()
+    return cleaned or name
+
+
+def group_title(name, rules):
+    if not rules:
+        return ''
+    listed = [rule for rule in rules['groups'] if 'names' in rule]
+    loose = [rule for rule in rules['groups'] if 'contains' in rule]
+    rest = [rule for rule in rules['groups'] if 'names' not in rule and 'contains' not in rule]
+    for rule in loose + listed + rest:
+        if 'contains' in rule and rule['contains'].lower() in name.lower():
+            return rule['name']
+        if 'names' in rule and name in rule['names']:
+            return rule['name']
+        if 'contains' not in rule and 'names' not in rule:
+            return rule['name']
+    return ''
+
+
+def ordered_entries(kept, rules):
+    if not rules or not rules['groups']:
+        return [(row, name, channel_id) for row, name, channel_id in kept]
+    buckets = {rule['name']: [] for rule in rules['groups']}
+    rest = []
+    for item in kept:
+        label = group_title(item[1], rules)
+        if label in buckets:
+            buckets[label].append(item)
+        else:
+            rest.append(item)
+    ordered = []
+    for rule in rules['groups']:
+        ordered.extend(buckets[rule['name']])
+    return ordered + rest
 
 
 def default_filter(enabled=True):

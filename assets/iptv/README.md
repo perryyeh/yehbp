@@ -103,6 +103,30 @@ cat tel/resolution.json
 
 `exclude_channels` 和 `channel_names` 的键都是完整 ChannelID。
 
+可选 `name_cleanup` 只改播放列表的显示名和分组。没有该字段时，名称和顺序保持原样，也不写 `group-title`。`remove` 是要去掉的字面标记；`groups` 数组顺序就是输出顺序，组内仍按原顺序。`contains` 先于 `names` 匹配，所以带 4K 的频道不会被前面的名单分走；只有分组名的最后一项是其余频道。
+
+| 字段 | 作用 |
+|---|---|
+| `remove` | 去掉这些标记。英文按独立词去掉，`高清` 按字面去掉；去掉后为空则保留原名 |
+| `groups[].name` | 分组名，数组顺序即播放列表顺序 |
+| `groups[].names` | 清理后的完整显示名，精确匹配 |
+| `groups[].contains` | 名称包含即归入，不区分大小写，优先于名单 |
+
+```json
+"name_cleanup": {
+  "remove": ["HD", "高清"],
+  "groups": [
+    {"name": "央视", "names": ["CCTV1综合"]},
+    {"name": "卫视", "names": ["东方卫视"]},
+    {"name": "4K", "contains": "4K"},
+    {"name": "上海台", "names": ["新闻综合"]},
+    {"name": "其它"}
+  ]
+}
+```
+
+完整名单见 [tel/config.json](tel/config.json)。
+
 协议参考 [pcg562240/pcg-iptv](https://github.com/pcg562240/pcg-iptv)。
 
 DIYP 适配见 [README-diyp.md](README-diyp.md)。
