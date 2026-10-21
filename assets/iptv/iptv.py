@@ -879,29 +879,35 @@ def playlist_header(paths, c, explicit=None):
     return '#EXTM3U x-tvg-url="%s"' % target
 
 
-def render(rows, c, directory=None, header='#EXTM3U', resolutions=None, apply_filter=True):
+def playlist_body(rows, c, directory=None, header='#EXTM3U', resolutions=None, apply_filter=True):
+    """Build the list and counts. Callers refuse an empty kept set before writing."""
     validate(c)
     if not isinstance(rows, list) or not rows: raise auth.SafeError('原始频道数组为空或无效')
     if not header.startswith('#EXTM3U'): raise auth.SafeError('播放列表头无效')
     lines = [header, '# Raw channelArray order; ChannelID is a placeholder when ChannelName is absent. Apply metadata/templates separately.']
     if any(not isinstance(row, dict) for row in rows): raise auth.SafeError('无效频道记录')
     names, _ = resolve_names(rows, directory)
-    written, counts = 0, dict(excluded_height=0, excluded_name=0, unknown=0, kept=0)
+    written, counts = 0, dict(excluded_height=0, excluded_name=0, kept=0)
     for row, name in zip(rows, names):
         if not isinstance(row, dict): raise auth.SafeError('无效频道记录')
         channel_id = text(row.get('ChannelID'))
         if not channel_id: raise auth.SafeError('缺少ChannelID')
         decision = playlist_decision(row, name, c, resolutions) if apply_filter else 'kept'
         counts[decision] += 1
-        if decision not in ('kept', 'unknown'):
+        if decision != 'kept':
             continue
         written += 1
         replay = replay_url(row.get('TimeShiftURL'), c)
         catchup = 'catchup="none"' if replay is None else f'catchup="default" catchup-source="{replay}"'
         lines.extend([f'#EXTINF:-1 tvg-id="{channel_id}" tvg-name="{name}" {catchup},{name}', live_url(row, c)])
-    if not written:
-        raise auth.SafeError('过滤后没有可输出的频道，保留上次播放列表')
     return '\n'.join(lines) + '\n', counts
+
+
+def render(rows, c, directory=None, header='#EXTM3U', resolutions=None, apply_filter=True):
+    body, counts = playlist_body(rows, c, directory, header, resolutions, apply_filter)
+    if counts['kept'] == 0:
+        raise auth.SafeError('过滤后没有可输出的频道，保留上次播放列表')
+    return body, counts
 
 
 DEFAULT_EXCLUDE_NAMES = ('购物', '理财', '聚鲨')
@@ -974,6 +980,22 @@ def filter_rules(config):
     return rules['enabled'], rules['min_height'], tuple(rules['exclude_names'])
 
 
+def measured_height(row, resolutions):
+    """Usable height for filtering only. Missing or unusable facts compare as 0; stored facts stay unchanged."""
+    if resolutions is None:
+        return 0
+    key = source_key(text(row.get('ChannelID')), live_url(row, resolutions['config']))
+    fact = resolutions['channels'].get(key)
+    if not isinstance(fact, dict) or fact.get('status') not in ('identified', 'played'):
+        return 0
+    width, height = fact.get('width'), fact.get('height')
+    if isinstance(width, bool) or not isinstance(width, int) or width <= 0:
+        return 0
+    if isinstance(height, bool) or not isinstance(height, int) or height <= 0:
+        return 0
+    return height
+
+
 def playlist_decision(row, name, config, resolutions):
     """Saved filter rules. resolution.json stores measurements, not this choice."""
     enabled, min_height, names = filter_rules(config)
@@ -981,14 +1003,7 @@ def playlist_decision(row, name, config, resolutions):
         return 'kept'
     if any(word in name for word in names):
         return 'excluded_name'
-    if resolutions is None:
-        return 'kept'
-    key = source_key(text(row.get('ChannelID')), live_url(row, resolutions['config']))
-    fact = resolutions['channels'].get(key)
-    height = fact.get('height') if isinstance(fact, dict) else None
-    if isinstance(height, bool) or not isinstance(height, int):
-        return 'unknown'
-    if height < min_height:
+    if measured_height(row, resolutions) < min_height:
         return 'excluded_height'
     return 'kept'
 
@@ -1345,8 +1360,10 @@ def convert(paths, destination=None):
         rows = auth.read_json(source)
         metadata = metadata_path(paths)
         directory = auth.read_json(metadata) if auth.regular(metadata, missing=True) else None
-        result = render(rows, c, directory, playlist_header(paths, c), resolutions=resolutions_for(paths, c))
+        result = playlist_body(rows, c, directory, playlist_header(paths, c), resolutions=resolutions_for(paths, c))
         text_value, decisions = result
+        if decisions['kept'] == 0:
+            raise SafeError('过滤后没有可输出的频道，保留上次播放列表')
         if output.resolve() == Path(__file__).resolve():
             raise SafeError('主输出不能覆盖运行脚本')
         atomic_text(output, text_value)
@@ -1370,13 +1387,13 @@ def convert(paths, destination=None):
         if not export_skipped:
             print('本次生成的播放列表在：' + str(shown))
         _, counts = resolve_names(rows, directory)
-        print(f'convert成功：{decisions["kept"] + decisions["unknown"]}条M3U记录；名称 ' + json.dumps(counts, ensure_ascii=False))
+        print(f'convert成功：{decisions["kept"]}条M3U记录；名称 ' + json.dumps(counts, ensure_ascii=False))
         enabled, min_height, names = filter_rules(c)
         if not enabled:
             print('过滤：已关闭')
         else:
-            print('过滤：高度不足 %d，名称排除 %d，未知保留 %d' % (
-                decisions['excluded_height'], decisions['excluded_name'], decisions['unknown']))
+            print('过滤：高度不足 %d，名称排除 %d' % (
+                decisions['excluded_height'], decisions['excluded_name']))
 
 
 def refresh_after_fetch(paths, now=None, runner=None):
@@ -1516,7 +1533,7 @@ def usage():
   python3 iptv.py config=tel output=exports
 
 config 相对路径以脚本目录为基准。带身份或播放字段时，合并已有配置、保存并获取后生成。run 重新获取并生成；频道或直播地址新增、变化，或没有分辨率记录时才探测直播。epg 只更新节目单，先用已保存的门户会话，失效才重新登录；不改回看地址，也不探测。只给 config（可再加 output）时离线生成，不探测。resolution 按当前频道重新测量全部分辨率，不生成列表。
-已有 tel/epg.xml 时，playlist.m3u 头部写 x-tvg-url="epg.xml"。可选 epg_url=http://访问地址/epg.xml 改为播放器能打开的地址；output 导出到其他目录时，同时复制一份 epg.xml。以 .m3u 结尾的 output 是文件，其他 output 是目录，副本名为配置目录名.m3u。filter 写入 config.json，是对象：enabled、min_height、exclude_names。缺省为 enabled true、min_height 720、exclude_names 含“购物”“理财”“聚鲨”。旧的 true/false 在保存或 run/fetch 补字段时变成该对象，并保留原来的开关；已有自定义高度和关键词不改。没有达到 min_height 记录的频道保留。filter=false 只把 enabled 写成 false 并重新生成，不改规则、不登录、不探测。离线生成、epg、resolution 不补写该字段。当前仅上海电信。'''
+已有 tel/epg.xml 时，playlist.m3u 头部写 x-tvg-url="epg.xml"。可选 epg_url=http://访问地址/epg.xml 改为播放器能打开的地址；output 导出到其他目录时，同时复制一份 epg.xml。以 .m3u 结尾的 output 是文件，其他 output 是目录，副本名为配置目录名.m3u。filter 写入 config.json，是对象：enabled、min_height、exclude_names。缺省为 enabled true、min_height 720、exclude_names 含“购物”“理财”“聚鲨”。旧的 true/false 在保存或 run/fetch 补字段时变成该对象，并保留原来的开关；已有自定义高度和关键词不改。比较高度时，没有可用记录、状态不是 identified 或 played、宽或高缺失、不是正整数，都按高度 0；resolution.json 仍只保存实测，不会改成 0。filter=false 只把 enabled 写成 false 并重新生成，不改规则、不登录、不探测。离线生成、epg、resolution 不补写该字段。当前仅上海电信。'''
 
 
 def main(argv=None):

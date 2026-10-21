@@ -117,12 +117,22 @@ class ResolutionTests(unittest.TestCase):
         cfg = config()
         cfg['filter'] = dict(enabled=True, min_height=1080, exclude_names=['自定'])
         urls = [c.live_url(row(ChannelID='edge', ChannelName='边缘'), cfg)]
-        facts = {self.key('edge', urls[0]): dict(height=720, status='identified')}
-        text, counts = c.render([row(ChannelID='edge', ChannelName='边缘'), row(ChannelID='ok', ChannelName='保留')], cfg, resolutions={'config': cfg, 'channels': facts})
-        self.assertEqual(counts['excluded_height'], 1)
+        facts = {self.key('edge', urls[0]): dict(height=720, width=1280, status='identified')}
+        rows = [row(ChannelID='edge', ChannelName='边缘'), row(ChannelID='ok', ChannelName='保留', ChannelURL='igmp://239.1.1.8:8')]
+        text, counts = c.playlist_body(rows, cfg, resolutions={'config': cfg, 'channels': facts})
+        self.assertEqual(counts['excluded_height'], 2)
         self.assertNotIn('tvg-id="edge"', text)
-        kept, _ = c.render([row(ChannelID='named', ChannelName='自定频道'), row(ChannelID='ok', ChannelName='保留')], cfg, resolutions=None)
-        self.assertNotIn('tvg-id="named"', kept)
+        self.assertNotIn('tvg-id="ok"', text)
+        with self.assertRaises(c.SafeError):
+            c.render(rows, cfg, resolutions={'config': cfg, 'channels': facts})
+        cfg['filter']['min_height'] = 720
+        text, counts = c.render(rows, cfg, resolutions={'config': cfg, 'channels': facts})
+        self.assertEqual(counts, dict(excluded_height=1, excluded_name=0, kept=1))
+        self.assertIn('tvg-id="edge"', text)
+        cfg['filter']['min_height'] = 1080
+        kept, _ = c.render([row(ChannelID='named', ChannelName='自定频道'), row(ChannelID='ok', ChannelName='保留')], dict(cfg, filter=dict(enabled=False, min_height=1080, exclude_names=['自定'])), resolutions=None, apply_filter=True)
+        self.assertIn('tvg-id="named"', kept)
+        self.assertIn('tvg-id="ok"', kept)
         with tempfile.TemporaryDirectory() as tmp:
             paths = self.prepare(Path(tmp).resolve(), [row(ChannelName='普通')], filtering=False)
             c.atomic_json(paths[1], cfg)
@@ -173,28 +183,37 @@ class ResolutionTests(unittest.TestCase):
             self.assertNotIn('AuthInfo', out.getvalue())
             self.assertNotIn('239.1.2.', out.getvalue())
 
-    def test_filter_uses_height_and_keeps_unknown(self):
+    def test_filter_treats_unusable_height_as_zero_without_rewriting_facts(self):
         cfg = dict(provider='shanghai-telecom', userid='fixture', sn='fixture-box', mac='00:11:22:33:44:55',
                    interface='eth0.85', auth_origin=c.DEFAULT_ORIGIN, allowed_origins=[],
                    base_url='http://127.0.0.1:5140/prefix', live_path='/rtp/', replay_path='/rtsp/',
                    seek_template=c.SEEK)
         rows = [row(ChannelID='hd', ChannelName='高清'), row(ChannelID='sd', ChannelName='标清'),
-                row(ChannelID='shop', ChannelName='聚鲨购物'), row(ChannelID='miss', ChannelName='未知')]
+                row(ChannelID='shop', ChannelName='聚鲨购物'), row(ChannelID='miss', ChannelName='未知'),
+                row(ChannelID='zero', ChannelName='零高', ChannelURL='igmp://239.1.1.9:9'),
+                row(ChannelID='bad', ChannelName='失败', ChannelURL='igmp://239.1.1.8:8'),
+                row(ChannelID='moved', ChannelName='地址变了', ChannelURL='igmp://239.1.1.7:7')]
         urls = [c.live_url(item, cfg) for item in rows]
         facts = {
             self.key('hd', urls[0]): dict(height=1080, width=1920, status='identified'),
             self.key('sd', urls[1]): dict(height=576, width=720, status='identified'),
             self.key('shop', urls[2]): dict(height=1080, width=1920, status='identified'),
+            self.key('zero', urls[4]): dict(height=0, width=0, status='identified'),
+            self.key('bad', urls[5]): dict(height=1080, width=1920, status='failed'),
+            self.key('other', urls[0]): dict(height=2160, width=3840, status='identified'),
         }
+        before = json.dumps(facts, sort_keys=True)
         text, counts = c.render(rows, cfg, resolutions={'config': cfg, 'channels': facts})
         ids = [line.split('tvg-id="', 1)[1].split('"', 1)[0] for line in text.splitlines() if line.startswith('#EXTINF:')]
-        self.assertEqual(ids, ['hd', 'miss'])
-        self.assertEqual(counts, dict(excluded_height=1, excluded_name=1, unknown=1, kept=1))
+        self.assertEqual(ids, ['hd'])
+        self.assertEqual(counts, dict(excluded_height=5, excluded_name=1, kept=1))
+        self.assertEqual(json.dumps(facts, sort_keys=True), before)
+        self.assertEqual(facts[self.key('zero', urls[4])]['height'], 0)
         cfg['filter'] = dict(enabled=False, min_height=1080, exclude_names=['自定'])
         full, off = c.render(rows, cfg, resolutions={'config': cfg, 'channels': facts})
-        self.assertEqual(full.count('#EXTINF:'), 4)
-        self.assertEqual(off['kept'], 4)
-        self.assertNotIn('excluded', json.dumps(facts))
+        self.assertEqual(full.count('#EXTINF:'), 7)
+        self.assertEqual(off['kept'], 7)
+        self.assertEqual(json.dumps(facts, sort_keys=True), before)
 
     def test_timeout_failure_and_secret_redaction(self):
         secret = 'http://127.0.0.1/rtp/239.1.1.1:1?fcc=1.2.3.4:5&AuthInfo=SECRET'

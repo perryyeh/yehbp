@@ -32,6 +32,10 @@ class DirectoryDefaultsTests(unittest.TestCase):
                     before = paths[1].read_bytes()
                     rows = [row(UserChannelID='1'), row(UserChannelID='1')]
                     meta = directory([dict(mixNo='1', name=' 高清 HD 4K ', extra=['raw', 'raw'])])
+                    url = c.live_url(rows[0], c.load(paths[1]))
+                    c.atomic_json(c.resolution_path(paths), {'schema': 1, 'channels': {
+                        rows[0]['ChannelID'] + '\n' + c.live_fingerprint(url): {
+                            'status': 'identified', 'width': 1920, 'height': 1080}}})
                     context = {}
                     def login(cfg, address, context):
                         context['session'] = 'fixture'
@@ -134,6 +138,9 @@ class DirectoryDefaultsTests(unittest.TestCase):
             paths = self.prepare(Path(tmp).resolve(), legacy=True)
             c.atomic_json(paths[2], [row()])
             c.atomic_json(c.metadata_path(paths), directory([dict(mixNo='1', name='Old')]))
+            cfg = c.load(paths[1])
+            cfg['filter'] = False
+            c.atomic_json(paths[1], cfg)
             c.convert(paths)
             before = {p: p.read_bytes() for p in (paths[1], paths[2], paths[3], c.metadata_path(paths))}
             with patch.object(c, 'local_ipv4', return_value='192.0.2.1'), patch.object(c, 'login', return_value=[row(), row()]), patch.object(c, 'portal_directory', side_effect=c.SafeError('fixture')), patch.object(c, 'convert', side_effect=AssertionError('convert forbidden')), contextlib.redirect_stderr(io.StringIO()):
