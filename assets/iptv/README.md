@@ -10,36 +10,53 @@
 curl -fL https://raw.githubusercontent.com/perryyeh/yehbp/main/assets/iptv/iptv.py -o iptv.py
 ```
 
+首次使用，保存、获取并生成 `tel/playlist.m3u`：
+
 ```sh
-# 首次或修改：保存、获取并生成 tel/playlist.m3u。改一项时只写要改的字段
 python3 iptv.py config=tel userid=YOUR_USER_ID sn=YOUR_BOX_SN mac=YOUR_BOX_MAC \
   interface=iptv85 rtp2http=http://127.0.0.1:5140
-
-# 重新获取并生成
-python3 iptv.py run config=tel
-
-# 重新获取、生成并导出
-python3 iptv.py run config=tel output=/your/export/playlist.m3u
-
-# 用已有数据离线生成；output 可选
-python3 iptv.py config=tel
-python3 iptv.py config=tel output=exports
-python3 iptv.py config=tel output=/path/playlist.m3u
-
-# 只更新节目单，并重新生成列表
-python3 iptv.py epg config=tel
-
-# 重新测量当前全部直播，不生成列表
-python3 iptv.py resolution config=tel
 ```
 
-`output=` 可指定 `.m3u` 文件或导出目录；目录内文件名为 `<config>.m3u`。相对路径按当前工作目录解析。省略时仅生成配置目录中的 `playlist.m3u`。`config` 的相对路径则相对脚本所在目录。
+修改参数也一样：只写要改的字段，其余保留，但仍会获取并生成：
+
+```sh
+python3 iptv.py config=tel rtp2http=http://127.0.0.1:5140
+```
+
+重新获取频道和回看授权，再生成列表：
+
+```sh
+python3 iptv.py run config=tel
+```
+
+用已有数据直接生成列表，不联网：
+
+```sh
+python3 iptv.py config=tel
+```
+
+更新节目单并重新生成列表。这和参数 `epg=` 不同：裸命令从运营商取节目；`epg=` 只写入第三方链接，写入时仍会获取并生成。
+
+```sh
+python3 iptv.py epg config=tel
+```
+
+```sh
+python3 iptv.py config=tel epg=https://example.com/epg.xml
+```
+
+重测当前全部直播分辨率，不生成列表。已有结果直接看文件：
+
+```sh
+python3 iptv.py resolution config=tel
+cat tel/resolution.json
+```
 
 命令本身不是 `key=value`。`run`、`epg`、`resolution` 不能和身份或播放参数写在一起；要改配置就直接写字段，不写这些命令。下表是命令行参数名。
 
 | 参数 | 必填 | 默认 | 作用 |
 |---|---|---|---|
-| `config` | 可选 | 首次可省略，改用 `interface` 的值作目录名 | 配置目录。已有配置后每次都要写 |
+| `config` | 可选 | 首次可省略，改用 `interface` 的值作目录名 | 配置目录。已有配置后每次都要写。相对路径相对脚本所在目录 |
 | `userid` | 首次必填 | 之后读取已保存的值 | 机顶盒 UserID。只改这一项时只写它 |
 | `sn` | 首次必填 | 之后读取已保存的值 | 机顶盒 SN。只改这一项时只写它 |
 | `mac` | 首次必填 | 之后读取已保存的值 | 机顶盒 MAC。只改这一项时只写它 |
@@ -47,17 +64,15 @@ python3 iptv.py resolution config=tel
 | `rtp2http` | 可选 | `http://127.0.0.1:5140` | rtp2httpd 访问地址。直播和回看都拼在它后面 |
 | `multicast` | 可选 | 空，不写入播放地址 | 组播网卡。只填组播时 FCC 不自动跟随 |
 | `fcc` | 可选 | 空，不写入播放地址 | FCC 网卡。需要和组播分开时单独填写 |
-| `authurl` | 可选 | `http://222.68.208.73:7001` | 鉴权地址。多个用空格分隔，第一个是入口，其余只允许跳转 |
+| `authurl` | 可选 | `http://222.68.208.73:7001` | 鉴权地址，空格分隔。第一个是登录入口，其余只允许跳转 |
 | `live` | 可选 | `/rtp/` | 直播代理路径，接在 `rtp2http` 后面，再接组播地址 |
 | `replay` | 可选 | `/rtsp/` | 回看代理路径，接在 `rtp2http` 后面，再接回看地址 |
 | `seek` | 可选 | `${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}` | 回放时间格式。已保存的值会保留，直到显式再传 `seek` |
-| `epg` | 可选 | 不填时保留已保存的第三方地址；没有第三方地址且已有本地 `epg.xml` 时，列表头引用该文件；两者都没有则头部不写引用 | 第三方 EPG 链接；不填使用自己已有 epg.xml。只接受 http(s) |
-| `output` | 可选 | 不导出 | 额外一份列表。可用于离线生成、`run`、`epg`；不能用于 `resolution` |
+| `epg` | 可选 | 不填时保留已保存的第三方地址；没有第三方地址且已有本地 `epg.xml` 时，列表头引用该文件；两者都没有则头部不写引用 | 第三方 EPG 的 http(s) 链接。和裸命令 `epg` 不同，不从运营商取节目 |
+| `output` | 可选 | 不额外导出，只生成配置目录里的 `playlist.m3u` | 额外一份列表，可用于 `run`、`epg` 和离线生成，不能用于 `resolution`。以 `.m3u` 结尾是文件，否则是目录（没有则创建），目录里的文件名为 `<配置目录名>.m3u`。相对路径按当前工作目录解析。导出到其他目录时同时复制一份 `epg.xml` |
 | `filter` | 可选 | 见下文 | 只能写 `true` 或 `false`，只改开关 |
 
-`config.json` 的可设字段与这些参数同名。`authurl` 多个地址用空格分隔：第一个是登录入口，其余只允许跳转。
-
-只写 `config`（可再加 `output` 或 `filter`）时不联网。`run` 刷新频道和回看。`epg` 只更新节目单，不刷新回看。`resolution` 重测当前全部直播。
+`config.json` 的可设字段与这些参数同名。
 
 分辨率优先用本机已有的 `ffprobe`，没有再用 `ffmpeg`。两个都没有时，这次测到的源记为不可用，不安装工具。`run` 只测新增频道、直播地址变了、或还没有记录的源；已有记录直接用，已经缓存的失败也要等 `resolution` 才重测。只写 `config` 的离线生成只读 `resolution.json`，不测。`resolution` 重测当前全部直播，不生成列表。只有 `ffprobe` 会看同一路流里的多路视频，取第一路宽高都大于 0 的，前面的 `0x0` 忽略；没有 `ffprobe` 时，`ffmpeg` 只解第一路视频。缓存只存实测结果；过滤另看 `config.json` 的 `filter`。没有可用高度时，筛选按 0 和 `filter.min_height` 比，默认低于 720 排除。关过滤仍保留全部频道。
 
