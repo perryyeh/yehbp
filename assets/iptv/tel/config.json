@@ -11,7 +11,7 @@
       "聚鲨",
       "导视频道"
     ],
-    "exclude_ids": [
+    "exclude_channels": [
       "00000001000000050000000000123222",
       "00000001000000050000000000123223",
       "00000001000000050000000000123224",
@@ -46,8 +46,11 @@
   },
   "multicast": "",
   "fcc": "",
-  "authurl": "http://222.68.208.73:7001",
-  "rtp2http": "http://192.0.2.10:5140",
+  "userid": "",
+  "sn": "",
+  "mac": "",
+  "authurl": "",
+  "rtp2http": "",
   "live": "/rtp/",
   "replay": "/rtsp/",
   "seek": "${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}"

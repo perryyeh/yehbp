@@ -7,6 +7,7 @@ this implementation does not vendor its AES or client implementation.
 """
 import argparse
 import concurrent.futures
+import copy
 from contextlib import contextmanager
 import fcntl
 import getpass
@@ -822,12 +823,29 @@ def migrate_stored_keys(c):
     return c
 
 
+def migrate_filter_keys(c):
+    """Rename filter.exclude_ids to exclude_channels. Not a CLI parameter."""
+    rules = c.get('filter')
+    if not isinstance(rules, dict) or 'exclude_ids' not in rules:
+        return False
+    old = rules.get('exclude_ids')
+    if 'exclude_channels' in rules and rules['exclude_channels'] != old:
+        raise auth.SafeError('filter同时存在新旧键且值不同')
+    if 'exclude_channels' not in rules:
+        rules['exclude_channels'] = old
+    rules.pop('exclude_ids')
+    return True
+
+
 def load(path):
     """Read saved config. Persist a one-time key rename only when names actually change."""
     raw = read_stored(path)
-    c = migrate_stored_keys(dict(raw))
+    c = migrate_stored_keys(copy.deepcopy(raw))
+    filter_changed = migrate_filter_keys(c)
     validate(c)
-    if any(old in raw for old, _ in STORED_KEY_RENAMES):
+    raw_filter = raw.get('filter') if isinstance(raw, dict) else None
+    if any(old in raw for old, _ in STORED_KEY_RENAMES) or (
+            filter_changed and isinstance(raw_filter, dict) and 'exclude_ids' in raw_filter):
         auth.atomic_json(path, c)
     return c
 
@@ -1020,12 +1038,12 @@ def validate_filter(value):
         raise auth.SafeError('filter.exclude_names必须是非空字符串列表')
     if len(names) > 32 or any(len(item) > 32 for item in names):
         raise auth.SafeError('filter.exclude_names过长')
-    if 'exclude_ids' in value:
-        ids = value.get('exclude_ids')
+    if 'exclude_channels' in value:
+        ids = value.get('exclude_channels')
         if not isinstance(ids, list) or any(not isinstance(item, str) or not item or item != item.strip() or any(ch.isspace() for ch in item) for item in ids):
-            raise auth.SafeError('filter.exclude_ids必须是完整ChannelID列表')
+            raise auth.SafeError('filter.exclude_channels必须是完整ChannelID列表')
         if len(ids) != len(set(ids)) or len(ids) > 256 or any(len(item) > 64 for item in ids):
-            raise auth.SafeError('filter.exclude_ids无效')
+            raise auth.SafeError('filter.exclude_channels无效')
 
 
 def normalize_filter(value):
@@ -1040,15 +1058,15 @@ def normalize_filter(value):
         validate_filter(merged)
         result = {'enabled': merged['enabled'], 'min_height': merged['min_height'],
                   'exclude_names': list(merged['exclude_names'])}
-        if 'exclude_ids' in merged:
-            result['exclude_ids'] = list(merged['exclude_ids'])
+        if 'exclude_channels' in merged:
+            result['exclude_channels'] = list(merged['exclude_channels'])
         return result
     raise auth.SafeError('filter必须是过滤对象')
 
 
 def filter_rules(config):
     rules = normalize_filter(config.get('filter', default_filter(True)))
-    return rules['enabled'], rules['min_height'], tuple(rules['exclude_names']), tuple(rules.get('exclude_ids', ()))
+    return rules['enabled'], rules['min_height'], tuple(rules['exclude_names']), tuple(rules.get('exclude_channels', ()))
 
 
 def measured_height(row, resolutions):
@@ -1622,7 +1640,7 @@ def usage():
 
 config 相对路径以脚本目录为基准。带身份或播放字段时，合并已有配置、保存并获取后生成。run 重新获取并生成；频道或直播地址新增、变化，或没有分辨率记录时才探测直播。epg 只更新节目单，先用已保存的门户会话，失效才重新登录；不改回看地址，也不探测。只给 config（可再加 output）时离线生成，不探测。resolution 按当前频道重新测量全部分辨率，不生成列表。
 已有 tel/epg.xml 时，playlist.m3u 头部写 x-tvg-url="epg.xml"。可选 epg=http://访问地址/epg.xml 改为播放器能打开的地址；'''
-'''不填且没有本地 epg.xml 时头部不写引用。已保存的第三方地址会保留，直到显式再传 epg。output 导出到其他目录时，同时复制一份 epg.xml。以 .m3u 结尾的 output 是文件，其他 output 是目录，副本名为配置目录名.m3u。filter 写入 config.json，是对象：enabled、min_height、exclude_names。缺省为 enabled true、min_height 720、exclude_names 含“购物”“理财”“聚鲨”。旧的 true/false 在保存或 run/fetch 补字段时变成该对象，并保留原来的开关；已有自定义高度和关键词不改。比较高度时，没有可用记录、状态不是 identified 或 played、宽或高缺失、不是正整数，都按高度 0；resolution.json 仍只保存实测，不会改成 0。filter=false 只把 enabled 写成 false 并重新生成，不改规则、不登录、不探测。可选 channel_names 是对象，键为完整 ChannelID，值为显示名；只在生成列表时按完整键精确替换，优先于原始名、门户名和数字兜底，并在过滤前生效。不改 ChannelID、tvg-id、catchup.json 或 channel.json。filter 还可选 exclude_ids，每项是完整 ChannelID，只在 enabled 为 true 时于名称和高度判断前排除，不删除原始记录；没有该字段时不排除。离线生成、epg、resolution 不补写该字段。当前仅上海电信。''')
+'''不填且没有本地 epg.xml 时头部不写引用。已保存的第三方地址会保留，直到显式再传 epg。output 导出到其他目录时，同时复制一份 epg.xml。以 .m3u 结尾的 output 是文件，其他 output 是目录，副本名为配置目录名.m3u。filter 写入 config.json，是对象：enabled、min_height、exclude_names。缺省为 enabled true、min_height 720、exclude_names 含“购物”“理财”“聚鲨”。旧的 true/false 在保存或 run/fetch 补字段时变成该对象，并保留原来的开关；已有自定义高度和关键词不改。比较高度时，没有可用记录、状态不是 identified 或 played、宽或高缺失、不是正整数，都按高度 0；resolution.json 仍只保存实测，不会改成 0。filter=false 只把 enabled 写成 false 并重新生成，不改规则、不登录、不探测。可选 channel_names 是对象，键为完整 ChannelID，值为显示名；只在生成列表时按完整键精确替换，优先于原始名、门户名和数字兜底，并在过滤前生效。不改 ChannelID、tvg-id、catchup.json 或 channel.json。filter 还可选 exclude_channels，每项是完整 ChannelID，只在 enabled 为 true 时于名称和高度判断前排除，不删除原始记录；没有该字段时不排除。离线生成、epg、resolution 不补写该字段。当前仅上海电信。''')
 
 
 def main(argv=None):

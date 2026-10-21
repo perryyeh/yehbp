@@ -61,6 +61,8 @@ python3 iptv.py resolution config=tel
 
 分辨率优先用本机已有的 `ffprobe`，没有再用 `ffmpeg`。两个都没有时，这次测到的源记为不可用，不安装工具。`run` 只测新增频道、直播地址变了、或还没有记录的源；已有记录直接用，已经缓存的失败也要等 `resolution` 才重测。只写 `config` 的离线生成只读 `resolution.json`，不测。`resolution` 重测当前全部直播，不生成列表。只有 `ffprobe` 会看同一路流里的多路视频，取第一路宽高都大于 0 的，前面的 `0x0` 忽略；没有 `ffprobe` 时，`ffmpeg` 只解第一路视频。缓存只存实测结果；过滤另看 `config.json` 的 `filter`。没有可用高度时，筛选按 0 和 `filter.min_height` 比，默认低于 720 排除。关过滤仍保留全部频道。
 
+脱敏配置参考：[tel/config.json](tel/config.json)。保留配置字段，身份信息和局域网地址已清空，使用前填写。
+
 ## 生成文件
 
 都在配置目录里。
@@ -79,12 +81,12 @@ python3 iptv.py resolution config=tel
 
 ```json
 {
-  "filter": {"enabled": true, "min_height": 720, "exclude_names": ["购物", "理财", "聚鲨"], "exclude_ids": ["YOUR_CHANNEL_ID"]},
+  "filter": {"enabled": true, "min_height": 720, "exclude_names": ["购物", "理财", "聚鲨"], "exclude_channels": ["YOUR_CHANNEL_ID"]},
   "channel_names": {"YOUR_CHANNEL_ID": "显示名"}
 }
 ```
 
-`exclude_ids` 和 `channel_names` 的键都是完整 ChannelID。
+`exclude_channels` 和 `channel_names` 的键都是完整 ChannelID。
 
 协议参考 [pcg562240/pcg-iptv](https://github.com/pcg562240/pcg-iptv)。
 

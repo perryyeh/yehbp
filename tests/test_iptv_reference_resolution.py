@@ -355,9 +355,9 @@ class ResolutionTests(unittest.TestCase):
                 c.convert(paths)
             self.assertIn('#EXTINF:', paths[3].read_text())
 
-    def test_exclude_ids_exact_before_name_and_off_keeps_all(self):
+    def test_exclude_channels_exact_before_name_and_off_keeps_all(self):
         cfg = config()
-        cfg['filter'] = dict(enabled=True, min_height=0, exclude_names=['购物'], exclude_ids=['exact-id'])
+        cfg['filter'] = dict(enabled=True, min_height=0, exclude_names=['购物'], exclude_channels=['exact-id'])
         cfg['channel_names'] = {'exact-id': '保留名', 'other-id': '购物台'}
         rows = [row(ChannelID='exact-id'), row(ChannelID='other-id'), row(ChannelID='suffix-exact-id', ChannelName='普通')]
         text, counts = c.render(rows, cfg, resolutions=None)
@@ -373,7 +373,7 @@ class ResolutionTests(unittest.TestCase):
         self.assertIn('tvg-id="exact-id"', full)
         self.assertIn('购物台', full)
         with self.assertRaises(c.SafeError):
-            c.validate(dict(config(), filter=dict(enabled=True, min_height=0, exclude_names=['购物'], exclude_ids=['exact-id', 'not exact'])))
+            c.validate(dict(config(), filter=dict(enabled=True, min_height=0, exclude_names=['购物'], exclude_channels=['exact-id', 'not exact'])))
 
 
 if __name__ == '__main__':

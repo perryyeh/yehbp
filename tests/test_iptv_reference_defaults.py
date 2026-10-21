@@ -240,7 +240,7 @@ class DirectoryDefaultsTests(unittest.TestCase):
     def legacy_config(self):
         fresh = config()
         fresh.update(multicast='eth0.51', fcc='eth0.86', epg='http://203.0.113.10/guide.xml',
-                     filter=dict(enabled=True, min_height=720, exclude_names=['购物'], exclude_ids=['YOUR_CHANNEL_ID']),
+                     filter=dict(enabled=True, min_height=720, exclude_names=['购物'], exclude_channels=['YOUR_CHANNEL_ID']),
                      channel_names={'YOUR_CHANNEL_ID': '显示名'},
                      allowed_origins=['http://203.0.113.11:7001'])
         old = dict(fresh)
@@ -268,6 +268,7 @@ class DirectoryDefaultsTests(unittest.TestCase):
             self.assertEqual(saved['channel_names'], fresh['channel_names'])
             self.assertEqual(saved['allowed_origins'], fresh['allowed_origins'])
             self.assertEqual(saved['userid'], fresh['userid'])
+            self.assertNotIn('exclude_ids', saved['filter'])
             with patch.object(c, 'login', side_effect=AssertionError('login')):
                 c.save_filter(paths, True)
             self.assertEqual(c.load(paths[1]), saved)
@@ -278,6 +279,32 @@ class DirectoryDefaultsTests(unittest.TestCase):
             with self.assertRaises(c.SafeError):
                 c.save_filter(paths, True)
             self.assertEqual(paths[1].read_bytes(), before)
+
+    def test_load_migrates_exclude_ids_once_without_login(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = c.config_paths(Path(tmp).resolve() / 'tel')
+            c.private_dir(paths[0])
+            fresh, _old = self.legacy_config()
+            stored = dict(fresh)
+            stored['filter'] = dict(stored['filter'])
+            stored['filter']['exclude_ids'] = stored['filter'].pop('exclude_channels')
+            c.atomic_json(paths[1], stored)
+            with patch.object(c, 'login', side_effect=AssertionError('login')):
+                loaded = c.load(paths[1])
+            self.assertEqual(loaded['filter']['exclude_channels'], ['YOUR_CHANNEL_ID'])
+            self.assertNotIn('exclude_ids', loaded['filter'])
+            self.assertNotIn('exclude_ids', json.loads(paths[1].read_text())['filter'])
+            frozen = paths[1].read_bytes()
+            with patch.object(c, 'login', side_effect=AssertionError('login')):
+                self.assertEqual(c.load(paths[1]), loaded)
+            self.assertEqual(paths[1].read_bytes(), frozen)
+            both = json.loads(frozen)
+            both['filter']['exclude_ids'] = ['OTHER_CHANNEL_ID']
+            c.atomic_json(paths[1], both)
+            conflict = paths[1].read_bytes()
+            with self.assertRaises(c.SafeError):
+                c.load(paths[1])
+            self.assertEqual(paths[1].read_bytes(), conflict)
 
     def test_fetch_writes_channel_json_after_migrating_config(self):
         with tempfile.TemporaryDirectory() as tmp:
