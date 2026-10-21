@@ -123,6 +123,21 @@ class EpgTests(unittest.TestCase):
             local = bridge.programmes_for(index, ["本地"], day, TZ)
             self.assertEqual(local[0]["title"], "本地节目")
 
+    def test_relative_epg_resolves_beside_playlist(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            playlist = root / "playlist.m3u"
+            playlist.write_text(
+                '#EXTM3U x-tvg-url="epg.xml"\n#EXTINF:-1 tvg-id="42" tvg-name="42",频道\nhttp://127.0.0.1/a\n',
+                encoding="utf-8")
+            (root / "epg.xml").write_text(SECOND_XML, encoding="utf-8")
+            loaded = bridge.load_m3u(str(playlist))
+            self.assertEqual(loaded["sources"], [str((root / "epg.xml").resolve())])
+            cache = root / "cache"
+            index = bridge.build_epg(loaded["sources"], cache, TZ)
+            rows = bridge.programmes_for(index, ["本地"], datetime(2026, 10, 21).date(), TZ)
+            self.assertEqual(rows[0]["title"], "本地节目")
+
     def test_failed_source_keeps_previous_copy_and_reports(self):
         with tempfile.TemporaryDirectory() as tmp:
             cache = Path(tmp)
@@ -359,8 +374,9 @@ class ConfigSourceTests(unittest.TestCase):
                 missing = urllib.request.Request(
                     "http://127.0.0.1:%d/channels.txt" % httpd.server_address[1])
                 with self.assertRaises(urllib.error.HTTPError) as caught:
-                    urllib.request.urlopen(missing, timeout=5).close()
+                    urllib.request.urlopen(missing, timeout=5)
                 self.assertEqual(caught.exception.code, 404)
+                caught.exception.close()
             finally:
                 httpd.shutdown()
                 httpd.server_close()

@@ -500,15 +500,100 @@ def portal_directory(config, context):
     for key, value in [('bims_user_token', bims.get('bimsUserToken')), ('bims_token_exp', bims.get('bimsTokenExp')),
                        ('BimsAuthenticationFlag','SUCCESS' if bims.get('bimsUserToken') else None), ('PRE_ADVERTISEMENT_FLAG','1')]:
         if value: set_cookie(http, key, str(value), host)
+    if context is not None:
+        context['portal_host'] = info['IpPort']
+        context['framecode'] = info['framecode']
+    return directory_from_portal(http, host, host + '/portal.jsp')
+
+
+EPG_DAYS_BACK = 7
+EPG_DAYS_FORWARD = 3
+EPG_PROG_LIMIT = '2000'
+SESSION_SCHEMA = 1
+
+
+def cookie_value(http, name, url):
+    jar = next(x.cookiejar for x in http.opener.handlers if isinstance(x, request.HTTPCookieProcessor))
+    host = urlparse.urlsplit(url).hostname
+    for cookie in jar:
+        if cookie.name == name and cookie.domain == host:
+            return cookie.value
+    return None
+
+
+def portal_session_payload(config, context):
+    """Portal cookies only. Credentials stay in config.json."""
+    http = context['http']
+    body = context['text']
+    match = re.search(r'EPGDomain=([^"\']+)', body)
+    epg = match.group(1).replace('\\/', '/') if match else js_var(body, 'EPGDomain')
+    host = trusted('http://' + context['portal_host'] + '/iptvepg/' + context['framecode'], config)
+    names = ('JSESSIONID', 'bims_user_token', 'bims_token_exp', 'BimsAuthenticationFlag', 'PRE_ADVERTISEMENT_FLAG')
+    cookies = {name: cookie_value(http, name, host) for name in names}
+    cookies = {name: value for name, value in cookies.items() if value}
+    if 'JSESSIONID' not in cookies:
+        raise SafeError('门户会话缺失')
+    return dict(schema=SESSION_SCHEMA, portal_host=host, epg_domain=epg,
+                referer=host + '/portal.jsp', cookies=cookies)
+
+
+def restore_portal(config, session, http):
+    if not isinstance(session, dict) or session.get('schema') != SESSION_SCHEMA:
+        raise SafeError('门户会话无效')
+    host = session.get('portal_host')
+    cookies = session.get('cookies')
+    referer = session.get('referer')
+    if not isinstance(host, str) or not isinstance(referer, str) or not isinstance(cookies, dict):
+        raise SafeError('门户会话无效')
+    trusted(host, config)
+    trusted(referer, config)
+    if not host.startswith('http://') or '/iptvepg/' not in host or not cookies.get('JSESSIONID'):
+        raise SafeError('门户会话无效')
+    for name, value in cookies.items():
+        if not isinstance(name, str) or not isinstance(value, str) or not value:
+            raise SafeError('门户会话无效')
+        set_cookie(http, name, value, host)
+    return host, referer
+
+
+def post_portal(http, host, referer, fields):
+    body, _ = http.request('POST', host.rstrip('/') + '/function/ajax/epg7getChannelByAjax.jsp',
+                           fields, referer=referer)
+    response = json.loads(body, object_pairs_hook=unique_pairs)
+    if not isinstance(response, dict):
+        raise SafeError('门户响应无效')
+    return response
+
+
+def directory_from_portal(http, host, referer):
     batches = []
     for category, kind in CATEGORIES:
-        body, _ = http.request('POST', host + '/function/ajax/epg7getChannelByAjax.jsp',
-                               dict(action='getChannelList', cateID=category, type=kind), referer=host + '/portal.jsp')
-        response = json.loads(body, object_pairs_hook=unique_pairs)
+        response = post_portal(http, host, referer, dict(action='getChannelList', cateID=category, type=kind))
+        if not isinstance(response.get('data'), list):
+            raise SafeError('目录响应无效')
         batches.append(dict(category=category, type=kind, response=response))
     result = dict(schema=1, categories=batches)
     directory_index(result)
     return result
+
+
+def programme_window(now=None):
+    moment = time.time() if now is None else now
+    now_ms = int(moment * 1000)
+    return now_ms - EPG_DAYS_BACK * 86400 * 1000, now_ms + EPG_DAYS_FORWARD * 86400 * 1000
+
+
+def channel_programmes(http, host, referer, item, start_ms, end_ms):
+    code, channel_id = item.get('code'), item.get('ID')
+    if not isinstance(code, str) or not code or isinstance(channel_id, bool) or channel_id in (None, ''):
+        raise SafeError('节目单频道标识无效')
+    response = post_portal(http, host, referer, dict(
+        action='getChannelProg', code=str(code), channelID=str(channel_id),
+        endTime=str(end_ms), startTime=str(start_ms), offset='0', limit=EPG_PROG_LIMIT))
+    data = response.get('data')
+    if not isinstance(data, list) or not all(isinstance(row, dict) for row in data):
+        raise SafeError('节目单响应无效')
+    return data
 
 
 def directory_index(value):
@@ -578,10 +663,73 @@ def text(value):
     return value
 
 
+def xml_text(value):
+    return (str(value).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            .replace('"', '&quot;').replace("'", '&apos;'))
+
+
+def xmltv_stamp(value):
+    if isinstance(value, bool):
+        raise auth.SafeError('节目时间无效')
+    millis = int(str(value))
+    moment = time.gmtime((millis / 1000) + 8 * 3600)
+    return time.strftime('%Y%m%d%H%M%S', moment) + ' +0800'
+
+
+def guide_rows(rows, directory):
+    """XMLTV ids stay ChannelID. mixNo only selects the portal programme list."""
+    index = {}
+    for batch in directory['categories']:
+        for item in batch['response']['data']:
+            index.setdefault(str(item.get('mixNo')), item)
+    selected = []
+    for row in rows:
+        mix = str(row.get('UserChannelID', ''))
+        item = index.get(mix)
+        if item is None:
+            continue
+        code, portal_id = item.get('code'), item.get('ID')
+        if not isinstance(code, str) or not code or isinstance(portal_id, bool) or portal_id in (None, ''):
+            continue
+        selected.append((row, item))
+    return selected
+
+
+def render_xmltv(rows, directory, programmes):
+    selected = guide_rows(rows, directory)
+    lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<tv source-info-name="Shanghai Telecom IPTV">']
+    seen = set()
+    for row, _item in selected:
+        channel_id = text(row.get('ChannelID'))
+        if not channel_id or channel_id in seen:
+            continue
+        seen.add(channel_id)
+        own = row.get('ChannelName')
+        name = text(own) if own not in (None, '', 'null') else channel_id
+        lines.append('  <channel id="%s"><display-name lang="zh">%s</display-name></channel>' % (
+            xml_text(channel_id), xml_text(name)))
+    for row, _item in selected:
+        channel_id = text(row.get('ChannelID'))
+        for programme in programmes.get(channel_id, []):
+            if not isinstance(programme, dict):
+                continue
+            try:
+                start, stop = xmltv_stamp(programme.get('startTime')), xmltv_stamp(programme.get('endTime'))
+            except (TypeError, ValueError, OverflowError):
+                continue
+            title = programme.get('name')
+            if not isinstance(title, str):
+                continue
+            lines.append('  <programme start="%s" stop="%s" channel="%s"><title lang="zh">%s</title></programme>' % (
+                start, stop, xml_text(channel_id), xml_text(title)))
+    lines.append('</tv>')
+    return '\n'.join(lines) + '\n'
+
+
 def config_paths(directory):
     d = Path(os.path.abspath(directory))
-    if Path(__file__).resolve() in [(d / name).resolve() for name in
-                                    ('config.json', 'catchup.json', 'channels.json', 'playlist.m3u', '.iptv.lock')]:
+    names = ('config.json', 'catchup.json', 'channels.json', 'playlist.m3u', 'epg.xml', 'portal-session.json', '.iptv.lock')
+    if Path(__file__).resolve() in [(d / name).resolve() for name in names]:
         raise SafeError('实例固定文件不能覆盖运行脚本')
     return d, d / 'config.json', d / 'catchup.json', d / 'playlist.m3u'
 
@@ -620,6 +768,12 @@ def validate(c):
     template = text(c['seek_template'])
     if not template or '&' in template or '#' in template or '?' in template:
         raise auth.SafeError('回放时间模板无效')
+    guide = c.get('epg_url') or ''
+    if guide:
+        text(guide)
+        parsed = urlsplit(guide)
+        if parsed.scheme not in ('http', 'https') or not parsed.hostname or any(ch in guide for ch in ' ",\r\n'):
+            raise auth.SafeError('节目单地址无效')
 
 
 def load(path):
@@ -700,10 +854,31 @@ def live_url(row, c):
     return append_query(url, params)
 
 
-def render(rows, c, directory=None):
+def epg_path(paths):
+    return paths[0] / 'epg.xml'
+
+
+def session_path(paths):
+    return paths[0] / 'portal-session.json'
+
+
+def playlist_header(paths, c, explicit=None):
+    target = explicit if explicit is not None else (c.get('epg_url') or '')
+    if not target and auth.regular(epg_path(paths), missing=True):
+        target = 'epg.xml'
+    if not target:
+        return '#EXTM3U'
+    text(target)
+    if any(ch in target for ch in ' ",\r\n'):
+        raise auth.SafeError('节目单地址无效')
+    return '#EXTM3U x-tvg-url="%s"' % target
+
+
+def render(rows, c, directory=None, header='#EXTM3U'):
     validate(c)
     if not isinstance(rows, list) or not rows: raise auth.SafeError('原始频道数组为空或无效')
-    lines = ['#EXTM3U', '# Raw channelArray order; ChannelID is a placeholder when ChannelName is absent. Apply metadata/templates separately.']
+    if not header.startswith('#EXTM3U'): raise auth.SafeError('播放列表头无效')
+    lines = [header, '# Raw channelArray order; ChannelID is a placeholder when ChannelName is absent. Apply metadata/templates separately.']
     if any(not isinstance(row, dict) for row in rows): raise auth.SafeError('无效频道记录')
     names, _ = resolve_names(rows, directory)
     for row, name in zip(rows, names):
@@ -748,7 +923,89 @@ def fetch(paths):
             raise auth.SafeError('目录获取/校验失败，保留已有原始及目录文件') from None
         auth.atomic_json(metadata_path(paths), directory)
         auth.atomic_json(output, rows)
+        if context.get('http') and context.get('framecode'):
+            try:
+                auth.atomic_json(session_path(paths), portal_session_payload(c, context))
+            except auth.SafeError:
+                pass
         print(f'fetch成功：{len(rows)}条完整原始记录；目录已刷新')
+
+
+def open_portal(paths, c):
+    """Reuse the saved portal session. Login only when it cannot list channels."""
+    path = session_path(paths)
+    if auth.regular(path, missing=True):
+        http = auth.HTTP(c)
+        http.deadline = time.monotonic() + 180
+        try:
+            host, referer = restore_portal(c, auth.read_json(path), http)
+            directory = directory_from_portal(http, host, referer)
+            return http, host, referer, directory, None
+        except Exception:
+            pass
+    ip = auth.local_ipv4(c['interface'])
+    context = {}
+    auth.login(c, ip, context=context)
+    directory = portal_directory(c, context)
+    payload = portal_session_payload(c, context)
+    host, referer = restore_portal(c, payload, context['http'])
+    return context['http'], host, referer, directory, context
+
+
+def collect_programmes(http, host, referer, rows, directory, now=None):
+    start_ms, end_ms = programme_window(now)
+    programmes = {}
+    seen = set()
+    for row, item in guide_rows(rows, directory):
+        channel_id = text(row.get('ChannelID'))
+        if not channel_id or channel_id in seen:
+            continue
+        programmes[channel_id] = channel_programmes(http, host, referer, item, start_ms, end_ms)
+        seen.add(channel_id)
+    if not programmes:
+        raise auth.SafeError('没有可匹配的节目单频道')
+    return programmes
+
+
+def refresh_epg(paths, now=None):
+    """Refresh programmes without replacing saved catchup addresses."""
+    d, config, source, _ = paths
+    with auth.lock(d, '.iptv.lock'):
+        c = load(config)
+        if auth.regular(source, missing=True) is None:
+            raise SafeError('缺少catchup.json；请先执行run或带身份参数获取频道')
+        before = source.read_bytes(), config.read_bytes()
+        rows = auth.read_json(source)
+        if not isinstance(rows, list) or not rows:
+            raise SafeError('原始频道数组为空或无效')
+        try:
+            http, host, referer, directory, context = open_portal(paths, c)
+            programmes = collect_programmes(http, host, referer, rows, directory, now)
+            document = render_xmltv(rows, directory, programmes)
+            session = portal_session_payload(c, context) if context is not None else None
+        except Exception as exc:
+            raise SafeError('节目单获取失败，保留上次节目单') from exc
+        if source.read_bytes() != before[0] or config.read_bytes() != before[1]:
+            raise SafeError('节目单获取失败，保留上次节目单')
+        auth.atomic_json(metadata_path(paths), directory)
+        atomic_text(epg_path(paths), document)
+        if session is not None:
+            auth.atomic_json(session_path(paths), session)
+        print('节目单已更新：' + str(epg_path(paths).resolve()) + '；回看地址未改')
+        return context is not None
+
+
+def publish_playlist(paths, destination):
+    guide = epg_path(paths)
+    if destination is not None and destination.parent != paths[0] and auth.regular(guide, missing=True):
+        copy = destination.parent / 'epg.xml'
+        if ensure_output_dir(destination):
+            try:
+                protected_export(copy, paths)
+                atomic_text(copy, guide.read_text())
+            except OSError:
+                print('节目单副本写入失败。原节目单在：' + str(guide.resolve()), file=sys.stderr)
+    convert(paths, destination=destination)
 
 
 def export_path(value, directory):
@@ -791,9 +1048,12 @@ def ensure_output_dir(path):
 def protected_export(export, paths):
     d, config, source, output = paths
     metadata = metadata_path(paths)
-    protected = [config, source, metadata, d / '.iptv.lock', Path(__file__), output]
+    guide = epg_path(paths)
+    session = session_path(paths)
+    protected = [config, source, metadata, guide, session, d / '.iptv.lock', Path(__file__), output]
     if (export.resolve() in [p.resolve() for p in protected] or
-            export.name in ('config.json', 'catchup.json', 'channels.json', '.iptv.lock') or
+            export.name in ('config.json', 'catchup.json', 'channels.json', 'portal-session.json', '.iptv.lock') or
+            (export.name == 'epg.xml' and export.parent == d) or
             (export.parent != d and (export.parent / 'config.json').exists())):
         raise SafeError('导出不能覆盖配置、源数据、其他实例或脚本')
 
@@ -807,7 +1067,7 @@ def convert(paths, destination=None):
         rows = auth.read_json(source)
         metadata = metadata_path(paths)
         directory = auth.read_json(metadata) if auth.regular(metadata, missing=True) else None
-        result = render(rows, c, directory)
+        result = render(rows, c, directory, playlist_header(paths, c))
         if output.resolve() == Path(__file__).resolve():
             raise SafeError('主输出不能覆盖运行脚本')
         atomic_text(output, result)
@@ -834,9 +1094,9 @@ def convert(paths, destination=None):
         print(f'convert成功：{len(rows)}条M3U记录；名称 ' + json.dumps(counts, ensure_ascii=False))
 
 
-COMMANDS = ('configure', 'fetch', 'convert', 'run')
+COMMANDS = ('configure', 'fetch', 'convert', 'run', 'epg')
 FIELDS = {'userid', 'sn', 'mac', 'interface', 'multicast_interface', 'fcc_interface',
-          'auth_origin', 'base_url', 'live_path', 'replay_path', 'seek_template'}
+          'auth_origin', 'base_url', 'live_path', 'replay_path', 'seek_template', 'epg_url'}
 RETIRED_CLI = {'allowed_origins', 'baseURL'}
 ALIASES = {'userinfo': 'userid', 'SN': 'sn', 'MAC': 'mac', 'rtp2http': 'base_url',
            'auth': 'auth_origin', 'live': 'live_path', 'replay': 'replay_path', 'seek': 'seek_template'}
@@ -897,7 +1157,7 @@ def key_value_main(argv):
         save_fields(paths, values)
         fetch(paths)
     destination = export_path(output_value, paths[0]) if output_value is not None else None
-    convert(paths, destination=destination)
+    publish_playlist(paths, destination)
     return 0
 
 
@@ -922,11 +1182,12 @@ def usage():
     return '''用法：
   python3 iptv.py config=tel userinfo=YOUR_USER_ID SN=YOUR_BOX_SN MAC=YOUR_BOX_MAC interface=iptv85 rtp2http=http://127.0.0.1:5140
   python3 iptv.py run config=tel
+  python3 iptv.py epg config=tel
   python3 iptv.py config=tel
   python3 iptv.py config=tel output=exports
 
-config 相对路径以脚本目录为基准。带身份或播放字段时，合并已有配置、保存并获取后生成。run 重新获取并生成。只给 config（可再加 output）时离线生成。
-以 .m3u 结尾的 output 是文件，其他 output 是目录，副本名为配置目录名.m3u。当前仅上海电信。'''
+config 相对路径以脚本目录为基准。带身份或播放字段时，合并已有配置、保存并获取后生成。run 重新获取并生成。epg 只更新节目单，先用已保存的门户会话，失效才重新登录；不改回看地址。只给 config（可再加 output）时离线生成。
+已有 tel/epg.xml 时，playlist.m3u 头部写 x-tvg-url="epg.xml"。可选 epg_url=http://访问地址/epg.xml 改为播放器能打开的地址；output 导出到其他目录时，同时复制一份 epg.xml。以 .m3u 结尾的 output 是文件，其他 output 是目录，副本名为配置目录名.m3u。当前仅上海电信。'''
 
 
 def main(argv=None):
@@ -946,7 +1207,7 @@ def main(argv=None):
         configuring = bool(FIELDS & values.keys())
         if command != 'convert' and configuring:
             raise SafeError('配置字段与子命令不能同时使用；首次直接写 config=tel userinfo=...，之后用 run config=tel')
-        if 'output' in values and command not in ('convert', 'run'):
+        if 'output' in values and command not in ('convert', 'run', 'epg'):
             raise SafeError('output仅用于离线生成或run')
         location = values.pop('config', None)
         output_value = values.pop('output', None)
@@ -964,11 +1225,15 @@ def main(argv=None):
             fetch(paths)
         if command == 'configure':
             configure(paths)
+        elif command == 'epg':
+            refresh_epg(paths)
+            destination = export_path(output_value, paths[0]) if output_value is not None else None
+            publish_playlist(paths, destination)
         else:
             if command in ('fetch', 'run'): fetch(paths)
             if command in ('convert', 'run'):
                 destination = export_path(output_value, paths[0]) if output_value is not None else None
-                convert(paths, destination=destination)
+                publish_playlist(paths, destination)
         return 0
     except SafeError as exc:
         print('IPTV操作失败：' + str(exc), file=sys.stderr)

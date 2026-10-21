@@ -74,11 +74,26 @@ def local_day(moment, tz):
     return moment.astimezone(tz)
 
 
-def header_sources(header):
+def header_sources(header, source=""):
     matched = re.search(r'\bx-tvg-url="([^"]*)"', header)
     if not matched:
         return []
-    return [item.strip() for item in matched.group(1).split(",") if item.strip()]
+    base = ""
+    parsed_source = urllib.parse.urlsplit(source) if source else None
+    if parsed_source and parsed_source.scheme not in ("http", "https") and "://" not in source:
+        base = Path(source).expanduser().resolve().as_posix()
+    sources = []
+    for item in matched.group(1).split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if base and urllib.parse.urlsplit(item).scheme not in ("http", "https"):
+            sources.append(str((Path(base).parent / item).resolve()))
+        elif base and "://" in base:
+            sources.append(urllib.parse.urljoin(base, item))
+        else:
+            sources.append(item)
+    return sources
 
 
 def split_extinf(line):
@@ -96,14 +111,14 @@ def split_extinf(line):
     return attrs, name
 
 
-def parse_m3u(text):
+def parse_m3u(text, source=""):
     if text.startswith("\ufeff"):
         text = text[1:]
     lines = text.splitlines()
     header = next((line for line in lines if line.strip()), "")
     if not header.startswith("#EXTM3U"):
         raise ValueError("M3U header is missing")
-    sources = header_sources(header)
+    sources = header_sources(header, source)
     channels = []
     index = 0
     while index < len(lines):
@@ -158,7 +173,7 @@ def load_m3u(source, timeout=20):
         payload = path.read_bytes()
     else:
         raise ValueError("M3U source must be a file path or http(s) URL")
-    return parse_m3u(payload.decode("utf-8"))
+    return parse_m3u(payload.decode("utf-8"), source)
 
 
 def _query_parts(query):
@@ -244,6 +259,10 @@ class EpgIndex:
 
 
 def fetch_xml(url, timeout):
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme not in ("http", "https"):
+        path = Path(urllib.request.url2pathname(parsed.path) if parsed.scheme == "file" else url)
+        return path.read_bytes(), None
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(request, timeout=timeout) as response:
         payload = response.read()
@@ -254,6 +273,8 @@ def fetch_xml(url, timeout):
 def build_epg(sources, cache, tz, timeout=30):
     index = EpgIndex()
     errors = []
+    cache = Path(cache)
+    cache.mkdir(parents=True, exist_ok=True)
     for url in sources:
         try:
             payload, _stamp = fetch_xml(url, timeout)
