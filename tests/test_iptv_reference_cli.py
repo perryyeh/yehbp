@@ -53,6 +53,7 @@ class CliTests(unittest.TestCase):
             ])
         rows = [
             row(ChannelID='hd-1', ChannelName='CCTV-1HD'),
+            row(ChannelID='mark-bing', ChannelName='兵器科技'),
             row(ChannelID='sat-1', ChannelName='湖南卫视高清'),
             row(ChannelID='plus-1', ChannelName='CCTV-5+HD'),
             row(ChannelID='k4-1', ChannelName='CCTV4K'),
@@ -68,9 +69,9 @@ class CliTests(unittest.TestCase):
         m, counts = c.render(rows, cfg, apply_filter=False)
         names = [x.rsplit(',', 1)[1] for x in m.splitlines() if x.startswith('#EXTINF:')]
         groups = [x.split('group-title="', 1)[1].split('"', 1)[0] for x in m.splitlines() if x.startswith('#EXTINF:')]
-        self.assertEqual(names, ['CCTV-1', 'CCTV-5+', '湖南卫视', '东方卫视', '东方卫视', 'CCTV4K', '百事通电影4K', '频道4K( )', '新闻综合', '金鹰纪实', 'HDTV Sample'])
-        self.assertEqual(groups, ['央视', '央视', '卫视', '卫视', '卫视', '4K', '4K', '4K', '上海台', '其它', '其它'])
-        self.assertEqual(counts['kept'], 11)
+        self.assertEqual(names, ['CCTV-1', 'CCTV-5+', '兵器科技', '东方卫视', '东方卫视', '湖南卫视', 'CCTV4K', '百事通电影4K', '频道4K( )', '新闻综合', '金鹰纪实', 'HDTV Sample'])
+        self.assertEqual(groups, ['央视', '央视', '央视', '卫视', '卫视', '卫视', '4K', '4K', '4K', '上海台', '其它', '其它'])
+        self.assertEqual(counts['kept'], 12)
         self.assertIn('tvg-id="dup-1"', m)
         self.assertIn('tvg-id="dup-2"', m)
         self.assertIn('tvg-name="HDTV Sample"', m)
@@ -92,6 +93,41 @@ class CliTests(unittest.TestCase):
             c.validate(dict(config(), name_cleanup=dict(remove=[''])))
         with self.assertRaises(c.SafeError):
             c.validate(dict(config(), name_cleanup=dict(groups=[dict(name='4K')])))
+        with self.assertRaises(c.SafeError):
+            c.validate(dict(config(), name_cleanup=dict(groups=[dict(name='4K', contains='4K', order=['4K', '4K'])])))
+
+    def test_group_order_follows_names_not_input_and_contains_stays_first(self):
+        cfg = config()
+        cfg['name_cleanup'] = dict(groups=[
+            dict(name='卫视', names=['东方卫视', '延边卫视', '湖南卫视']),
+            dict(name='4K', contains='4K', order=['CCTV4K', '东方卫视4K', '百事通电影4K']),
+            dict(name='其它', order=['金鹰纪实']),
+        ])
+        rows = [
+            row(ChannelID='tail-b', ChannelName='未列乙'),
+            row(ChannelID='hn', ChannelName='湖南卫视'),
+            row(ChannelID='df-1', ChannelName='东方卫视'),
+            row(ChannelID='df-2', ChannelName='东方卫视'),
+            row(ChannelID='k-movie', ChannelName='百事通电影4K'),
+            row(ChannelID='k-east', ChannelName='东方卫视4K'),
+            row(ChannelID='k-cctv', ChannelName='CCTV4K'),
+            row(ChannelID='k-dup-a', ChannelName='多彩文体4K'),
+            row(ChannelID='k-dup-b', ChannelName='多彩文体4K'),
+            row(ChannelID='other-doc', ChannelName='金鹰纪实'),
+            row(ChannelID='tail-a', ChannelName='未列甲'),
+        ]
+        before = json.dumps(rows, ensure_ascii=False)
+        m, counts = c.render(rows, cfg, apply_filter=False)
+        names = [x.rsplit(',', 1)[1] for x in m.splitlines() if x.startswith('#EXTINF:')]
+        groups = [x.split('group-title="', 1)[1].split('"', 1)[0] for x in m.splitlines() if x.startswith('#EXTINF:')]
+        ids = [x.split('tvg-id="', 1)[1].split('"', 1)[0] for x in m.splitlines() if x.startswith('#EXTINF:')]
+        self.assertEqual(names, ['东方卫视', '东方卫视', '湖南卫视', 'CCTV4K', '东方卫视4K', '百事通电影4K', '多彩文体4K', '多彩文体4K', '金鹰纪实', '未列乙', '未列甲'])
+        self.assertEqual(groups, ['卫视', '卫视', '卫视', '4K', '4K', '4K', '4K', '4K', '其它', '其它', '其它'])
+        self.assertEqual(ids, ['df-1', 'df-2', 'hn', 'k-cctv', 'k-east', 'k-movie', 'k-dup-a', 'k-dup-b', 'other-doc', 'tail-b', 'tail-a'])
+        self.assertEqual(counts['kept'], 11)
+        self.assertEqual(json.dumps(rows, ensure_ascii=False), before)
+        self.assertEqual(groups[3], '4K')
+        self.assertEqual(names[3], 'CCTV4K')
 
     def test_null_empty_replay_disabled_and_missing_fcc(self):
         for null in (None,'null','NULL','', ' null '):

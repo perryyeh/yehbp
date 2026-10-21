@@ -1070,7 +1070,7 @@ def name_cleanup_rules(config):
     parsed = []
     seen = set()
     for item in groups:
-        if not isinstance(item, dict) or set(item) - {'name', 'names', 'contains'}:
+        if not isinstance(item, dict) or set(item) - {'name', 'names', 'contains', 'order'}:
             raise auth.SafeError('name_cleanup.groups项无效')
         label = item.get('name')
         text(label)
@@ -1097,6 +1097,13 @@ def name_cleanup_rules(config):
             pass
         else:
             raise auth.SafeError('name_cleanup.groups缺少匹配规则')
+        if 'order' in item:
+            order = item.get('order')
+            if not isinstance(order, list) or not order or any(not isinstance(name, str) or not name or name != name.strip() for name in order):
+                raise auth.SafeError('name_cleanup.order必须是非空名称列表')
+            if len(order) > 128 or len(order) != len(set(order)):
+                raise auth.SafeError('name_cleanup.order无效')
+            rule['order'] = list(order)
         parsed.append(rule)
     return {'remove': list(remove), 'groups': parsed}
 
@@ -1130,6 +1137,34 @@ def group_title(name, rules):
     return ''
 
 
+def order_within_group(items, rule):
+    """Place entries by the configured name list. Unlisted names stay at the tail, in input order.
+
+    The same cleaned name may match several sources. Those copies stay in their original
+    relative order and are not split apart. Membership (contains / names) is unchanged.
+    """
+    sequence = rule.get('order')
+    if sequence is None and 'names' in rule:
+        sequence = rule['names']
+    if not sequence:
+        return list(items)
+    rank = {name: index for index, name in enumerate(sequence)}
+    blocks = []
+    for item in items:
+        name = item[1]
+        if blocks and blocks[-1][0] == name:
+            blocks[-1][1].append(item)
+        else:
+            blocks.append((name, [item]))
+    listed = [block for block in blocks if block[0] in rank]
+    tail = [block for block in blocks if block[0] not in rank]
+    listed.sort(key=lambda block: rank[block[0]])
+    ordered = []
+    for _name, block_items in listed + tail:
+        ordered.extend(block_items)
+    return ordered
+
+
 def ordered_entries(kept, rules):
     if not rules or not rules['groups']:
         return [(row, name, channel_id) for row, name, channel_id in kept]
@@ -1143,7 +1178,7 @@ def ordered_entries(kept, rules):
             rest.append(item)
     ordered = []
     for rule in rules['groups']:
-        ordered.extend(buckets[rule['name']])
+        ordered.extend(order_within_group(buckets[rule['name']], rule))
     return ordered + rest
 
 
