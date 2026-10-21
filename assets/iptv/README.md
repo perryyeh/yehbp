@@ -52,6 +52,8 @@ python3 iptv.py config=tel output=/path/channels.m3u
 "channel_names": {"YOUR_CHANNEL_ID": "显示名"}
 ```
 
+要按频道排除而不是按名称时，在 `filter` 里增加可选 `exclude_ids`，每项必须是完整 `ChannelID`。它在名称和高度判断之前生效，只影响生成的列表，不删除原始记录。`enabled` 为 false 时，名称、高度和 `exclude_ids` 全部不生效。没有 `exclude_ids` 时保持原来的过滤。
+
 首次保存写入完整默认对象。已有配置若仍是 `true`/`false` 或缺少该字段，`run` 或 `fetch` 补成对象，并保留原来的开关。已保存的 `min_height` 和 `exclude_names` 不因开关被覆盖。离线生成、`epg`、`resolution` 不改配置。下面两条只改 `enabled`，不重新登录，也不探测：
 
 ```sh

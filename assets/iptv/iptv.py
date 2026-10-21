@@ -893,7 +893,7 @@ def playlist_body(rows, c, directory=None, header='#EXTM3U', resolutions=None, a
     lines = [header, '# Raw channelArray order; ChannelID is a placeholder when ChannelName is absent. Apply metadata/templates separately.']
     if any(not isinstance(row, dict) for row in rows): raise auth.SafeError('无效频道记录')
     names, _ = resolve_names(rows, directory, c)
-    written, counts = 0, dict(excluded_height=0, excluded_name=0, kept=0)
+    written, counts = 0, dict(excluded_id=0, excluded_height=0, excluded_name=0, kept=0)
     for row, name in zip(rows, names):
         if not isinstance(row, dict): raise auth.SafeError('无效频道记录')
         channel_id = text(row.get('ChannelID'))
@@ -984,6 +984,12 @@ def validate_filter(value):
         raise auth.SafeError('filter.exclude_names必须是非空字符串列表')
     if len(names) > 32 or any(len(item) > 32 for item in names):
         raise auth.SafeError('filter.exclude_names过长')
+    if 'exclude_ids' in value:
+        ids = value.get('exclude_ids')
+        if not isinstance(ids, list) or any(not isinstance(item, str) or not item or item != item.strip() or any(ch.isspace() for ch in item) for item in ids):
+            raise auth.SafeError('filter.exclude_ids必须是完整ChannelID列表')
+        if len(ids) != len(set(ids)) or len(ids) > 256 or any(len(item) > 64 for item in ids):
+            raise auth.SafeError('filter.exclude_ids无效')
 
 
 def normalize_filter(value):
@@ -996,14 +1002,17 @@ def normalize_filter(value):
         merged = default_filter(True)
         merged.update(value)
         validate_filter(merged)
-        return {'enabled': merged['enabled'], 'min_height': merged['min_height'],
-                'exclude_names': list(merged['exclude_names'])}
+        result = {'enabled': merged['enabled'], 'min_height': merged['min_height'],
+                  'exclude_names': list(merged['exclude_names'])}
+        if 'exclude_ids' in merged:
+            result['exclude_ids'] = list(merged['exclude_ids'])
+        return result
     raise auth.SafeError('filter必须是过滤对象')
 
 
 def filter_rules(config):
     rules = normalize_filter(config.get('filter', default_filter(True)))
-    return rules['enabled'], rules['min_height'], tuple(rules['exclude_names'])
+    return rules['enabled'], rules['min_height'], tuple(rules['exclude_names']), tuple(rules.get('exclude_ids', ()))
 
 
 def measured_height(row, resolutions):
@@ -1024,9 +1033,11 @@ def measured_height(row, resolutions):
 
 def playlist_decision(row, name, config, resolutions):
     """Saved filter rules. resolution.json stores measurements, not this choice."""
-    enabled, min_height, names = filter_rules(config)
+    enabled, min_height, names, ids = filter_rules(config)
     if not enabled:
         return 'kept'
+    if text(row.get('ChannelID')) in ids:
+        return 'excluded_id'
     if any(word in name for word in names):
         return 'excluded_name'
     if measured_height(row, resolutions) < min_height:
@@ -1414,12 +1425,12 @@ def convert(paths, destination=None):
             print('本次生成的播放列表在：' + str(shown))
         _, counts = resolve_names(rows, directory, c)
         print(f'convert成功：{decisions["kept"]}条M3U记录；名称 ' + json.dumps(counts, ensure_ascii=False))
-        enabled, min_height, names = filter_rules(c)
+        enabled, min_height, names, ids = filter_rules(c)
         if not enabled:
             print('过滤：已关闭')
         else:
-            print('过滤：高度不足 %d，名称排除 %d' % (
-                decisions['excluded_height'], decisions['excluded_name']))
+            print('过滤：指定排除 %d，高度不足 %d，名称排除 %d' % (
+                decisions['excluded_id'], decisions['excluded_height'], decisions['excluded_name']))
 
 
 def refresh_after_fetch(paths, now=None, runner=None):
@@ -1559,7 +1570,7 @@ def usage():
   python3 iptv.py config=tel output=exports
 
 config 相对路径以脚本目录为基准。带身份或播放字段时，合并已有配置、保存并获取后生成。run 重新获取并生成；频道或直播地址新增、变化，或没有分辨率记录时才探测直播。epg 只更新节目单，先用已保存的门户会话，失效才重新登录；不改回看地址，也不探测。只给 config（可再加 output）时离线生成，不探测。resolution 按当前频道重新测量全部分辨率，不生成列表。
-已有 tel/epg.xml 时，playlist.m3u 头部写 x-tvg-url="epg.xml"。可选 epg_url=http://访问地址/epg.xml 改为播放器能打开的地址；output 导出到其他目录时，同时复制一份 epg.xml。以 .m3u 结尾的 output 是文件，其他 output 是目录，副本名为配置目录名.m3u。filter 写入 config.json，是对象：enabled、min_height、exclude_names。缺省为 enabled true、min_height 720、exclude_names 含“购物”“理财”“聚鲨”。旧的 true/false 在保存或 run/fetch 补字段时变成该对象，并保留原来的开关；已有自定义高度和关键词不改。比较高度时，没有可用记录、状态不是 identified 或 played、宽或高缺失、不是正整数，都按高度 0；resolution.json 仍只保存实测，不会改成 0。filter=false 只把 enabled 写成 false 并重新生成，不改规则、不登录、不探测。可选 channel_names 是对象，键为完整 ChannelID，值为显示名；只在生成列表时按完整键精确替换，优先于原始名、门户名和数字兜底，并在过滤前生效。不改 ChannelID、tvg-id、catchup.json 或 channels.json。离线生成、epg、resolution 不补写该字段。当前仅上海电信。'''
+已有 tel/epg.xml 时，playlist.m3u 头部写 x-tvg-url="epg.xml"。可选 epg_url=http://访问地址/epg.xml 改为播放器能打开的地址；output 导出到其他目录时，同时复制一份 epg.xml。以 .m3u 结尾的 output 是文件，其他 output 是目录，副本名为配置目录名.m3u。filter 写入 config.json，是对象：enabled、min_height、exclude_names。缺省为 enabled true、min_height 720、exclude_names 含“购物”“理财”“聚鲨”。旧的 true/false 在保存或 run/fetch 补字段时变成该对象，并保留原来的开关；已有自定义高度和关键词不改。比较高度时，没有可用记录、状态不是 identified 或 played、宽或高缺失、不是正整数，都按高度 0；resolution.json 仍只保存实测，不会改成 0。filter=false 只把 enabled 写成 false 并重新生成，不改规则、不登录、不探测。可选 channel_names 是对象，键为完整 ChannelID，值为显示名；只在生成列表时按完整键精确替换，优先于原始名、门户名和数字兜底，并在过滤前生效。不改 ChannelID、tvg-id、catchup.json 或 channels.json。filter 还可选 exclude_ids，每项是完整 ChannelID，只在 enabled 为 true 时于名称和高度判断前排除，不删除原始记录；没有该字段时不排除。离线生成、epg、resolution 不补写该字段。当前仅上海电信。'''
 
 
 def main(argv=None):

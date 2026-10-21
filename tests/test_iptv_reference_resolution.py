@@ -127,7 +127,7 @@ class ResolutionTests(unittest.TestCase):
             c.render(rows, cfg, resolutions={'config': cfg, 'channels': facts})
         cfg['filter']['min_height'] = 720
         text, counts = c.render(rows, cfg, resolutions={'config': cfg, 'channels': facts})
-        self.assertEqual(counts, dict(excluded_height=1, excluded_name=0, kept=1))
+        self.assertEqual(counts, dict(excluded_id=0, excluded_height=1, excluded_name=0, kept=1))
         self.assertIn('tvg-id="edge"', text)
         cfg['filter']['min_height'] = 1080
         kept, _ = c.render([row(ChannelID='named', ChannelName='自定频道'), row(ChannelID='ok', ChannelName='保留')], dict(cfg, filter=dict(enabled=False, min_height=1080, exclude_names=['自定'])), resolutions=None, apply_filter=True)
@@ -206,7 +206,7 @@ class ResolutionTests(unittest.TestCase):
         text, counts = c.render(rows, cfg, resolutions={'config': cfg, 'channels': facts})
         ids = [line.split('tvg-id="', 1)[1].split('"', 1)[0] for line in text.splitlines() if line.startswith('#EXTINF:')]
         self.assertEqual(ids, ['hd'])
-        self.assertEqual(counts, dict(excluded_height=5, excluded_name=1, kept=1))
+        self.assertEqual(counts, dict(excluded_id=0, excluded_height=5, excluded_name=1, kept=1))
         self.assertEqual(json.dumps(facts, sort_keys=True), before)
         self.assertEqual(facts[self.key('zero', urls[4])]['height'], 0)
         cfg['filter'] = dict(enabled=False, min_height=1080, exclude_names=['自定'])
@@ -315,6 +315,26 @@ class ResolutionTests(unittest.TestCase):
             with patch.object(c, 'probe_fact', side_effect=AssertionError('offline')):
                 c.convert(paths)
             self.assertIn('#EXTINF:', paths[3].read_text())
+
+    def test_exclude_ids_exact_before_name_and_off_keeps_all(self):
+        cfg = config()
+        cfg['filter'] = dict(enabled=True, min_height=0, exclude_names=['购物'], exclude_ids=['exact-id'])
+        cfg['channel_names'] = {'exact-id': '保留名', 'other-id': '购物台'}
+        rows = [row(ChannelID='exact-id'), row(ChannelID='other-id'), row(ChannelID='suffix-exact-id', ChannelName='普通')]
+        text, counts = c.render(rows, cfg, resolutions=None)
+        self.assertEqual(counts['excluded_id'], 1)
+        self.assertEqual(counts['excluded_name'], 1)
+        self.assertEqual(counts['kept'], 1)
+        self.assertNotIn('tvg-id="exact-id"', text)
+        self.assertIn('tvg-id="suffix-exact-id"', text)
+        self.assertNotIn('购物台', text)
+        cfg['filter']['enabled'] = False
+        full, off = c.render(rows, cfg, resolutions=None)
+        self.assertEqual(off['kept'], 3)
+        self.assertIn('tvg-id="exact-id"', full)
+        self.assertIn('购物台', full)
+        with self.assertRaises(c.SafeError):
+            c.validate(dict(config(), filter=dict(enabled=True, min_height=0, exclude_names=['购物'], exclude_ids=['exact-id', 'not exact'])))
 
 
 if __name__ == '__main__':
