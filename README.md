@@ -347,7 +347,7 @@ ip -6 route get <当前 DNS 返回的 Fake IPv6>
 
 支持带 NetworkManager 和 systemd 的 Linux/NAS，不支持 OpenWrt。菜单 80 可查看已安装信息、安装/设置、删除、升级或重启。
 
-安装/设置时，选已有实例只改其中一项；新建则按提示配置网卡、VLAN、监听地址和端口。可在同一处设置组播直播、FCC 快速换台和 RTSP 回放。
+安装/设置时，选已有实例只改其中一项；新建则按提示配置网卡、VLAN、监听地址和端口。可在同一处设置组播直播、FCC 快速换台和 RTSP 回放。新建和再次进入已有实例，都会给该实例拥有的 IPTV 连接显式设置 `ipv4.ignore-auto-dns=yes` 和 `ipv6.ignore-auto-dns=yes`，不改变已有 IPv4/IPv6 地址方法。DHCP 继续提供地址和专用路由；已有实例不会因此重建网络。
 
 获取播放列表参见 [IPTV 频道抓取参考](assets/iptv/README.md)。
 

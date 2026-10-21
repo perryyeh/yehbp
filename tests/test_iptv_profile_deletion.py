@@ -24,13 +24,27 @@ if os.environ.get('FIELD_FAIL') and a[:2] == ['-g', os.environ['FIELD_FAIL']]: s
 if os.environ.get('POST_DELETE_QUERY_FAIL') and 'show' in a and len(d) < 2: sys.exit(1)
 if a == ['-g', 'UUID', 'connection', 'show']:
     print('\\n'.join(d)); sys.exit(0)
+if a[:4] == ['connection', 'modify', 'uuid', a[3]] and 'ipv4.ignore-auto-dns' in a and 'ipv6.ignore-auto-dns' in a and a[-1] == 'yes':
+    u = a[3]
+    if u not in d: sys.exit(10)
+    d[u]['ipv4.ignore-auto-dns'] = 'yes'
+    d[u]['ipv6.ignore-auto-dns'] = 'yes'
+    p.write_text(json.dumps(d)); sys.exit(0)
+if a[:3] == ['connection', 'reapply', 'uuid'] or a[:3] == ['connection', 'up', 'uuid']:
+    sys.exit(0)
 if a[:3] == ['connection', 'delete', 'uuid']:
     if a[3] == os.environ.get('FAIL_UUID'): sys.exit(1)
     d.pop(a[3], None); p.write_text(json.dumps(d)); sys.exit(0)
 if 'show' in a:
     u = a[-1]
     if u not in d: sys.exit(10)
-    if a[0] == '-g': print(d[u].get(a[1], ''))
+    if a[0] == '-g':
+        values = [d[u].get(k, '') for k in a[1].split(',')]
+        # nmcli 1.42 prints one field per line; keep comma mode as the other real format.
+        if os.environ.get('NMCLI_NEWLINE'):
+            print(chr(10).join(values))
+        else:
+            print(','.join(values))
     sys.exit(0)
 sys.exit(99)
 '''
@@ -60,7 +74,9 @@ class IPTVProfileDeletionTests(unittest.TestCase):
 
     def profile(self, role, vlan, instance='tel'):
         return {'connection.type': 'vlan', 'connection.id': f'rtp2httpd-{instance}-{role}-eth0-{vlan}',
-                'connection.interface-name': f'eth0.{vlan}', 'vlan.parent': 'eth0', 'vlan.id': str(vlan)}
+                'connection.interface-name': f'eth0.{vlan}', 'vlan.parent': 'eth0', 'vlan.id': str(vlan),
+                'ipv4.method': 'auto' if role == 'fcc' else 'disabled', 'ipv6.method': 'disabled',
+                'ipv4.ignore-auto-dns': 'no', 'ipv6.ignore-auto-dns': 'no', 'GENERAL.STATE': 'activated'}
 
     def write_state(self, **changes):
         fields = dict(MANAGED_BY='yehbp-rtp2httpd', INSTANCE='tel', PARENT_IF='eth0',
@@ -116,10 +132,10 @@ rm() {{
     def test_stale_uuid_never_falls_back_to_vlan(self):
         self.profiles[U3] = self.profiles.pop(U1)
         r = self.run_function()
-        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(self.deleted, [U2])
         self.assertIn(U3, self.remaining)
-        self.assertIn('UUID', r.stdout)
+        self.assertIn('UUID', r.stderr)
 
     def test_mismatched_properties_refuse_all_deletion(self):
         for field, value in [('connection.id', 'user'), ('connection.type', 'ethernet'),
@@ -247,6 +263,51 @@ rtp2httpd_install <<< y'''
         self.assertEqual(r.returncode, 0)
         self.assertEqual(self.deleted, [])
         self.assertIn('跳过', r.stdout)
+
+    def test_existing_instance_entry_applies_dns_without_changing_methods(self):
+        self.profiles[U2]['ipv6.method'] = 'auto'
+        self.profiles[U3] = self.profile('fcc', 85, 'other')
+        body = f'''rtp2httpd_service_config_path() {{ printf '%s\\n' "{self.config}"; }}
+rtp2httpd_rtsp_config() {{ printf 'unchanged\\n'; }}
+printf '0\\n' | rtp2httpd_settings rtp2httpd_tel.service'''
+        r = self.run_function(body)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.remaining[U1]['ipv4.method'], 'disabled')
+        self.assertEqual(self.remaining[U1]['ipv6.method'], 'disabled')
+        self.assertEqual(self.remaining[U2]['ipv4.method'], 'auto')
+        self.assertEqual(self.remaining[U2]['ipv6.method'], 'auto')
+        self.assertEqual(self.remaining[U1]['ipv4.ignore-auto-dns'], 'yes')
+        self.assertEqual(self.remaining[U1]['ipv6.ignore-auto-dns'], 'yes')
+        self.assertEqual(self.remaining[U2]['ipv4.ignore-auto-dns'], 'yes')
+        self.assertEqual(self.remaining[U2]['ipv6.ignore-auto-dns'], 'yes')
+        self.assertEqual(self.remaining[U3]['ipv4.ignore-auto-dns'], 'no')
+        self.assertEqual(self.remaining[U3]['ipv6.ignore-auto-dns'], 'no')
+        self.assertEqual(self.deleted, [])
+        self.assertIn(['connection', 'reapply', 'uuid', U1], self.calls)
+        self.assertIn(['connection', 'reapply', 'uuid', U2], self.calls)
+        self.assertNotIn('connection add', ' '.join(' '.join(a) for a in self.calls))
+
+    def test_existing_instance_entry_accepts_nmcli_142_newlines(self):
+        self.env['NMCLI_NEWLINE'] = '1'
+        self.profiles[U2]['ipv6.method'] = 'disabled'
+        body = f'''rtp2httpd_service_config_path() {{ printf '%s\\n' "{self.config}"; }}
+rtp2httpd_rtsp_config() {{ printf 'unchanged\\n'; }}
+printf '0\\n' | rtp2httpd_settings rtp2httpd_tel.service'''
+        r = self.run_function(body)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.remaining[U1]['ipv4.method'], 'disabled')
+        self.assertEqual(self.remaining[U2]['ipv4.method'], 'auto')
+        self.assertEqual(self.remaining[U2]['ipv6.method'], 'disabled')
+        self.assertEqual(self.remaining[U1]['ipv6.ignore-auto-dns'], 'yes')
+        self.assertEqual(self.remaining[U2]['ipv6.ignore-auto-dns'], 'yes')
+        self.assertEqual(self.deleted, [])
+
+    def test_new_install_sets_both_ignore_auto_dns_flags(self):
+        text = (ROOT / 'assets/iptv/rtp2httpd.sh').read_text()
+        self.assertIn('ipv4.method auto ipv4.ignore-auto-dns yes', text)
+        self.assertIn('ipv4.method disabled ipv4.never-default yes ipv4.ignore-auto-dns yes ipv6.method disabled ipv6.ignore-auto-dns yes', text)
+        self.assertIn('ipv6.method disabled ipv6.ignore-auto-dns yes', text)
+        self.assertNotIn('rtp2httpd_ensure_owned_dhcp_dns', text)
 
 
 if __name__ == '__main__':

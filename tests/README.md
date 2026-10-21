@@ -48,7 +48,7 @@ bash -n assets/iptv/rtp2httpd.sh
 | `test_mihomo_subscription_delete.py` | 删除订阅元数据、保留配置、锁与失败处理 |
 | `test_dockcheck_dependencies.py` | OpenWrt 包管理与 xargs/flock 依赖选择 |
 | `test_docker_datadir_migration.py` | 迁移前置校验、复制失败、回滚、JSON 精度与沙箱元数据保留 |
-| `test_iptv_profile_deletion.py` | NetworkManager UUID 所有权校验、删除失败及状态保留 |
+| `test_iptv_profile_deletion.py` | NetworkManager UUID 所有权校验、删除失败及状态保留；新装 FCC 与组播显式设置 IPv4/IPv6 `ignore-auto-dns=yes` 且 IPv6 保持 disabled；再次进入已有实例只对归属连接补同一策略并保留原 IPv4/IPv6 方法 |
 | `test_rtp2httpd_rtsp.py` | 安装/设置共用 RTSP 四选项（1/2/4 不枚举，仅 3 简洁列出全部接口名称/IPv4/状态，支持数字或接口名、无 IPv4、取消/EOF）、真实菜单2发现/选择已有实例（跨目录）或新建、无实例首次流程、取消无操作、同名配置单项设置、安全ExecStart/drop-in拒绝、精确字节及元数据保留、旧 / 无 env、路由回退、异常语法拒绝、仅所选服务应用及失败回滚；systemctl/ip/nmcli 均为 sandbox mock |
 | `test_diyp.py` | 独立 DIYP 桥：`config=tel` 只读同目录 `playlist.m3u`；`/tel.m3u` 返回 DIYP 文本而非 M3U，`/tel.epg` 返回节目单 JSON 且旧 `/epg` 无效；保留顺序、重复频道和原始查询串；playseek 只替换回看时间；直播 302/回看 302；拒绝外部目标；XMLTV 按来源顺序合并，EPG 默认 3600 秒内不重复请求，播放列表每 300 秒按修改时间检查且内容变化不重下未变 EPG 源，源地址变化才更新，失败保留上一份磁盘缓存；默认 `0.0.0.0:5142`，未指定 `--public-base` 时按请求 Host 生成链接，显式值可含路径前缀 |
 | `test_iptv_reference_*.py` | 独立单文件参考脚本：三步协议与完整数据、默认完整目录获取/旧false忽略与只读保留、隐藏输入配置、目录隔离、首次/重入交互、离线生成禁止联网、目录补名及HD/高清/4K保留、主输出与副本字节一致、统一config=与output=（.m3u为文件、其余为目录、已有类型冲突拒绝、建目录失败只提示主列表且不报成功）、旧--config-dir/--output-dir/--stdin报迁移、并发锁/脚本碰撞保护、父目录权限与原子失败保护 |
