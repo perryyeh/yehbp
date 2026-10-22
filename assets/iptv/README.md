@@ -103,13 +103,13 @@ cat tel/resolution.json
 
 `exclude_channels` 和 `channel_names` 的键都是完整 ChannelID。
 
-可选 `name_cleanup` 只改播放列表的显示名和分组。没有该字段时，名称和顺序保持原样，也不写 `group-title`。`remove` 是要去掉的字面标记；`groups` 数组顺序就是分组的输出顺序。组内按配置的名称顺序排列，不按输入原序：有 `names` 的组用这份名单，只有 `contains` 或没有名单的组用可选 `order`。名单里没有的频道留在该组末尾，仍按原相对顺序。同名多条源保持彼此的原相对顺序，不合并。`contains` 先于 `names` 匹配，所以带 4K 的频道不会被前面的名单分走；4K 自己的顺序写在 `order`，不改这条优先规则。只有分组名的最后一项是其余频道。
+可选 `name_cleanup` 只改播放列表的显示名和分组。没有该字段时，名称和顺序保持原样，也不写 `group-title`。`remove` 是要去掉的字面标记；`groups` 数组顺序就是分组的输出顺序。组内按配置的名称顺序排列，不按输入原序：有 `channels` 的组用这份名单，只有 `contains` 或没有名单的组用可选 `order`。名单里没有的频道留在该组末尾，仍按原相对顺序。同名多条源保持彼此的原相对顺序，不合并。`contains` 先于 `channels` 匹配，所以带 4K 的频道不会被前面的名单分走；4K 自己的顺序写在 `order`，不改这条优先规则。只有分组名的最后一项是其余频道。
 
 | 字段 | 作用 |
 |---|---|
 | `remove` | 去掉这些标记。英文按独立词去掉，`高清` 按字面去掉；去掉后为空则保留原名 |
 | `groups[].name` | 分组名，数组顺序即播放列表的分组顺序 |
-| `groups[].names` | 清理后的完整显示名，精确匹配，同时是该组的输出顺序 |
+| `groups[].channels` | 清理后的完整显示名，精确匹配，同时是该组的输出顺序 |
 | `groups[].contains` | 名称包含即归入，不区分大小写，优先于名单 |
 | `groups[].order` | 组内输出顺序。`contains` 组用它排序；未列出的名称留在组尾 |
 
@@ -117,10 +117,10 @@ cat tel/resolution.json
 "name_cleanup": {
   "remove": ["HD", "高清"],
   "groups": [
-    {"name": "央视", "names": ["CCTV1综合"]},
-    {"name": "卫视", "names": ["东方卫视"]},
+    {"name": "央视", "channels": ["CCTV1综合"]},
+    {"name": "卫视", "channels": ["东方卫视"]},
     {"name": "4K", "contains": "4K", "order": ["CCTV4K"]},
-    {"name": "上海台", "names": ["新闻综合"]},
+    {"name": "上海台", "channels": ["新闻综合"]},
     {"name": "其它"}
   ]
 }

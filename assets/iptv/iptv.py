@@ -1070,7 +1070,7 @@ def name_cleanup_rules(config):
     parsed = []
     seen = set()
     for item in groups:
-        if not isinstance(item, dict) or set(item) - {'name', 'names', 'contains', 'order'}:
+        if not isinstance(item, dict) or set(item) - {'name', 'channels', 'contains', 'order'}:
             raise auth.SafeError('name_cleanup.groups项无效')
         label = item.get('name')
         text(label)
@@ -1078,7 +1078,7 @@ def name_cleanup_rules(config):
             raise auth.SafeError('name_cleanup分组名无效')
         seen.add(label)
         rule = {'name': label}
-        if 'contains' in item and 'names' in item:
+        if 'contains' in item and 'channels' in item:
             raise auth.SafeError('name_cleanup.groups项不能同时匹配')
         if 'contains' in item:
             needle = item.get('contains')
@@ -1086,13 +1086,13 @@ def name_cleanup_rules(config):
             if not needle or needle != needle.strip():
                 raise auth.SafeError('name_cleanup.contains无效')
             rule['contains'] = needle
-        elif 'names' in item:
-            names = item.get('names')
-            if not isinstance(names, list) or not names or any(not isinstance(name, str) or not name or name != name.strip() for name in names):
-                raise auth.SafeError('name_cleanup.names必须是非空名称列表')
-            if len(names) > 128 or len(names) != len(set(names)):
-                raise auth.SafeError('name_cleanup.names无效')
-            rule['names'] = list(names)
+        elif 'channels' in item:
+            channels = item.get('channels')
+            if not isinstance(channels, list) or not channels or any(not isinstance(name, str) or not name or name != name.strip() for name in channels):
+                raise auth.SafeError('name_cleanup.channels必须是非空名称列表')
+            if len(channels) > 128 or len(channels) != len(set(channels)):
+                raise auth.SafeError('name_cleanup.channels无效')
+            rule['channels'] = list(channels)
         elif parsed:
             pass
         else:
@@ -1124,15 +1124,15 @@ def clean_display_name(name, rules):
 def group_title(name, rules):
     if not rules:
         return ''
-    listed = [rule for rule in rules['groups'] if 'names' in rule]
+    listed = [rule for rule in rules['groups'] if 'channels' in rule]
     loose = [rule for rule in rules['groups'] if 'contains' in rule]
-    rest = [rule for rule in rules['groups'] if 'names' not in rule and 'contains' not in rule]
+    rest = [rule for rule in rules['groups'] if 'channels' not in rule and 'contains' not in rule]
     for rule in loose + listed + rest:
         if 'contains' in rule and rule['contains'].lower() in name.lower():
             return rule['name']
-        if 'names' in rule and name in rule['names']:
+        if 'channels' in rule and name in rule['channels']:
             return rule['name']
-        if 'contains' not in rule and 'names' not in rule:
+        if 'contains' not in rule and 'channels' not in rule:
             return rule['name']
     return ''
 
@@ -1141,11 +1141,11 @@ def order_within_group(items, rule):
     """Place entries by the configured name list. Unlisted names stay at the tail, in input order.
 
     The same cleaned name may match several sources. Those copies stay in their original
-    relative order and are not split apart. Membership (contains / names) is unchanged.
+    relative order and are not split apart. Membership (contains / channels) is unchanged.
     """
     sequence = rule.get('order')
-    if sequence is None and 'names' in rule:
-        sequence = rule['names']
+    if sequence is None and 'channels' in rule:
+        sequence = rule['channels']
     if not sequence:
         return list(items)
     rank = {name: index for index, name in enumerate(sequence)}

@@ -45,10 +45,10 @@ class CliTests(unittest.TestCase):
         cfg['name_cleanup'] = dict(
             remove=['HD', '高清'],
             groups=[
-                dict(name='央视', names=['CCTV-1', 'CCTV-5+', '兵器科技']),
-                dict(name='卫视', names=['东方卫视', '湖南卫视']),
+                dict(name='央视', channels=['CCTV-1', 'CCTV-5+', '兵器科技']),
+                dict(name='卫视', channels=['东方卫视', '湖南卫视']),
                 dict(name='4K', contains='4k'),
-                dict(name='上海台', names=['新闻综合', '五星体育']),
+                dict(name='上海台', channels=['新闻综合', '五星体育']),
                 dict(name='其它'),
             ])
         rows = [
@@ -95,11 +95,13 @@ class CliTests(unittest.TestCase):
             c.validate(dict(config(), name_cleanup=dict(groups=[dict(name='4K')])))
         with self.assertRaises(c.SafeError):
             c.validate(dict(config(), name_cleanup=dict(groups=[dict(name='4K', contains='4K', order=['4K', '4K'])])))
+        with self.assertRaises(c.SafeError):
+            c.validate(dict(config(), name_cleanup=dict(groups=[dict(name='卫视', names=['东方卫视'])])))
 
-    def test_group_order_follows_names_not_input_and_contains_stays_first(self):
+    def test_group_order_follows_channels_not_input_and_contains_stays_first(self):
         cfg = config()
         cfg['name_cleanup'] = dict(groups=[
-            dict(name='卫视', names=['东方卫视', '延边卫视', '湖南卫视']),
+            dict(name='卫视', channels=['东方卫视', '延边卫视', '湖南卫视']),
             dict(name='4K', contains='4K', order=['CCTV4K', '东方卫视4K', '百事通电影4K']),
             dict(name='其它', order=['金鹰纪实']),
         ])
