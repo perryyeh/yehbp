@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.10.21.01"
+APP_VERSION="2026.11.04.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -2400,7 +2400,7 @@ docker_show_available_upgrades() {
 }
 
 install_docker() {
-    local action confirm
+    local action confirm upgrade_inventory="" upgrade_socket="" upgrade_inode="" recovery_rc=0
 
     echo "🔧 安装/升级 Docker"
     if is_openwrt; then
@@ -2430,6 +2430,19 @@ install_docker() {
         echo "已取消 Docker ${action}。"
         return 0
     fi
+    if [ "$action" = "升级" ]; then
+        upgrade_socket="$(docker_assert_local_daemon)" || {
+            echo "❌ 无法确认 Docker 指向本机 unix socket，已取消升级。"
+            return 1
+        }
+        upgrade_inventory="$(mktemp)" || return 1
+        if ! docker_capture_inventory "$upgrade_inventory"; then
+            echo "❌ 无法记录现有容器清单，已取消升级。"
+            rm -f -- "$upgrade_inventory"
+            return 1
+        fi
+        upgrade_inode="$(docker_dev_inode "$upgrade_socket" 2>/dev/null || true)"
+    fi
     . /etc/os-release
 
     sudo apt-get update
@@ -2452,12 +2465,37 @@ install_docker() {
         return 1
     fi
 
-    sudo apt-get update
-    sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    if ! sudo apt-get update || ! sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; then
+        echo "❌ Docker 软件包${action}失败，未报告成功。"
+        [ -z "$upgrade_inventory" ] || rm -f -- "$upgrade_inventory"
+        return 1
+    fi
 
-    sudo systemctl enable docker
-    sudo systemctl start docker
+    if ! sudo systemctl enable docker || ! sudo systemctl start docker; then
+        echo "❌ Docker 服务启用或启动失败，请检查服务状态。"
+        [ -z "$upgrade_inventory" ] || rm -f -- "$upgrade_inventory"
+        return 1
+    fi
 
+    if ! docker_show_storage_note; then
+        echo "❌ 无法验证 Docker ${action}后的存储状态。"
+        [ -z "$upgrade_inventory" ] || rm -f -- "$upgrade_inventory"
+        return 1
+    fi
+    if [ "$action" = "升级" ]; then
+        docker_offer_socket_restarts "$upgrade_socket" "$upgrade_inode" || recovery_rc=$?
+        if [ "$recovery_rc" -ne 0 ] && [ "$recovery_rc" -ne 2 ]; then
+            echo "❌ Docker 软件包已升级，但旧 socket 容器恢复失败。"
+            rm -f -- "$upgrade_inventory"
+            return 1
+        fi
+        if ! docker_verify_inventory "$upgrade_inventory"; then
+            echo "⚠️ 升级后容器清单或运行状态与升级前不一致；未自动启动或停止无关容器。"
+            rm -f -- "$upgrade_inventory"
+            return 1
+        fi
+        rm -f -- "$upgrade_inventory"
+    fi
     echo "✅ Docker ${action}完成，版本信息："
     docker --version
 }
@@ -5818,6 +5856,371 @@ restore_docker_compose_project() {
     (cd "$dir" && "${COMPOSE[@]}" -f "$compose_file" ps) || true
 }
 
+# 只读识别本机 Docker。存储模式只看 docker info 的 DriverStatus
+# driver-type，不用版本号、进程或 --containerd 推断。
+docker_assert_local_daemon() {
+    local host="" ctx="" path=""
+
+    if [ -n "${DOCKER_HOST:-}" ]; then
+        host="$DOCKER_HOST"
+    else
+        if [ -n "${DOCKER_CONTEXT:-}" ]; then
+            ctx="$DOCKER_CONTEXT"
+        else
+            ctx="$(docker context show 2>/dev/null)" || {
+                echo "❌ 无法读取 Docker context，已取消。" >&2
+                return 1
+            }
+        fi
+        case "$ctx" in
+            ""|*[!A-Za-z0-9._-]*)
+                echo "❌ 无法确认 Docker context，已取消。" >&2
+                return 1
+                ;;
+        esac
+        host="$(docker context inspect "$ctx" --format '{{.Endpoints.docker.Host}}' 2>/dev/null)" || {
+            echo "❌ 无法读取 Docker context 端点，已取消。" >&2
+            return 1
+        }
+    fi
+    host="${host%$'\r'}"
+    host="${host%$'\n'}"
+    case "$host" in
+        unix:///*) path="${host#unix://}" ;;
+        unix://*)
+            echo "❌ Docker unix socket 不是绝对路径，已取消。" >&2
+            return 1
+            ;;
+        tcp:*|tcp://*)
+            echo "❌ Docker 客户端使用 TCP 远程端点，已取消，避免在本机操作远程数据。" >&2
+            return 1
+            ;;
+        ssh://*)
+            echo "❌ Docker 客户端使用 SSH 远程端点，已取消，避免在本机操作远程数据。" >&2
+            return 1
+            ;;
+        http://*|https://*)
+            echo "❌ Docker 客户端使用 HTTP 远程端点，已取消，避免在本机操作远程数据。" >&2
+            return 1
+            ;;
+        npipe:*)
+            echo "❌ Docker 客户端使用命名管道，已取消。" >&2
+            return 1
+            ;;
+        fd://*)
+            echo "❌ Docker 客户端使用 fd 端点，无法证实本地 unix socket，已取消。" >&2
+            return 1
+            ;;
+        "")
+            echo "❌ Docker context 没有可证实的本地 unix socket，已取消。" >&2
+            return 1
+            ;;
+        *)
+            echo "❌ Docker 客户端端点不是可证实的本地 unix socket，已取消。" >&2
+            return 1
+            ;;
+    esac
+    case "$path" in
+        *$'\n'*|"")
+            echo "❌ Docker socket 路径无效，已取消。" >&2
+            return 1
+            ;;
+    esac
+    if [ ! -S "$path" ]; then
+        echo "❌ 无法证实本地 Docker unix socket：$path，已取消。" >&2
+        return 1
+    fi
+    printf '%s\n' "$path"
+}
+
+docker_classify_storage() {
+    local info="" mode="" root=""
+
+    command -v jq >/dev/null 2>&1 || {
+        echo "❌ 缺少 jq，无法识别 Docker 存储模式，已取消。" >&2
+        return 1
+    }
+    info="$(docker info --format '{{json .}}' 2>/dev/null)" || {
+        echo "❌ 无法查询 Docker 信息，已取消。不再在守护进程不可用时继续迁移或改写配置。" >&2
+        return 1
+    }
+    [ -n "$info" ] || {
+        echo "❌ Docker 信息为空，已取消。" >&2
+        return 1
+    }
+    mode="$(printf '%s' "$info" | jq -r '
+        def types:
+            if (.DriverStatus | type) != "array" then null
+            else [.DriverStatus[]? | select(type == "array" and (.[0] == "driver-type")) | .[1]]
+            end;
+        if type != "object" then "invalid"
+        elif types == null then "invalid"
+        elif (types | length) > 1 then "invalid"
+        elif (types | length) == 1 and types[0] == "io.containerd.snapshotter.v1" then "containerd"
+        elif (types | length) == 1 then "unknown"
+        elif .Driver == "overlay2" or .Driver == "overlayfs" then "overlay2"
+        else "unknown"
+        end
+    ' 2>/dev/null)" || {
+        echo "❌ 无法解析 Docker 存储信息，已取消。" >&2
+        return 1
+    }
+    root="$(printf '%s' "$info" | jq -r 'if type == "object" and (.DockerRootDir | type) == "string" then .DockerRootDir else "" end' 2>/dev/null)" || root=""
+    case "$mode" in
+        overlay2|containerd|unknown|invalid) ;;
+        *) mode="invalid" ;;
+    esac
+    printf '%s\n%s\n' "$mode" "$root"
+}
+
+docker_migration_guard() {
+    local parsed="" mode=""
+
+    docker_assert_local_daemon >/dev/null || return 1
+    parsed="$(docker_classify_storage)" || return 1
+    mode="${parsed%%$'\n'*}"
+    case "$mode" in
+        overlay2) return 0 ;;
+        containerd)
+            echo "❌ 当前是 containerd image store（driver-type io.containerd.snapshotter.v1）。不会迁移该存储，也不会改 daemon.json 或把 Docker 固定在 28。" >&2
+            return 1
+            ;;
+        *)
+            echo "❌ 无法确认 Docker 存储为 overlay2（结果：${mode}），已取消迁移。" >&2
+            return 1
+            ;;
+    esac
+}
+
+docker_show_storage_note() {
+    local parsed="" mode="" root=""
+
+    docker_assert_local_daemon >/dev/null || {
+        echo "⚠️ 无法确认本机 Docker unix socket，已跳过存储模式显示，避免把远程 daemon 当成本机。"
+        return 1
+    }
+    parsed="$(docker_classify_storage)" || {
+        echo "⚠️ 无法读取本机 Docker 存储模式或 Docker Root Dir。"
+        return 1
+    }
+    mode="${parsed%%$'\n'*}"
+    root="${parsed#*$'\n'}"
+    case "$mode" in
+        overlay2) echo "ℹ️ Docker 存储模式：overlay2" ;;
+        containerd) echo "ℹ️ Docker 存储模式：containerd image store" ;;
+        *) echo "ℹ️ Docker 存储模式：未知（${mode}）" ;;
+    esac
+    echo "ℹ️ Docker Root Dir：${root:-未知}"
+    if [ "$mode" = containerd ]; then
+        echo "ℹ️ 检测到 containerd image store 的独立目录。YehBP 不会自动修改 daemon.json，也不会把 Docker 固定在 28。"
+    fi
+}
+
+docker_dev_inode() {
+    local path="$1" out=""
+    [ -e "$path" ] || [ -S "$path" ] || return 1
+    if out="$(stat -c '%d:%i' -- "$path" 2>/dev/null)"; then
+        printf '%s\n' "$out"
+        return 0
+    fi
+    if out="$(stat -f '%d:%i' -- "$path" 2>/dev/null)"; then
+        printf '%s\n' "$out"
+        return 0
+    fi
+    return 1
+}
+
+docker_capture_inventory() {
+    local dest="$1" ids="" id="" running=""
+    : > "$dest" || return 1
+    ids="$(docker ps -aq --no-trunc 2>/dev/null)" || return 1
+    while IFS= read -r id; do
+        [ -n "$id" ] || continue
+        running="$(docker inspect -f '{{.State.Running}}' "$id" 2>/dev/null)" || return 1
+        case "$running" in
+            true|false) ;;
+            *)
+                echo "❌ 容器 $id 运行状态无法识别，已取消。" >&2
+                return 1
+                ;;
+        esac
+        printf '%s %s\n' "$id" "$running" >> "$dest" || return 1
+    done <<EOF
+$ids
+EOF
+}
+
+docker_verify_inventory() {
+    local before="$1" id="" expected="" actual="" changed=0 current="" listed=""
+    [ -f "$before" ] || return 1
+    while read -r id expected; do
+        [ -n "$id" ] || continue
+        actual="$(docker inspect -f '{{.State.Running}}' "$id" 2>/dev/null)" || {
+            echo "⚠️ 容器 $id 在操作后无法读取；未自动改动其他容器。"
+            changed=1
+            continue
+        }
+        if [ "$actual" != "$expected" ]; then
+            echo "⚠️ 容器 $id 运行状态由 $expected 变为 $actual；未自动改动无关容器。"
+            changed=1
+        fi
+    done < "$before"
+    listed="$(docker ps -aq --no-trunc 2>/dev/null)" || return 1
+    while IFS= read -r current; do
+        [ -n "$current" ] || continue
+        if ! awk -v id="$current" 'BEGIN { found = 0 } $1 == id { found = 1 } END { exit found ? 0 : 1 }' "$before"; then
+            echo "⚠️ 出现操作前未记录的容器 $current；未自动改动无关容器。"
+            changed=1
+        fi
+    done <<EOF
+$listed
+EOF
+    [ "$changed" -eq 0 ]
+}
+
+docker_restore_service_state() {
+    local docker_active="$1" socket_active="$2" failed=0
+    if [ "$docker_active" -eq 0 ]; then systemctl stop docker || failed=1; fi
+    if [ "$socket_active" -eq 0 ]; then systemctl stop docker.socket || failed=1; fi
+    if [ "$socket_active" -eq 1 ]; then systemctl start docker.socket || failed=1; fi
+    if [ "$docker_active" -eq 1 ]; then systemctl start docker || failed=1; fi
+    return "$failed"
+}
+
+# 返回 0：无需重启或已重启；2：用户取消。不因 live-restore 重启全部容器。
+docker_offer_socket_restarts() {
+    local socket="$1" old_inode="$2" new_inode="" ids="" id="" pid="" inode="" typ="" src="" dest="" seen="" confirm="" cid=""
+    local -a affected=()
+
+    if [ -z "$old_inode" ] || [ -z "$socket" ]; then
+        echo "ℹ️ 未能记录旧 docker.sock，不重启容器。"
+        return 0
+    fi
+    new_inode="$(docker_dev_inode "$socket" 2>/dev/null)" || {
+        echo "ℹ️ 无法读取当前 docker.sock，不重启容器。"
+        return 0
+    }
+    if [ "$old_inode" = "$new_inode" ]; then
+        echo "ℹ️ docker.sock 未更换，不重启容器。"
+        return 0
+    fi
+    ids="$(docker ps -q --no-trunc 2>/dev/null)" || return 1
+    while IFS= read -r id; do
+        [ -n "$id" ] || continue
+        while IFS=$'\t' read -r typ src dest; do
+            [ "$typ" = bind ] || continue
+            case "$dest" in
+                /var/run/docker.sock|/run/docker.sock) ;;
+                *) continue ;;
+            esac
+            pid="$(docker inspect -f '{{.State.Pid}}' "$id" 2>/dev/null)" || continue
+            case "$pid" in
+                ""|0|*[!0-9]*) continue ;;
+            esac
+            seen="/proc/${pid}/root${dest}"
+            inode="$(docker_dev_inode "$seen" 2>/dev/null)" || continue
+            if [ "$inode" = "$old_inode" ] && [ "$inode" != "$new_inode" ]; then
+                affected+=("$id")
+                break
+            fi
+        done <<EOF
+$(docker inspect -f '{{range .Mounts}}{{printf "%s\t%s\t%s\n" .Type .Source .Destination}}{{end}}' "$id" 2>/dev/null)
+EOF
+    done <<EOF
+$ids
+EOF
+    if [ "${#affected[@]}" -eq 0 ]; then
+        echo "ℹ️ 没有确认仍挂载旧 docker.sock 的运行容器，不重启容器。"
+        return 0
+    fi
+    echo "⚠️ 以下运行中的容器仍挂载旧 docker.sock："
+    for cid in "${affected[@]}"; do
+        printf '  - %s\n' "$cid"
+    done
+    read -r -p "是否仅重启这些容器？[y/N]: " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        echo "ℹ️ 已取消重启。上述容器未恢复到新的 docker.sock。"
+        return 2
+    fi
+    for cid in "${affected[@]}"; do
+        docker restart "$cid" || {
+            echo "❌ 重启容器失败：$cid；未继续改动其他容器。" >&2
+            return 1
+        }
+    done
+}
+
+docker_json_merge_logs() {
+    python3 - "$1" <<'PY'
+import json
+import os
+import sys
+from decimal import Decimal
+
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("JSON 包含重复键：" + key)
+        result[key] = value
+    return result
+
+def checked_float(token):
+    value = float(token)
+    if value != value or value in (float("inf"), float("-inf")) or Decimal(str(value)) != Decimal(token):
+        raise ValueError("JSON 小数无法无损写回：" + token)
+    return value
+
+def load(path):
+    with open(path, encoding="utf-8") as stream:
+        return json.load(
+            stream,
+            object_pairs_hook=unique_object,
+            parse_float=checked_float,
+            parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)),
+        )
+
+path = sys.argv[1]
+try:
+    if not os.path.lexists(path):
+        config = {}
+    else:
+        if os.path.islink(path) or not os.path.isfile(path):
+            raise ValueError("配置不是普通文件")
+        try:
+            config = load(path)
+        except json.JSONDecodeError:
+            raise ValueError("配置已存在但不是合法 JSON")
+        if not isinstance(config, dict):
+            raise ValueError("daemon.json 必须是 JSON 对象")
+    opts = config.get("log-opts", {})
+    if opts is None:
+        opts = {}
+    if not isinstance(opts, dict):
+        raise ValueError("log-opts 必须是对象")
+    opts["max-size"] = "20m"
+    opts["max-file"] = "3"
+    config["log-driver"] = "json-file"
+    config["log-opts"] = opts
+    text = json.dumps(config, ensure_ascii=True, allow_nan=False, indent=2)
+    loaded = json.loads(
+        text,
+        object_pairs_hook=unique_object,
+        parse_float=checked_float,
+        parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)),
+    )
+    candidate_opts = loaded.get("log-opts")
+    if loaded.get("log-driver") != "json-file" or not isinstance(candidate_opts, dict):
+        raise ValueError("日志配置候选无效")
+    if candidate_opts.get("max-size") != "20m" or candidate_opts.get("max-file") != "3":
+        raise ValueError("日志配置候选无效")
+    sys.stdout.write(text + "\n")
+except (OSError, ValueError) as error:
+    print("Docker JSON 配置准备失败：" + str(error), file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
 # =====================
 #  功能 70：迁移 Docker 目录
 # =====================
@@ -5828,6 +6231,7 @@ migrate_docker_datadir_openwrt() {
         echo "❌ 未检测到 UCI，无法按 OpenWrt 方式迁移 Docker 数据目录。"
         return 1
     }
+    docker_migration_guard || return 1
 
     current_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
     old_uci_root="$(uci -q get dockerd.globals.data_root || true)"
@@ -5935,6 +6339,7 @@ migrate_docker_datadir() {
         echo "未检测到 systemctl，无法停止/启动 docker 服务。"
         return 1
     fi
+    docker_migration_guard || return 1
 
     local DEFAULT_ROOT="/var/lib/docker"
     local CURRENT_ROOT=""
@@ -6244,8 +6649,12 @@ PY
 #  功能 71：优化 Docker 日志（设置轮转）
 # =====================
 optimize_docker_logs() {
+    local DAEMON_JSON="/etc/docker/daemon.json"
+    local docker_socket="" candidate="" backup="" inventory="" old_inode=""
+    local docker_active=0 socket_active=0 existed=0 unit="" state=""
+    local restore_ok=1 offer_rc=0 ROOT_DIR="" LOG_DRIVER=""
+
     echo "🪵 优化 Docker 日志"
-    # 前置校验
     if [ -z "${BASH_VERSION:-}" ]; then exec /usr/bin/env bash "$0" "$@"; fi
     if [ "${EUID:-$(id -u)}" -ne 0 ]; then echo "请以 root 权限运行（sudo bash $0）"; return 1; fi
     if ! command -v docker >/dev/null 2>&1; then
@@ -6256,111 +6665,118 @@ optimize_docker_logs() {
         echo "未检测到 systemctl，无法重启 docker 服务。"
         return 1
     fi
-
-    local DAEMON_JSON="/etc/docker/daemon.json"
-    local BACKUP_SUFFIX; BACKUP_SUFFIX="$(date +%Y%m%d-%H%M%S)"
-    local TMP="/tmp/daemon.json.$$"
-
-    mkdir -p "$(dirname "$DAEMON_JSON")"
-
-    # 备份
-    if [[ -f "$DAEMON_JSON" ]]; then
-        cp -a "$DAEMON_JSON" "${DAEMON_JSON}.bak-${BACKUP_SUFFIX}"
-        echo "🧩 已备份 $DAEMON_JSON 为 ${DAEMON_JSON}.bak-${BACKUP_SUFFIX}"
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "❌ 缺少 python3，无法可靠解析 daemon.json，已取消。"
+        return 1
     fi
+    docker_socket="$(docker_assert_local_daemon)" || return 1
+    if [ -L "$DAEMON_JSON" ] || { [ -e "$DAEMON_JSON" ] && [ ! -f "$DAEMON_JSON" ]; }; then
+        echo "❌ 配置不是普通文件：$DAEMON_JSON，已取消。"
+        return 1
+    fi
+    if [ ! -e "$DAEMON_JSON" ]; then
+        echo "ℹ️ daemon.json 不存在，将新建仅包含日志轮转的配置。"
+    fi
+    candidate="$(docker_json_merge_logs "$DAEMON_JSON")" || return 1
+    [ -n "$candidate" ] || {
+        echo "❌ 日志配置候选为空，已取消。"
+        return 1
+    }
 
-    # 写入/合并配置：只保证 json-file + 轮转参数，不破坏 data-root 和其它键
-    if command -v jq >/dev/null 2>&1; then
-        if [[ -s "$DAEMON_JSON" ]] && jq '.' "$DAEMON_JSON" >/dev/null 2>&1; then
-            # 文件存在且 JSON 正常 → 合并（保留其它键与现有 log-opts 其它字段）
-            jq '
-              .["log-driver"] = "json-file"
-              | .["log-opts"] = (.["log-opts"] // {})
-              | .["log-opts"]["max-size"] = "20m"
-              | .["log-opts"]["max-file"] = "3"
-            ' "$DAEMON_JSON" > "$TMP"
-        else
-            # 文件不存在/空/损坏 → 重写（尽力保留 data-root）
-            local CURRENT_ROOT=""
-            if [[ -s "$DAEMON_JSON" ]]; then
-                CURRENT_ROOT="$(sed -n 's/.*"data-root"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$DAEMON_JSON" | head -n1)"
-            fi
-            if [[ -z "$CURRENT_ROOT" ]]; then
-                CURRENT_ROOT="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
-            fi
-            if [[ -n "$CURRENT_ROOT" ]]; then
-                cat > "$TMP" <<EOF
-{
-  "data-root": "$CURRENT_ROOT",
-  "log-driver": "json-file",
-  "log-opts": {
-    "max-size": "20m",
-    "max-file": "3"
-  }
-}
-EOF
-            else
-                cat > "$TMP" <<EOF
-{
-  "log-driver": "json-file",
-  "log-opts": {
-    "max-size": "20m",
-    "max-file": "3"
-  }
-}
-EOF
-            fi
+    for unit in docker docker.socket; do
+        systemctl is-active --quiet "$unit"
+        state=$?
+        case "$state" in
+            0)
+                if [ "$unit" = docker ]; then docker_active=1; else socket_active=1; fi
+                ;;
+            3) ;;
+            *)
+                echo "❌ 无法确认 $unit 原运行状态，已取消。"
+                return 1
+                ;;
+        esac
+    done
+
+    inventory="$(mktemp)" || return 1
+    if ! docker_capture_inventory "$inventory"; then
+        echo "❌ 无法记录容器清单，已取消，未修改配置。"
+        rm -f -- "$inventory"
+        return 1
+    fi
+    old_inode="$(docker_dev_inode "$docker_socket" 2>/dev/null || true)"
+
+    if [ -f "$DAEMON_JSON" ]; then
+        backup="${DAEMON_JSON}.bak-$(date +%Y%m%d-%H%M%S)"
+        if [ -e "$backup" ] || [ -L "$backup" ]; then
+            echo "❌ 本轮备份路径已存在，已取消。"
+            rm -f -- "$inventory"
+            return 1
         fi
-        mv -f "$TMP" "$DAEMON_JSON"
+        cp -a -- "$DAEMON_JSON" "$backup" || {
+            echo "❌ 无法备份配置，已取消。"
+            rm -f -- "$inventory"
+            return 1
+        }
+        existed=1
     else
-        # 没有 jq：尽力保留现有 data-root，再重写日志配置
-        local CURRENT_ROOT=""
-        if [[ -f "$DAEMON_JSON" ]]; then
-            CURRENT_ROOT="$(sed -n 's/.*"data-root"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$DAEMON_JSON" | head -n1)"
-        fi
-        if [[ -z "$CURRENT_ROOT" ]]; then
-            CURRENT_ROOT="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
-        fi
-
-        if [[ -n "$CURRENT_ROOT" ]]; then
-            cat > "$DAEMON_JSON" <<EOF
-{
-  "data-root": "$CURRENT_ROOT",
-  "log-driver": "json-file",
-  "log-opts": {
-    "max-size": "20m",
-    "max-file": "3"
-  }
-}
-EOF
-        else
-            cat > "$DAEMON_JSON" <<EOF
-{
-  "log-driver": "json-file",
-  "log-opts": {
-    "max-size": "20m",
-    "max-file": "3"
-  }
-}
-EOF
-        fi
+        mkdir -p -- "$(dirname "$DAEMON_JSON")" || {
+            rm -f -- "$inventory"
+            return 1
+        }
     fi
 
-    # 使配置生效
-    systemctl restart docker || { echo "❌ docker 重启失败，请查看：journalctl -u docker --no-pager -n 200"; return 1; }
+    if ! printf '%s\n' "$candidate" | tee "$DAEMON_JSON" >/dev/null; then
+        echo "❌ 写入配置失败，正在恢复。"
+        restore_ok=1
+        if [ "$existed" -eq 1 ]; then
+            cp -a -- "$backup" "$DAEMON_JSON" || restore_ok=0
+        else
+            rm -f -- "$DAEMON_JSON" || restore_ok=0
+        fi
+        rm -f -- "$inventory"
+        if [ "$restore_ok" -eq 1 ]; then
+            echo "已恢复原配置。"
+        else
+            echo "❌ 回滚未完成；请手动检查配置。"
+        fi
+        return 1
+    fi
 
-    # 回显确认
-    local ROOT_DIR LOG_DRIVER
+    if ! systemctl restart docker; then
+        echo "❌ docker 重启失败，正在恢复原配置和服务状态。"
+        restore_ok=1
+        if [ "$existed" -eq 1 ]; then
+            cp -a -- "$backup" "$DAEMON_JSON" || restore_ok=0
+        else
+            rm -f -- "$DAEMON_JSON" || restore_ok=0
+        fi
+        docker_restore_service_state "$docker_active" "$socket_active" || restore_ok=0
+        rm -f -- "$inventory"
+        if [ "$restore_ok" -eq 1 ]; then
+            echo "已恢复原配置和服务状态。"
+        else
+            echo "❌ 回滚未完成；配置备份已保留，请手动检查。"
+        fi
+        return 1
+    fi
+
+    docker_offer_socket_restarts "$docker_socket" "$old_inode"
+    offer_rc=$?
+    if [ "$offer_rc" -eq 2 ]; then
+        docker_verify_inventory "$inventory" || true
+        rm -f -- "$inventory"
+        return 0
+    fi
+    if [ "$offer_rc" -ne 0 ] || ! docker_verify_inventory "$inventory"; then
+        rm -f -- "$inventory"
+        echo "⚠️ 日志配置已写入，但容器未完全恢复；未自动改动无关容器。"
+        return 1
+    fi
+    rm -f -- "$inventory"
     ROOT_DIR="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
     LOG_DRIVER="$(docker info --format '{{.LoggingDriver}}' 2>/dev/null || true)"
     echo "✅ Docker 日志轮转已启用（20m x 3），RootDir：${ROOT_DIR:-未知}，LogDriver：${LOG_DRIVER:-未知}"
-
-    # 提示：Docker 轮转不等于 gzip 压缩（避免误判）
-    local CID
-    CID="$(docker ps -q 2>/dev/null | head -n1 || true)"
-    if [[ -n "$CID" && -n "$ROOT_DIR" ]]; then
-        echo "🔎 示例容器日志路径：$ROOT_DIR/containers/$CID/$CID-json.log（Docker 只轮转 .log/.log.1，不会自动生成 .gz）"
-    fi
 }
 
 # =====================

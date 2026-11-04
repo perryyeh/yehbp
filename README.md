@@ -49,7 +49,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 3  | 显示磁盘信息                      |
 | 4  | 格式化磁盘并挂载                    |
 | 6  | 显示 Docker 信息                |
-| 7  | 安装/升级 Docker              |
+| 7  | 安装/升级 Docker（完成后显示存储模式） |
 | 8  | 创建macvlan（包括ipv4+ipv6）      |
 | 9  | 删除 macvlan                  |
 | 11 | 安装 LibreSpeed（升级保留 config） |
@@ -67,8 +67,8 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 66 | 检查/更新docker镜像            |
 | 68 | 恢复/启动 Docker Compose 容器  |
 | 69 | 删除 Docker 容器及可选资源（容器/镜像/目录） |
-| 70 | 迁移 Docker 目录               |
-| 71 | 优化 Docker 日志               |
+| 70 | 迁移本机 overlay2 Docker 目录 |
+| 71 | 优化 Docker 日志（保留其余配置） |
 | 72 | 优化 journald 日志             |
 | 80 | 查看/安装/设置/删除/升级/重启 IPTV（rtp2httpd） |
 | 89 | 安装/管理 SOCKS5 代理（含安装镜像） |
@@ -76,6 +76,12 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 91 | 删除macvlan bridge            |
 | 99 / exit / quit / q | 退出脚本           |
 | 999 / del / delete / uninstall / remove / rm | 删除 `yehbp` |
+
+菜单 `7` 安装或升级完成后，只显示本机存储模式和 Docker Root Dir。若是 containerd image store，不会改写 `daemon.json`，也不会把 Docker 固定在 28。已有环境升级沿用原来的一次确认。
+
+菜单 `70` 只迁移已确认的本机 overlay2 目录。containerd image store、无法识别的存储、查询失败，或客户端指向远程 Docker 时，会在停止服务、复制和备份之前取消。守护进程不可查询时不再继续迁移。
+
+菜单 `71` 只合并日志驱动、单个日志大小和文件数，并保留其余配置。配置损坏、重复键或不是普通文件时不修改。重启后只列出确认仍挂载旧 `docker.sock` 的容器，默认不重启。
 
 ## 🚀 使用方法
 
