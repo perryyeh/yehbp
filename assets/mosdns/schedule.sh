@@ -110,15 +110,15 @@ mosdns_show_private_rule_modes() {
     echo "私人规则处理方式："
     for mode in 0 1 2; do
         case "$mode" in
-            0) label="不同步" ;;
-            1) label="每日合并" ;;
+            0) label="不处理" ;;
+            1) label="根据本机日志自动统计与合并" ;;
             2) label="每日从 YehBP 更新私人规则" ;;
         esac
         mark=""
         [ "$mode" != "$current" ] || mark="【当前选择】"
         printf '  %s）%s%s\n' "$mode" "$label" "$mark"
     done
-    echo "提示：每日合并与每日更新只能选择一种。"
+    echo "提示：本机统计合并与每日更新只能选择一种。"
 }
 
 mosdns_read_rule_choices() {
@@ -129,12 +129,12 @@ mosdns_read_rule_choices() {
     }
     current_rules="$(mosdns_env_get "$dir/cron/cron.env" MOSDNS_SYNC_RULES_ENABLED 2>/dev/null || echo 0)"
     current_mode="$(mosdns_effective_my_mode "$dir/cron/cron.env")"
-    echo "是否每日同步公共规则？"
+    echo "公共规则处理方式："
     local option label mark
     for option in 0 1; do
         case "$option" in
-            0) label="否" ;;
-            1) label="是" ;;
+            0) label="不处理" ;;
+            1) label="每日同步 v2ray-rules 公共规则" ;;
         esac
         mark=""
         [ "$option" != "$current_rules" ] || mark="【当前选择】"

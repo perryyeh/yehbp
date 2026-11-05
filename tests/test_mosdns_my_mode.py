@@ -259,7 +259,7 @@ class MosdnsScheduleTests(unittest.TestCase):
                 env = (self.inst / "cron/cron.env").read_text()
                 self.assertIn(f"MOSDNS_SYNC_RULES_ENABLED={rules}\n", env)
                 self.assertIn(f"MOSDNS_MY_MODE={mode}\n", env)
-                self.assertLess(result.stdout.index("是否每日同步公共规则"),
+                self.assertLess(result.stdout.index("公共规则处理方式"),
                                 result.stdout.index("私人规则处理方式"))
                 self.assertNotIn("请选择 mosdns 实例", result.stdout)
                 self.assertEqual(result.stdout.count("UPDATE_CRON"), 1)
