@@ -132,7 +132,7 @@ mosdns_show_private_rule_modes() {
         [ "$mode" != "$current" ] || mark="【当前选择】"
         printf '  %s）%s%s\n' "$mode" "$label" "$mark"
     done
-    echo "提示：本机统计合并与每日更新只能选择一种。"
+    echo "提示：1 和 2 互斥，只能二选一。"
 }
 
 mosdns_read_rule_choices() {
