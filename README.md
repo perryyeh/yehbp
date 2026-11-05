@@ -77,6 +77,8 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 99 / exit / quit / q | 退出脚本           |
 | 999 / del / delete / uninstall / remove / rm | 删除 `yehbp` |
 
+菜单 `19 → 2` 设置已有实例的规则更新：公共规则可选择每日自动更新；私人规则可选择关闭、自动统计与合并或每日同步，后两种方式互斥。安装流程也会询问相同选项。
+
 菜单 `7` 安装或升级完成后，只显示本机存储模式和 Docker Root Dir。若是 containerd image store，不会改写 `daemon.json`，也不会把 Docker 固定在 28。已有环境升级沿用原来的一次确认。
 
 菜单 `70` 只迁移已确认的本机 overlay2 目录。containerd image store、无法识别的存储、查询失败，或客户端指向远程 Docker 时，会在停止服务、复制和备份之前取消。守护进程不可查询时不再继续迁移。

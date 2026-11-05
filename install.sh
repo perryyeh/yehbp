@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.11.05.03"
+APP_VERSION="2026.11.05.04"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -3700,7 +3700,7 @@ mosdns_menu() {
     local choice
     echo "🔧 mosdns"
     echo "1）安装 mosdns"
-    echo "2）设置已有实例的名单计划"
+    echo "2）设置已有实例的规则更新"
     echo "0）返回"
     read -r -p "请输入要操作的序号: " choice || return 1
     case "$choice" in

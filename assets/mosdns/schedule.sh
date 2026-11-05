@@ -97,12 +97,20 @@ mosdns_apply_my_mode() {
         0) ;;
         1) candidates=1; promote=1; level=info ;;
         2) ;;
-        *) echo "❌ 无效的 my 模式：$mode" >&2; return 1 ;;
+        *) echo "❌ 无效的私人规则模式：$mode" >&2; return 1 ;;
     esac
     mosdns_env_set "$dir/cron/cron.env" MOSDNS_MY_MODE "$mode" || return 1
     mosdns_env_set "$dir/cron/cron.env" MOSDNS_SYNC_CANDIDATES_ENABLED "$candidates" || return 1
     mosdns_env_set "$dir/cron/cron.env" MOSDNS_PROMOTE_ENABLED "$promote" || return 1
     mosdns_set_log_level "$dir/config.yaml" "$level" || return 1
+}
+
+mosdns_show_private_rule_modes() {
+    echo "私人规则处理方式："
+    echo "  0）关闭"
+    echo "  1）自动统计与合并"
+    echo "  2）每日同步私人规则"
+    echo "提示：自动统计与合并、私人规则同步只能选择一种，避免同步覆盖本机合并的规则。"
 }
 
 mosdns_prompt_feature_switches() {
@@ -111,16 +119,13 @@ mosdns_prompt_feature_switches() {
         echo "❌ 未找到 $dir/cron/cron.env 或 config.yaml"
         return 1
     }
-    read -r -p "是否每日自动更新 ip库 / 直连名单 / 代理名单？[y/N]: " rules_answer || return 1
-    echo "my 名单处理方式（不修改 sync.conf 的来源地址）："
-    echo "  0）关闭"
-    echo "  1）本机日志统计与合并"
-    echo "  2）每日下载 sync.conf 中的 4 个 my 名单（与本机统计/合并互斥）"
+    read -r -p "是否每日自动更新公共规则？[y/N]: " rules_answer || return 1
+    mosdns_show_private_rule_modes
     read -r -p "请选择 [0/1/2]（回车默认 0）: " mode_answer || return 1
     mode_answer="${mode_answer:-0}"
     case "$mode_answer" in
         0|1|2) ;;
-        *) echo "❌ 无效的 my 模式：$mode_answer" >&2; return 1 ;;
+        *) echo "❌ 无效的私人规则模式：$mode_answer" >&2; return 1 ;;
     esac
     case "$rules_answer" in
         [Yy]*) rules_value=1 ;;
@@ -129,14 +134,14 @@ mosdns_prompt_feature_switches() {
     mosdns_apply_rules_enabled "$dir" "$rules_value" || return 1
     mosdns_apply_my_mode "$dir" "$mode_answer" || return 1
     if [ "$rules_value" = "1" ]; then
-        echo "✅ 已开启每日自动更新规则名单"
+        echo "✅ 已开启公共规则每日自动更新"
     else
-        echo "✅ 已关闭每日自动更新规则名单"
+        echo "✅ 已关闭公共规则每日自动更新"
     fi
     case "$mode_answer" in
-        0) echo "✅ 已关闭 my 名单自动处理" ;;
-        1) echo "✅ 已开启本机日志统计与合并" ;;
-        2) echo "✅ 已开启每日下载 my 名单，并关闭本机统计与合并" ;;
+        0) echo "✅ 已关闭私人规则自动处理" ;;
+        1) echo "✅ 已开启私人规则自动统计与合并" ;;
+        2) echo "✅ 已开启私人规则每日同步，并关闭自动统计与合并" ;;
     esac
 }
 
@@ -209,7 +214,7 @@ mosdns_update_cron_scripts() {
         || ! grep -Fq 'reload-if-needed.sh my' "$stage/crontab.conf" \
         || ! grep -Fq '0 1 * * *' "$stage/crontab.conf" \
         || ! grep -Fq '10 1 * * *' "$stage/crontab.conf"; then
-        echo "❌ 下载的 crontab 缺少 my 名单计划" >&2
+        echo "❌ 下载的 crontab 缺少私人规则同步计划" >&2
         rm -rf "$stage"
         return 1
     fi
@@ -283,13 +288,14 @@ mosdns_configure_existing() {
     name="${names[$((choice - 1))]}"
     current_mode="$(mosdns_effective_my_mode "$dir/cron/cron.env")"
     current_rules="$(mosdns_env_get "$dir/cron/cron.env" MOSDNS_SYNC_RULES_ENABLED 2>/dev/null || echo 0)"
-    echo "当前 my 模式：${current_mode}（1=本机统计合并，2=每日下载）"
+    echo "当前私人规则模式：${current_mode}"
+    mosdns_show_private_rule_modes
     echo "当前公共规则同步：${current_rules}"
-    read -r -p "请选择新的 my 模式 [0/1/2]（回车保持当前）: " mode || return 1
+    read -r -p "请选择私人规则处理方式 [0/1/2]（回车保持当前）: " mode || return 1
     mode="${mode:-$current_mode}"
     case "$mode" in
         0|1|2) ;;
-        *) echo "❌ 无效的 my 模式：$mode" >&2; return 1 ;;
+        *) echo "❌ 无效的私人规则模式：$mode" >&2; return 1 ;;
     esac
     read -r -p "是否每日同步公共规则？[y/n]（回车保持当前）: " rules_answer || return 1
     if [ -z "$rules_answer" ]; then
