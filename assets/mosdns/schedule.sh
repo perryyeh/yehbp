@@ -114,26 +114,36 @@ mosdns_show_private_rule_modes() {
 }
 
 mosdns_read_rule_choices() {
-    local dir="$1" rules_answer mode_answer current_rules current_mode
+    local dir="$1" rules_answer mode_answer current_rules current_mode rules_label mode_label
     [ -f "$dir/cron/cron.env" ] && [ -f "$dir/config.yaml" ] || {
         echo "❌ 未找到 $dir/cron/cron.env 或 config.yaml"
         return 1
     }
     current_rules="$(mosdns_env_get "$dir/cron/cron.env" MOSDNS_SYNC_RULES_ENABLED 2>/dev/null || echo 0)"
     current_mode="$(mosdns_effective_my_mode "$dir/cron/cron.env")"
-    echo "当前公共规则同步：${current_rules}"
+    case "$current_rules" in
+        0) rules_label="不同步" ;;
+        1) rules_label="每日同步" ;;
+        *) rules_label="未知，请明确选择" ;;
+    esac
+    case "$current_mode" in
+        0) mode_label="不同步" ;;
+        1) mode_label="每日合并" ;;
+        2) mode_label="每日从 YehBP 更新私人规则" ;;
+    esac
+    echo "当前公共规则：${current_rules}（${rules_label}）"
     echo "是否每日同步公共规则？"
     echo "  0）否"
     echo "  1）是"
-    read -r -p "请选择 [0/1]（回车保持当前）: " rules_answer || return 1
+    read -r -p "请选择 [0/1]（回车保持 ${current_rules}：${rules_label}）: " rules_answer || return 1
     rules_answer="${rules_answer:-$current_rules}"
     case "$rules_answer" in
         0|1) ;;
         *) echo "❌ 请输入 0 或 1。" >&2; return 1 ;;
     esac
-    echo "当前私人规则模式：${current_mode}"
+    echo "当前私人规则：${current_mode}（${mode_label}）"
     mosdns_show_private_rule_modes
-    read -r -p "请选择 [0/1/2]（回车保持当前）: " mode_answer || return 1
+    read -r -p "请选择 [0/1/2]（回车保持 ${current_mode}：${mode_label}）: " mode_answer || return 1
     mode_answer="${mode_answer:-$current_mode}"
     case "$mode_answer" in
         0|1|2) ;;
