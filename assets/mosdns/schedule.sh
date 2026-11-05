@@ -173,8 +173,8 @@ mosdns_apply_rule_choices() {
     local dir="$1"
     mosdns_apply_rules_enabled "$dir" "$MOSDNS_RULES_CHOICE" || return 1
     mosdns_apply_my_mode "$dir" "$MOSDNS_MY_CHOICE" || return 1
-    echo "✅ 公共规则：$(mosdns_public_rule_label "$MOSDNS_RULES_CHOICE")"
-    echo "✅ 私人规则：$(mosdns_private_rule_label "$MOSDNS_MY_CHOICE")"
+    echo "✅ 公共规则处理方式：$(mosdns_public_rule_label "$MOSDNS_RULES_CHOICE")"
+    echo "✅ 私人规则处理方式：$(mosdns_private_rule_label "$MOSDNS_MY_CHOICE")"
 }
 
 mosdns_configure_instance() {
