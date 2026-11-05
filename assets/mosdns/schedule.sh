@@ -105,15 +105,29 @@ mosdns_apply_my_mode() {
     mosdns_set_log_level "$dir/config.yaml" "$level" || return 1
 }
 
+mosdns_public_rule_label() {
+    case "$1" in
+        0) printf '%s' "不处理" ;;
+        1) printf '%s' "每日同步 v2ray-rules 公共规则" ;;
+        *) return 1 ;;
+    esac
+}
+
+mosdns_private_rule_label() {
+    case "$1" in
+        0) printf '%s' "不处理" ;;
+        1) printf '%s' "根据本机日志自动统计与合并" ;;
+        2) printf '%s' "每日同步 YehBP 私人规则" ;;
+        *) return 1 ;;
+    esac
+}
+
 mosdns_show_private_rule_modes() {
     local current="$1" mode label mark
     echo "私人规则处理方式："
     for mode in 0 1 2; do
-        case "$mode" in
-            0) label="不处理" ;;
-            1) label="根据本机日志自动统计与合并【建议选择】" ;;
-            2) label="每日同步 YehBP 私人规则" ;;
-        esac
+        label="$(mosdns_private_rule_label "$mode")" || return 1
+        [ "$mode" != "1" ] || label="${label}【建议选择】"
         mark=""
         [ "$mode" != "$current" ] || mark="【当前选择】"
         printf '  %s）%s%s\n' "$mode" "$label" "$mark"
@@ -132,10 +146,8 @@ mosdns_read_rule_choices() {
     echo "公共规则处理方式："
     local option label mark
     for option in 0 1; do
-        case "$option" in
-            0) label="不处理" ;;
-            1) label="每日同步 v2ray-rules 公共规则【建议选择】" ;;
-        esac
+        label="$(mosdns_public_rule_label "$option")" || return 1
+        [ "$option" != "1" ] || label="${label}【建议选择】"
         mark=""
         [ "$option" != "$current_rules" ] || mark="【当前选择】"
         printf '  %s）%s%s\n' "$option" "$label" "$mark"
@@ -161,7 +173,8 @@ mosdns_apply_rule_choices() {
     local dir="$1"
     mosdns_apply_rules_enabled "$dir" "$MOSDNS_RULES_CHOICE" || return 1
     mosdns_apply_my_mode "$dir" "$MOSDNS_MY_CHOICE" || return 1
-    echo "✅ 已设置公共规则同步：${MOSDNS_RULES_CHOICE}，私人规则模式：${MOSDNS_MY_CHOICE}"
+    echo "✅ 公共规则：$(mosdns_public_rule_label "$MOSDNS_RULES_CHOICE")"
+    echo "✅ 私人规则：$(mosdns_private_rule_label "$MOSDNS_MY_CHOICE")"
 }
 
 mosdns_configure_instance() {
