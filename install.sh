@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.11.05.06"
+APP_VERSION="2026.11.05.07"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -3868,9 +3868,10 @@ install_mosdns() {
         echo "✅ 国内运营商优先，原阿里/腾讯同时待命；失败或超过 25 ms 时可采用备用结果"
     fi
 
-    # 10) 可选功能：默认关闭，安装时按需开启
+    # 安装时先关闭规则自动处理，启动成功后再选择是否配置。
     load_mosdns_schedule_asset || return 1
-    mosdns_prompt_feature_switches "$WORK_DIR" || return 1
+    mosdns_apply_rules_enabled "$WORK_DIR" 0 || return 1
+    mosdns_apply_my_mode "$WORK_DIR" 0 || return 1
 
     # 11) 写 .env（compose 读取）
     cat > .env <<EOF
@@ -3924,6 +3925,9 @@ EOF
     fi
     echo "  macvlan 网络: ${SELECTED_MACVLAN}"
     echo "  MAC        : ${mosdnsmac}"
+
+    # 安装成功后复用已有容器的规则配置流程，无需重新选择容器。
+    mosdns_offer_rule_configuration "$dockerapps/$CONTAINER_NAME" "$CONTAINER_NAME" || return 1
 
     # 12) 可选删除备份（带挂载检查）
     repo_offer_delete_backup "mosdns" "$BAK_DIR" "mosdns"

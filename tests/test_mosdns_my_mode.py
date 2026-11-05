@@ -68,9 +68,9 @@ class MosdnsScheduleTests(unittest.TestCase):
     def test_prompt_modes_clear_opposite_switches_and_keep_other_settings(self):
         before = self.preserved()
         cases = (
-            ("n\n\n", "0", "0", "0", "0", "warn"),
-            ("y\n1\n", "1", "1", "1", "1", "info"),
-            ("n\n2\n", "0", "2", "0", "0", "warn"),
+            ("0\n0\n", "0", "0", "0", "0", "warn"),
+            ("1\n1\n", "1", "1", "1", "1", "info"),
+            ("0\n2\n", "0", "2", "0", "0", "warn"),
         )
         for stdin, rules, mode, candidates, promote, level in cases:
             with self.subTest(stdin=stdin):
@@ -81,7 +81,7 @@ class MosdnsScheduleTests(unittest.TestCase):
                     MOSDNS_PROMOTE_LOOKBACK_DAYS=7
                     """))
                 (self.inst / "config.yaml").write_text("log:\n  level: warn\n  file: \"/dev/shm/mosdns.log\"\nplugins:\n  level: keep-me\n")
-                result = self.source(f'mosdns_prompt_feature_switches "{self.inst}"', stdin)
+                result = self.source(f'mosdns_read_rule_choices "{self.inst}" && mosdns_apply_rule_choices "{self.inst}"', stdin)
                 self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
                 env = (self.inst / "cron/cron.env").read_text()
                 self.assertIn(f"MOSDNS_SYNC_RULES_ENABLED={rules}\n", env)
@@ -96,7 +96,7 @@ class MosdnsScheduleTests(unittest.TestCase):
                 self.assertEqual(self.preserved(), before)
                 self.assertEqual((self.inst / "cron/sync.conf").read_text(),
                                  "geoip_cn.txt | yes | https://example.invalid/keep\n")
-        result = self.source(f'mosdns_prompt_feature_switches "{self.inst}"', "y\n")
+        result = self.source(f'mosdns_read_rule_choices "{self.inst}" && mosdns_apply_rule_choices "{self.inst}"', "1\n")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("MOSDNS_PROMOTE_LOOKBACK_DAYS=7\n", (self.inst / "cron/cron.env").read_text())
 
@@ -191,7 +191,7 @@ class MosdnsScheduleTests(unittest.TestCase):
             source "{ASSET}"
             mosdns_configure_existing
             """)
-        result = self.run_bash(wrapper, "1\n2\ny\n", {"PATH": f"{bindir}:{self.env['PATH']}"})
+        result = self.run_bash(wrapper, "1\n1\n2\n", {"PATH": f"{bindir}:{self.env['PATH']}"})
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         env = (self.inst / "cron/cron.env").read_text()
         self.assertIn("MOSDNS_MY_MODE=2\n", env)
@@ -207,12 +207,101 @@ class MosdnsScheduleTests(unittest.TestCase):
         self.assertNotIn("restart", docker_log.read_text())
         self.assertIn("未重启容器", result.stdout)
 
+    def run_installer(self, inputs, deploy_rc=0, restart_rc=0):
+        text = INSTALL.read_text()
+        start = text.index("install_mosdns() {")
+        function = text[start:text.index("\n}\n", start) + 3]
+        script = textwrap.dedent(f"""\
+            source "{ASSET}"
+            select_macvlan_or_exit() {{ SELECTED_MACVLAN=test; }}
+            select_mihomo_upstream() {{ MIHOMO_ENDPOINT4=192.0.2.120:53; MIHOMO_ENDPOINT6=; }}
+            prompt_ipv4_last_octet() {{ echo 119; }}
+            calculate_ip_mac() {{ calculated_ip=192.0.2.119; calculated_ip6=; calculated_mac=02:00:00:00:00:01; calculated_gateway=; }}
+            docker() {{
+                if [ "$1" = network ]; then return 1; fi
+                echo "DOCKER $*"
+                if [ "$1" = restart ]; then return {restart_rc}; fi
+            }}
+            jq() {{ return 1; }}
+            select_dockerapps_dir() {{ SELECTED_DOCKERAPPS_DIR="{self.root}"; }}
+            validate_compose_app_name() {{ return 0; }}
+            repo_stage_update() {{ WORK_DIR="{self.inst}"; BAK_DIR=; }}
+            sed() {{ :; }}
+            disable_mosdns_fakeipv6() {{ :; }}
+            load_mosdns_schedule_asset() {{ :; }}
+            env_require_vars() {{ :; }}
+            remove_compose_ipv6_fields() {{ :; }}
+            compose_deploy_with_repo_switch() {{ echo DEPLOY; return {deploy_rc}; }}
+            repo_offer_delete_backup() {{ :; }}
+            mosdns_update_cron_scripts() {{ echo UPDATE_CRON; }}
+            {function}
+            install_mosdns
+            """)
+        return self.run_bash(script, inputs)
+
+    def test_install_later_keeps_automation_off_without_cron_update(self):
+        result = self.run_installer("\nn\n0\n")
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        env = (self.inst / "cron/cron.env").read_text()
+        for key in ("MOSDNS_SYNC_RULES_ENABLED", "MOSDNS_MY_MODE",
+                    "MOSDNS_SYNC_CANDIDATES_ENABLED", "MOSDNS_PROMOTE_ENABLED"):
+            self.assertIn(f"{key}=0\n", env)
+        self.assertLess(result.stdout.index("DEPLOY"), result.stdout.index("是否现在配置规则更新"))
+        self.assertNotIn("私人规则处理方式", result.stdout)
+        self.assertNotIn("UPDATE_CRON", result.stdout)
+        self.assertNotIn("DOCKER restart", result.stdout)
+
+    def test_install_now_uses_shared_flow_without_container_picker(self):
+        for rules, mode in (("1", "1"), ("0", "2")):
+            with self.subTest(rules=rules, mode=mode):
+                result = self.run_installer(f"\nn\n1\n{rules}\n{mode}\n")
+                self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+                env = (self.inst / "cron/cron.env").read_text()
+                self.assertIn(f"MOSDNS_SYNC_RULES_ENABLED={rules}\n", env)
+                self.assertIn(f"MOSDNS_MY_MODE={mode}\n", env)
+                self.assertLess(result.stdout.index("是否每日同步公共规则"),
+                                result.stdout.index("私人规则处理方式"))
+                self.assertNotIn("请选择 mosdns 实例", result.stdout)
+                self.assertEqual(result.stdout.count("UPDATE_CRON"), 1)
+                self.assertIn("DOCKER exec mosdns crontab", result.stdout)
+                if mode == "1":
+                    self.assertIn("DOCKER restart mosdns", result.stdout)
+                else:
+                    self.assertNotIn("DOCKER restart", result.stdout)
+
+    def test_failed_install_does_not_offer_rule_configuration(self):
+        result = self.run_installer("\nn\n", deploy_rc=1)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("是否现在配置规则更新", result.stdout)
+        self.assertNotIn("mosdns 已启动", result.stdout)
+
+    def test_post_install_restart_failure_is_reported(self):
+        result = self.run_installer("\nn\n1\n1\n1\n", restart_rc=1)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("规则设置已应用", result.stdout)
+
+    def test_invalid_or_incomplete_choices_do_not_change_config(self):
+        before = (self.inst / "cron/cron.env").read_bytes()
+        config = (self.inst / "config.yaml").read_bytes()
+        for stdin in ("y\n2\n", "1\n9\n", "1\n", ""):
+            result = self.source(f'mosdns_configure_instance "{self.inst}" mosdns', stdin)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual((self.inst / "cron/cron.env").read_bytes(), before)
+            self.assertEqual((self.inst / "config.yaml").read_bytes(), config)
+
+    def test_empty_choices_preserve_current_rules_and_mode(self):
+        result = self.source(f'mosdns_read_rule_choices "{self.inst}" && mosdns_apply_rule_choices "{self.inst}"', "\n\n")
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        env = (self.inst / "cron/cron.env").read_text()
+        self.assertIn("MOSDNS_SYNC_RULES_ENABLED=0\n", env)
+        self.assertIn("MOSDNS_MY_MODE=1\n", env)
+
     def test_installer_menu_points_at_schedule_asset(self):
         text = INSTALL.read_text()
         self.assertIn('echo "19）安装/设置 mosdns"', text)
         self.assertIn("19) mosdns_menu ;;", text)
         self.assertIn("assets/mosdns/schedule.sh", text)
-        self.assertIn("mosdns_prompt_feature_switches", text)
+        self.assertIn("mosdns_offer_rule_configuration", text)
         self.assertNotIn("每天自动合并并上报 my 名单", text)
 
 

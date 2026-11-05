@@ -312,7 +312,7 @@ plugins:
       listen: ":53"
 '''
 SOURCE = (REPO / 'install.sh').read_text()
-OPTION = SOURCE.split('    # 运营商 DNS 可选；默认保持原阿里/腾讯行为。', 1)[1].split('    # 10) 可选功能', 1)[0]
+OPTION = SOURCE.split('    # 运营商 DNS 可选；默认保持原阿里/腾讯行为。', 1)[1].split('    # 安装时先关闭规则自动处理', 1)[0]
 
 
 class IspUpstreamTests(unittest.TestCase):

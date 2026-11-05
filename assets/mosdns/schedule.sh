@@ -107,41 +107,75 @@ mosdns_apply_my_mode() {
 
 mosdns_show_private_rule_modes() {
     echo "私人规则处理方式："
-    echo "  0）关闭"
-    echo "  1）自动统计与合并"
-    echo "  2）每日同步私人规则"
-    echo "提示：自动统计与合并、私人规则同步只能选择一种，避免同步覆盖本机合并的规则。"
+    echo "  0）不同步"
+    echo "  1）每日合并"
+    echo "  2）每日从 YehBP 更新私人规则"
+    echo "提示：每日合并与每日更新只能选择一种。"
 }
 
-mosdns_prompt_feature_switches() {
-    local dir="$1" rules_answer mode_answer rules_value=0
+mosdns_read_rule_choices() {
+    local dir="$1" rules_answer mode_answer current_rules current_mode
     [ -f "$dir/cron/cron.env" ] && [ -f "$dir/config.yaml" ] || {
         echo "❌ 未找到 $dir/cron/cron.env 或 config.yaml"
         return 1
     }
-    read -r -p "是否每日自动更新公共规则？[y/N]: " rules_answer || return 1
+    current_rules="$(mosdns_env_get "$dir/cron/cron.env" MOSDNS_SYNC_RULES_ENABLED 2>/dev/null || echo 0)"
+    current_mode="$(mosdns_effective_my_mode "$dir/cron/cron.env")"
+    echo "当前公共规则同步：${current_rules}"
+    echo "是否每日同步公共规则？"
+    echo "  0）否"
+    echo "  1）是"
+    read -r -p "请选择 [0/1]（回车保持当前）: " rules_answer || return 1
+    rules_answer="${rules_answer:-$current_rules}"
+    case "$rules_answer" in
+        0|1) ;;
+        *) echo "❌ 请输入 0 或 1。" >&2; return 1 ;;
+    esac
+    echo "当前私人规则模式：${current_mode}"
     mosdns_show_private_rule_modes
-    read -r -p "请选择 [0/1/2]（回车默认 0）: " mode_answer || return 1
-    mode_answer="${mode_answer:-0}"
+    read -r -p "请选择 [0/1/2]（回车保持当前）: " mode_answer || return 1
+    mode_answer="${mode_answer:-$current_mode}"
     case "$mode_answer" in
         0|1|2) ;;
         *) echo "❌ 无效的私人规则模式：$mode_answer" >&2; return 1 ;;
     esac
-    case "$rules_answer" in
-        [Yy]*) rules_value=1 ;;
-        *) rules_value=0 ;;
-    esac
-    mosdns_apply_rules_enabled "$dir" "$rules_value" || return 1
-    mosdns_apply_my_mode "$dir" "$mode_answer" || return 1
-    if [ "$rules_value" = "1" ]; then
-        echo "✅ 已开启公共规则每日自动更新"
-    else
-        echo "✅ 已关闭公共规则每日自动更新"
-    fi
-    case "$mode_answer" in
-        0) echo "✅ 已关闭私人规则自动处理" ;;
-        1) echo "✅ 已开启私人规则自动统计与合并" ;;
-        2) echo "✅ 已开启私人规则每日同步，并关闭自动统计与合并" ;;
+    MOSDNS_RULES_CHOICE="$rules_answer"
+    MOSDNS_MY_CHOICE="$mode_answer"
+}
+
+mosdns_apply_rule_choices() {
+    local dir="$1"
+    mosdns_apply_rules_enabled "$dir" "$MOSDNS_RULES_CHOICE" || return 1
+    mosdns_apply_my_mode "$dir" "$MOSDNS_MY_CHOICE" || return 1
+    echo "✅ 已设置公共规则同步：${MOSDNS_RULES_CHOICE}，私人规则模式：${MOSDNS_MY_CHOICE}"
+}
+
+mosdns_configure_instance() {
+    local dir="$1" name="$2"
+    mosdns_read_rule_choices "$dir" || return 1
+    mosdns_update_cron_scripts "$dir" || return 1
+    mosdns_apply_rule_choices "$dir" || return 1
+    mosdns_load_crontab "$name" || return 1
+    echo "✅ 已更新规则计划。需要让新日志级别生效时再重启一次容器。"
+}
+
+mosdns_offer_rule_configuration() {
+    local dir="$1" name="$2" choice
+    echo "是否现在配置规则更新？"
+    echo "  0）稍后配置"
+    echo "  1）现在配置"
+    read -r -p "请选择 [0/1]（回车默认 0）: " choice || return 1
+    case "${choice:-0}" in
+        0) echo "ℹ️ 已跳过，可稍后通过 19 → 2 设置规则更新。" ;;
+        1)
+            mosdns_configure_instance "$dir" "$name" || return 1
+            # 新安装默认 warn；选择每日合并时需重新启动，加载 info 日志。
+            if [ "$MOSDNS_MY_CHOICE" = "1" ]; then
+                docker restart "$name" || return 1
+                echo "✅ 已重启 mosdns，规则设置已应用。"
+            fi
+            ;;
+        *) echo "❌ 请输入 0 或 1。" >&2; return 1 ;;
     esac
 }
 
@@ -264,7 +298,7 @@ mosdns_load_crontab() {
 }
 
 mosdns_configure_existing() {
-    local list choice dir name mode rules_answer rules_value current_mode current_rules
+    local list choice dir name
     local -a dirs=() names=()
     list="$(mosdns_discover_instances)" || return 1
     if [ -z "$list" ]; then
@@ -286,35 +320,5 @@ mosdns_configure_existing() {
     fi
     dir="${dirs[$((choice - 1))]}"
     name="${names[$((choice - 1))]}"
-    current_mode="$(mosdns_effective_my_mode "$dir/cron/cron.env")"
-    current_rules="$(mosdns_env_get "$dir/cron/cron.env" MOSDNS_SYNC_RULES_ENABLED 2>/dev/null || echo 0)"
-    echo "当前私人规则模式：${current_mode}"
-    mosdns_show_private_rule_modes
-    echo "当前公共规则同步：${current_rules}"
-    read -r -p "请选择私人规则处理方式 [0/1/2]（回车保持当前）: " mode || return 1
-    mode="${mode:-$current_mode}"
-    case "$mode" in
-        0|1|2) ;;
-        *) echo "❌ 无效的私人规则模式：$mode" >&2; return 1 ;;
-    esac
-    read -r -p "是否每日同步公共规则？[y/n]（回车保持当前）: " rules_answer || return 1
-    if [ -z "$rules_answer" ]; then
-        rules_value="$current_rules"
-    elif [[ "$rules_answer" =~ ^[Yy]$ ]]; then
-        rules_value=1
-    elif [[ "$rules_answer" =~ ^[Nn]$ ]]; then
-        rules_value=0
-    else
-        echo "❌ 请输入 y 或 n。" >&2
-        return 1
-    fi
-    case "$rules_value" in
-        0|1) ;;
-        *) echo "❌ 当前公共规则开关无法识别，请明确输入 y 或 n。" >&2; return 1 ;;
-    esac
-    mosdns_update_cron_scripts "$dir" || return 1
-    mosdns_apply_my_mode "$dir" "$mode" || return 1
-    mosdns_apply_rules_enabled "$dir" "$rules_value" || return 1
-    mosdns_load_crontab "$name" || return 1
-    echo "✅ 已更新名单计划。需要让新进程入口生效时再重启一次容器。"
+    mosdns_configure_instance "$dir" "$name"
 }
