@@ -45,6 +45,7 @@ bash -n assets/iptv/rtp2httpd.sh
 |---|---|
 | `test_adguardhome_upstreams.py` | 上游替换、交互选择、配置及权限保留 |
 | `test_mosdns_isp_upstream.py` | ISP DNS 渲染、阈值、输入与失败处理；可选真实启动 |
+| `test_mosdns_my_mode.py` | my 名单模式 0/1/2、互斥开关、旧配置、已有实例计划；不改来源 URL、compose、my 或 rule |
 | `test_mihomo_subscription_delete.py` | 删除订阅元数据、保留配置、锁与失败处理 |
 | `test_dockcheck_dependencies.py` | OpenWrt 包管理与 xargs/flock 依赖选择 |
 | `test_docker_datadir_migration.py` | 迁移前置校验、复制失败、回滚、JSON 精度与沙箱元数据保留；containerd/远程/未知存储在停止前拒绝；日志字段合并与失败回滚；docker.sock 恢复范围 |

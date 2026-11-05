@@ -54,7 +54,7 @@ YehBP 主要用于在局域网内搭建轻量旁路网关。核心容器是：
 | 9  | 删除 macvlan                  |
 | 11 | 安装 LibreSpeed（升级保留 config） |
 | 14 | 安装 AdGuardHome（mosdns / 阿里腾讯 / 自定义上游） |
-| 19 | 安装 mosdns（可选运营商国内优先上游） |
+| 19 | 安装/设置 mosdns（公共规则与 my 名单模式） |
 | 20 | 安装 mihomo（host 模板免 TUN） |
 | 21 | 管理 Docker Mihomo 订阅（删除订阅保留当前配置） |
 | 22 | 管理原生 Mihomo 订阅 |

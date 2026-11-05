@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.11.04.01"
+APP_VERSION="2026.11.05.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -835,7 +835,7 @@ function show_menu() {
     echo "9）删除macvlan"
     echo "11）安装librespeed"
     echo "14）安装adguardhome"
-    echo "19）安装mosdns"
+    echo "19）安装/设置 mosdns"
     echo "20）安装mihomo"
     echo "21）管理 Docker Mihomo 订阅"
     echo "22）管理原生 Mihomo 订阅"
@@ -3684,6 +3684,36 @@ select_mihomo_upstream() {
     return 0
 }
 
+load_mosdns_schedule_asset() {
+    local asset
+    asset="$(mktemp "${TMPDIR:-/tmp}/yehbp-mosdns-schedule.XXXXXX")" || return 1
+    if ! download_yehbp_asset "assets/mosdns/schedule.sh" "$asset" || ! bash -n "$asset"; then
+        rm -f "$asset"
+        return 1
+    fi
+    # shellcheck disable=SC1090
+    . "$asset"
+    rm -f "$asset"
+}
+
+mosdns_menu() {
+    local choice
+    echo "🔧 mosdns"
+    echo "1）安装 mosdns"
+    echo "2）设置已有实例的名单计划（不重装，不覆盖 compose、配置、my、rule）"
+    echo "0）返回"
+    read -r -p "请输入要操作的序号: " choice || return 1
+    case "$choice" in
+        1) install_mosdns ;;
+        2)
+            load_mosdns_schedule_asset || return 1
+            mosdns_configure_existing
+            ;;
+        0|"") return 0 ;;
+        *) echo "❌ 无效选项。"; return 1 ;;
+    esac
+}
+
 install_mosdns() {
 
     echo "🔧 安装 mosdns（需要选择 macvlan 网络）"
@@ -3839,34 +3869,8 @@ install_mosdns() {
     fi
 
     # 10) 可选功能：默认关闭，安装时按需开启
-    local enable_rule_sync enable_candidate_auto
-
-    if [ -f "cron/cron.env" ]; then
-        read -r -p "是否每日自动更新 ip库 / 直连名单 / 代理名单？[y/N]: " enable_rule_sync
-        if [[ "$enable_rule_sync" =~ ^[Yy]$ ]]; then
-            sed -i 's/^MOSDNS_SYNC_RULES_ENABLED=.*/MOSDNS_SYNC_RULES_ENABLED=1/' cron/cron.env
-            echo "✅ 已开启每日自动更新规则名单"
-        else
-            sed -i 's/^MOSDNS_SYNC_RULES_ENABLED=.*/MOSDNS_SYNC_RULES_ENABLED=0/' cron/cron.env
-            echo "✅ 已关闭每日自动更新规则名单"
-        fi
-
-        read -r -p "是否开启日志 + 每小时统计不在名单内域名分流 + 每天自动合并并上报 my 名单？[y/N]: " enable_candidate_auto
-        if [[ "$enable_candidate_auto" =~ ^[Yy]$ ]]; then
-            sed -i 's/^MOSDNS_SYNC_CANDIDATES_ENABLED=.*/MOSDNS_SYNC_CANDIDATES_ENABLED=1/' cron/cron.env
-            sed -i 's/^MOSDNS_PROMOTE_ENABLED=.*/MOSDNS_PROMOTE_ENABLED=1/' cron/cron.env
-            sed -i 's/^[[:space:]]*level:[[:space:]]*.*/  level: info/' config.yaml
-            echo "✅ 已开启 not-in-list 日志统计与自动合并"
-        else
-            sed -i 's/^MOSDNS_SYNC_CANDIDATES_ENABLED=.*/MOSDNS_SYNC_CANDIDATES_ENABLED=0/' cron/cron.env
-            sed -i 's/^MOSDNS_PROMOTE_ENABLED=.*/MOSDNS_PROMOTE_ENABLED=0/' cron/cron.env
-            sed -i 's/^[[:space:]]*level:[[:space:]]*.*/  level: warn/' config.yaml
-            echo "✅ 已关闭 not-in-list 日志统计与自动合并"
-        fi
-    else
-        echo "❌ 未找到 ${WORK_DIR}/cron/cron.env"
-        return 1
-    fi
+    load_mosdns_schedule_asset || return 1
+    mosdns_prompt_feature_switches "$WORK_DIR" || return 1
 
     # 11) 写 .env（compose 读取）
     cat > .env <<EOF
@@ -6973,7 +6977,7 @@ while true; do
         62) configure_portainer_agent_secret ;;
         11) install_librespeed ;;
         14) install_adguardhome ;;
-        19) install_mosdns ;;
+        19) mosdns_menu ;;
         20) install_mihomo ;;
         21) manage_mihomo_subscription_menu ;;
         22) manage_native_mihomo_subscription ;;
