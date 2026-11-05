@@ -173,17 +173,31 @@ mosdns_apply_rule_choices() {
     local dir="$1"
     mosdns_apply_rules_enabled "$dir" "$MOSDNS_RULES_CHOICE" || return 1
     mosdns_apply_my_mode "$dir" "$MOSDNS_MY_CHOICE" || return 1
-    echo "✅ 公共规则处理方式：$(mosdns_public_rule_label "$MOSDNS_RULES_CHOICE")"
-    echo "✅ 私人规则处理方式：$(mosdns_private_rule_label "$MOSDNS_MY_CHOICE")"
+    echo "✅ 公共规则处理方式：${MOSDNS_RULES_CHOICE}）$(mosdns_public_rule_label "$MOSDNS_RULES_CHOICE")"
+    echo "✅ 私人规则处理方式：${MOSDNS_MY_CHOICE}）$(mosdns_private_rule_label "$MOSDNS_MY_CHOICE")"
 }
 
 mosdns_configure_instance() {
-    local dir="$1" name="$2"
+    local dir="$1" name="$2" old_level new_level running
     mosdns_read_rule_choices "$dir" || return 1
+    old_level="$(awk '/^[[:space:]]*level:/ { print $2; exit }' "$dir/config.yaml")" || return 1
     mosdns_update_cron_scripts "$dir" || return 1
     mosdns_apply_rule_choices "$dir" || return 1
+    new_level="$(awk '/^[[:space:]]*level:/ { print $2; exit }' "$dir/config.yaml")" || return 1
     mosdns_load_crontab "$name" || return 1
-    echo "✅ 已更新规则计划。需要让新日志级别生效时再重启一次容器。"
+    if [ "$old_level" != "$new_level" ]; then
+        if ! docker restart "$name" >/dev/null; then
+            echo "❌ 规则配置已保存，但容器重启失败。" >&2
+            return 1
+        fi
+        running="$(docker inspect -f '{{.State.Running}}' "$name")" || return 1
+        if [ "$running" != "true" ]; then
+            echo "❌ 容器重启后未处于运行状态。" >&2
+            return 1
+        fi
+        echo "✅ 已自动重启 mosdns，规则设置已生效。"
+    fi
+    echo "✅ 已更新规则计划。"
 }
 
 mosdns_offer_rule_configuration() {
@@ -196,11 +210,6 @@ mosdns_offer_rule_configuration() {
         0) echo "ℹ️ 已跳过，可稍后通过 19 → 2 设置规则更新。" ;;
         1)
             mosdns_configure_instance "$dir" "$name" || return 1
-            # 新安装默认 warn；选择每日合并时需重新启动，加载 info 日志。
-            if [ "$MOSDNS_MY_CHOICE" = "1" ]; then
-                docker restart "$name" || return 1
-                echo "✅ 已重启 mosdns，规则设置已应用。"
-            fi
             ;;
         *) echo "❌ 请输入 0 或 1。" >&2; return 1 ;;
     esac

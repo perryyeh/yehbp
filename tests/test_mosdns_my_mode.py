@@ -219,6 +219,7 @@ class MosdnsScheduleTests(unittest.TestCase):
             calculate_ip_mac() {{ calculated_ip=192.0.2.119; calculated_ip6=; calculated_mac=02:00:00:00:00:01; calculated_gateway=; }}
             docker() {{
                 if [ "$1" = network ]; then return 1; fi
+                if [ "$1" = inspect ]; then echo true; return 0; fi
                 echo "DOCKER $*"
                 if [ "$1" = restart ]; then return {restart_rc}; fi
             }}
@@ -265,7 +266,7 @@ class MosdnsScheduleTests(unittest.TestCase):
                 self.assertEqual(result.stdout.count("UPDATE_CRON"), 1)
                 self.assertIn("DOCKER exec mosdns crontab", result.stdout)
                 if mode == "1":
-                    self.assertIn("DOCKER restart mosdns", result.stdout)
+                    self.assertIn("已自动重启 mosdns", result.stdout)
                 else:
                     self.assertNotIn("DOCKER restart", result.stdout)
 
@@ -278,7 +279,33 @@ class MosdnsScheduleTests(unittest.TestCase):
     def test_post_install_restart_failure_is_reported(self):
         result = self.run_installer("\nn\n1\n1\n1\n", restart_rc=1)
         self.assertNotEqual(result.returncode, 0)
-        self.assertNotIn("规则设置已应用", result.stdout)
+        self.assertNotIn("规则设置已生效", result.stdout)
+        self.assertNotIn("✅ 已更新规则计划。", result.stdout)
+
+    def test_existing_rules_restart_only_for_log_level_change(self):
+        cases = (("warn", 1, "true", True, True),
+                 ("info", 2, "true", True, True),
+                 ("info", 1, "true", False, True),
+                 ("warn", 2, "true", False, True),
+                 ("warn", 1, "false", True, False))
+        for level, mode, running, restarted, success in cases:
+            with self.subTest(level=level, mode=mode, running=running):
+                (self.inst / "config.yaml").write_text(f"log:\n  level: {level}\n")
+                calls = self.root / "restart-calls"
+                calls.write_text("")
+                script = f'''
+                    source "{ASSET}"
+                    mosdns_update_cron_scripts() {{ :; }}
+                    docker() {{
+                        echo "$*" >> "{calls}"
+                        if [ "$1" = inspect ]; then echo {running}; fi
+                    }}
+                    mosdns_configure_instance "{self.inst}" mosdns
+                '''
+                result = self.run_bash(script, f"1\n{mode}\n")
+                self.assertEqual(result.returncode == 0, success, result.stderr + result.stdout)
+                self.assertEqual("restart mosdns" in calls.read_text(), restarted)
+                self.assertEqual("✅ 已更新规则计划。" in result.stdout, success)
 
     def test_invalid_or_incomplete_choices_do_not_change_config(self):
         before = (self.inst / "cron/cron.env").read_bytes()
