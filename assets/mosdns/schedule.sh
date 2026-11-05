@@ -114,7 +114,7 @@ mosdns_prompt_feature_switches() {
     read -r -p "是否每日自动更新 ip库 / 直连名单 / 代理名单？[y/N]: " rules_answer || return 1
     echo "my 名单处理方式（不修改 sync.conf 的来源地址）："
     echo "  0）关闭"
-    echo "  1）本机日志统计并合并（不推送到 GitHub）"
+    echo "  1）本机日志统计与合并"
     echo "  2）每日下载 sync.conf 中的 4 个 my 名单（与本机统计/合并互斥）"
     read -r -p "请选择 [0/1/2]（回车默认 0）: " mode_answer || return 1
     mode_answer="${mode_answer:-0}"
@@ -135,7 +135,7 @@ mosdns_prompt_feature_switches() {
     fi
     case "$mode_answer" in
         0) echo "✅ 已关闭 my 名单自动处理" ;;
-        1) echo "✅ 已开启本机日志统计与合并（不推送到 GitHub）" ;;
+        1) echo "✅ 已开启本机日志统计与合并" ;;
         2) echo "✅ 已开启每日下载 my 名单，并关闭本机统计与合并" ;;
     esac
 }
@@ -283,7 +283,7 @@ mosdns_configure_existing() {
     name="${names[$((choice - 1))]}"
     current_mode="$(mosdns_effective_my_mode "$dir/cron/cron.env")"
     current_rules="$(mosdns_env_get "$dir/cron/cron.env" MOSDNS_SYNC_RULES_ENABLED 2>/dev/null || echo 0)"
-    echo "当前 my 模式：${current_mode}（1=本机统计合并且不推送，2=每日下载）"
+    echo "当前 my 模式：${current_mode}（1=本机统计合并，2=每日下载）"
     echo "当前公共规则同步：${current_rules}"
     read -r -p "请选择新的 my 模式 [0/1/2]（回车保持当前）: " mode || return 1
     mode="${mode:-$current_mode}"
