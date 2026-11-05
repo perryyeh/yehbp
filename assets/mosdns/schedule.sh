@@ -106,44 +106,48 @@ mosdns_apply_my_mode() {
 }
 
 mosdns_show_private_rule_modes() {
+    local current="$1" mode label mark
     echo "私人规则处理方式："
-    echo "  0）不同步"
-    echo "  1）每日合并"
-    echo "  2）每日从 YehBP 更新私人规则"
+    for mode in 0 1 2; do
+        case "$mode" in
+            0) label="不同步" ;;
+            1) label="每日合并" ;;
+            2) label="每日从 YehBP 更新私人规则" ;;
+        esac
+        mark=""
+        [ "$mode" != "$current" ] || mark="【当前选择】"
+        printf '  %s）%s%s\n' "$mode" "$label" "$mark"
+    done
     echo "提示：每日合并与每日更新只能选择一种。"
 }
 
 mosdns_read_rule_choices() {
-    local dir="$1" rules_answer mode_answer current_rules current_mode rules_label mode_label
+    local dir="$1" rules_answer mode_answer current_rules current_mode
     [ -f "$dir/cron/cron.env" ] && [ -f "$dir/config.yaml" ] || {
         echo "❌ 未找到 $dir/cron/cron.env 或 config.yaml"
         return 1
     }
     current_rules="$(mosdns_env_get "$dir/cron/cron.env" MOSDNS_SYNC_RULES_ENABLED 2>/dev/null || echo 0)"
     current_mode="$(mosdns_effective_my_mode "$dir/cron/cron.env")"
-    case "$current_rules" in
-        0) rules_label="不同步" ;;
-        1) rules_label="每日同步" ;;
-        *) rules_label="未知，请明确选择" ;;
-    esac
-    case "$current_mode" in
-        0) mode_label="不同步" ;;
-        1) mode_label="每日合并" ;;
-        2) mode_label="每日从 YehBP 更新私人规则" ;;
-    esac
-    echo "当前公共规则：${current_rules}（${rules_label}）"
     echo "是否每日同步公共规则？"
-    echo "  0）否"
-    echo "  1）是"
-    read -r -p "请选择 [0/1]（回车保持 ${current_rules}：${rules_label}）: " rules_answer || return 1
+    local option label mark
+    for option in 0 1; do
+        case "$option" in
+            0) label="否" ;;
+            1) label="是" ;;
+        esac
+        mark=""
+        [ "$option" != "$current_rules" ] || mark="【当前选择】"
+        printf '  %s）%s%s\n' "$option" "$label" "$mark"
+    done
+    read -r -p "请选择 [0/1]（回车保持当前选择）: " rules_answer || return 1
     rules_answer="${rules_answer:-$current_rules}"
     case "$rules_answer" in
         0|1) ;;
         *) echo "❌ 请输入 0 或 1。" >&2; return 1 ;;
     esac
-    echo "当前私人规则：${current_mode}（${mode_label}）"
-    mosdns_show_private_rule_modes
-    read -r -p "请选择 [0/1/2]（回车保持 ${current_mode}：${mode_label}）: " mode_answer || return 1
+    mosdns_show_private_rule_modes "$current_mode"
+    read -r -p "请选择 [0/1/2]（回车保持当前选择）: " mode_answer || return 1
     mode_answer="${mode_answer:-$current_mode}"
     case "$mode_answer" in
         0|1|2) ;;
