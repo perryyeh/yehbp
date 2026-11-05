@@ -111,8 +111,8 @@ mosdns_show_private_rule_modes() {
     for mode in 0 1 2; do
         case "$mode" in
             0) label="不处理" ;;
-            1) label="根据本机日志自动统计与合并" ;;
-            2) label="每日从 YehBP 更新私人规则" ;;
+            1) label="根据本机日志自动统计与合并【建议选择】" ;;
+            2) label="每日同步 YehBP 私人规则" ;;
         esac
         mark=""
         [ "$mode" != "$current" ] || mark="【当前选择】"
@@ -134,7 +134,7 @@ mosdns_read_rule_choices() {
     for option in 0 1; do
         case "$option" in
             0) label="不处理" ;;
-            1) label="每日同步 v2ray-rules 公共规则" ;;
+            1) label="每日同步 v2ray-rules 公共规则【建议选择】" ;;
         esac
         mark=""
         [ "$option" != "$current_rules" ] || mark="【当前选择】"
