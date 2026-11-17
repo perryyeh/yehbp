@@ -2,7 +2,7 @@
 
 APP_NAME="yehbp"
 APP_TITLE="Yeh Bypass Gateway"
-APP_VERSION="2026.11.05.15"
+APP_VERSION="2026.11.17.01"
 REPO_URL="https://github.com/perryyeh/yehbp"
 RAW_GITHUB_BASE="https://raw.githubusercontent.com/perryyeh/yehbp/main"
 RAW_INSTALL_URL="${RAW_GITHUB_BASE}/install.sh"
@@ -970,7 +970,7 @@ select_macvlan_or_exit() {
 # 计算IP地址对应MAC地址
 ip_to_mac() {
   # IPv4 -> MAC: 02:<ip1hex>:<ip2hex>:<ip3hex>:<ip4hex>:86
-  # 例：10.0.10.254 -> 02:0a:56:14:fe:86
+  # 例：10.0.10.254 -> 02:0a:00:0a:fe:86
   local ip1 ip2 ip3 ip4
   IFS='.' read -r ip1 ip2 ip3 ip4 <<< "$1"
 
@@ -1704,7 +1704,8 @@ remove_compose_ipv6_fields() {
   [ -f "$compose_file" ] || return 0
 
   # 无 IPv6 场景：删除固定 IPv6 地址，避免 compose 校验/启动报错。
-  sed -i "/ipv6_address: \${ipv6}/d" "$compose_file"
+  # 按字段名删除，兼容带引号的值、其他变量名和固定地址；保留注释及描述文本。
+  sed -i '/^[[:space:]]*ipv6_address[[:space:]]*:/d' "$compose_file"
 
   # 同时删除仅用于 IPv6 RA 路由学习的 endpoint sysctl；IPv4-only macvlan 不需要它。
   remove_compose_endpoint_ra_sysctl "$compose_file"

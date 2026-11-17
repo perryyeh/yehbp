@@ -4,6 +4,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -85,6 +86,84 @@ select_mihomo_upstream || exit 1
         r = run(code, '2001:db8::9\n')
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertNotIn('stale', r.stdout)
+
+
+class ComposeIPv6Tests(unittest.TestCase):
+    def strip_ipv6(self, path, bash):
+        # Production uses GNU/BusyBox sed -i; adapt only its argv on macOS.
+        portable_sed = '''
+        sed() {
+            if [ "$1" = -i ]; then shift; command sed -i '' "$@";
+            else command sed "$@"; fi
+        }
+        ''' if sys.platform == 'darwin' else ''
+        code = portable_sed + helpers('remove_compose_ipv6_fields',
+                                      'remove_compose_endpoint_ra_sysctl')
+        return run(code + '\nremove_compose_ipv6_fields "$COMPOSE"\n',
+                   bash=bash, COMPOSE=str(path))
+
+    def test_removes_address_fields_regardless_of_value_style(self):
+        for bash in BASHES:
+            for declaration in [
+                'ipv6_address: ${ipv6}',
+                'ipv6_address: "${ipv6}"',
+                "ipv6_address: '${ipv6}'",
+                'ipv6_address :    "${ipv6_IoT}" # secondary network',
+                'ipv6_address: ${ipv62}',
+                'ipv6_address: 2001:db8::10',
+            ]:
+                with self.subTest(bash=bash, declaration=declaration), tempfile.TemporaryDirectory() as box:
+                    path = Path(box, 'compose.yaml')
+                    prefix = 'services:\n  app:\n    networks:\n      lan:\n'
+                    suffix = ('        ipv4_address: ${ipv4}\n'
+                              '        mac_address: ${macaddress}\n'
+                              '    # ipv6_address: ${ipv6}\n'
+                              '    labels:\n'
+                              '      description: "ipv6_address: ${ipv6}"\n')
+                    path.write_text(prefix + '        ' + declaration + '\n' + suffix)
+                    result = self.strip_ipv6(path, bash)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertEqual(path.read_text(), prefix + suffix)
+
+    def test_preserves_ipv4_and_existing_sysctl_cleanup_is_idempotent(self):
+        fixture = '''services:
+  app:
+    networks:
+      lan:
+        ipv4_address: ${ipv4}
+        ipv6_address: "${ipv6}"
+        mac_address: ${macaddress}
+        driver_opts:
+          com.docker.network.endpoint.sysctls: net.ipv6.conf.IFNAME.accept_ra_rt_info_max_plen=128
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv6.conf.all.forwarding=1
+networks:
+  lan:
+    external: true
+    name: ${MACVLAN}
+'''
+        expected = '''services:
+  app:
+    networks:
+      lan:
+        ipv4_address: ${ipv4}
+        mac_address: ${macaddress}
+    sysctls:
+      - net.ipv4.ip_forward=1
+networks:
+  lan:
+    external: true
+    name: ${MACVLAN}
+'''
+        for bash in BASHES:
+            with self.subTest(bash=bash), tempfile.TemporaryDirectory() as box:
+                path = Path(box, 'compose.yaml')
+                path.write_text(fixture)
+                for _ in range(2):
+                    result = self.strip_ipv6(path, bash)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertEqual(path.read_text(), expected)
 
 
 class ParentTests(unittest.TestCase):
