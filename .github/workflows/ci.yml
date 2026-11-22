@@ -33,6 +33,16 @@ jobs:
           sh -n assets/openwrt/macvlan-bridge.init
           sh -n assets/macmini/surge-ipv6-router
 
+      - name: ShellCheck (errors only)
+        run: |
+          set -euo pipefail
+          mapfile -d '' bash_scripts < <(find assets -type f -name '*.sh' -print0)
+          shellcheck -S error -s bash install.sh "${bash_scripts[@]}"
+          shellcheck -S error -s sh \
+            assets/openwrt/99-macvlan-bridge \
+            assets/openwrt/macvlan-bridge.init \
+            assets/macmini/surge-ipv6-router
+
       - name: Compile check Python files
         run: |
           set -euo pipefail
