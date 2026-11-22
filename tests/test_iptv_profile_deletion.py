@@ -302,6 +302,16 @@ printf '0\\n' | rtp2httpd_settings rtp2httpd_tel.service'''
         self.assertEqual(self.remaining[U2]['ipv6.ignore-auto-dns'], 'yes')
         self.assertEqual(self.deleted, [])
 
+    def test_state_file_is_never_sourced_as_shell(self):
+        marker = self.base / 'PWNED'
+        self.write_state(CUSTOM=f'$(touch "{marker}")')
+        r = self.run_function(f'rtp2httpd_apply_owned_dns "{self.state}"')
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertFalse(marker.exists())
+        r = self.run_function()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertFalse(marker.exists())
+
     def test_new_install_sets_both_ignore_auto_dns_flags(self):
         text = (ROOT / 'assets/iptv/rtp2httpd.sh').read_text()
         self.assertIn('ipv4.method auto ipv4.ignore-auto-dns yes', text)
